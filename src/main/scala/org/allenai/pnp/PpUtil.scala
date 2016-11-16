@@ -137,4 +137,15 @@ object PpUtil {
       }
     )
   }
+  
+  def map[A,B](f: A => Pp[B], elts: List[A]): Pp[List[B]] = {
+    elts.foldRight(Pp.value(List[B]()))(
+      (elt, list) => for {
+        mapped <- f(elt)
+        l <- list
+      } yield {
+        mapped :: l
+      }
+    )
+  }
 }

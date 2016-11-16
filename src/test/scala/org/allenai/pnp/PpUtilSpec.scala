@@ -13,13 +13,13 @@ class PpUtilSpec extends FlatSpec with Matchers {
   val parser = ExpressionParser.expression2
 
   def flip(p: Double): Pp[Boolean] = {
-    Pp.choose(Seq((true, p), (false, 1.0 - p)))
+    Pp.chooseMap(Seq((true, p), (false, 1.0 - p)))
   }
 
   val bindings = Map[String, AnyRef](
     "true" -> true.asInstanceOf[AnyRef],
     "false" -> false.asInstanceOf[AnyRef],
-    "coin" -> Pp.choose(Seq((true, 0.6), (false, 0.4))),
+    "coin" -> Pp.chooseMap(Seq((true, 0.6), (false, 0.4))),
     "flipProb" -> 0.6.asInstanceOf[AnyRef],
     "flipProb2" -> 0.55.asInstanceOf[AnyRef],
     "flip" -> PpUtil.wrap(flip _),

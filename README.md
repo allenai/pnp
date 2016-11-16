@@ -1,2 +1,3 @@
 # pnp
-Probabilistic Neural Programming
+
+Scala library for probabilistic neural programming. 

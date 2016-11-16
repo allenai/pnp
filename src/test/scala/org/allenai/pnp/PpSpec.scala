@@ -19,7 +19,7 @@ class PpSpec extends FlatSpec with Matchers {
   val TOLERANCE = 0.0001
 
   "Pp" should "correctly perform inference" in {
-    val foo = Pp.choose(Seq((1, 1.0), (2, 2.0)))
+    val foo = Pp.chooseMap(Seq((1, 1.0), (2, 2.0)))
 
     val values = foo.beamSearch(2)
     values.length should be(2)
@@ -29,7 +29,7 @@ class PpSpec extends FlatSpec with Matchers {
 
   it should "correctly perform inference (2)" in {
     val foo = for (
-      x <- Pp.choose(Seq((1, 1.0), (2, 2.0)));
+      x <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
       y = x + 1;
       z = x + 1
     ) yield (y)
@@ -42,9 +42,9 @@ class PpSpec extends FlatSpec with Matchers {
 
   it should "correctly perform inference (2.5)" in {
     val foo = for (
-      x <- Pp.choose(Seq((1, 1.0), (2, 2.0)));
-      y <- Pp.choose(Seq((1, 1.0), (2, 2.0)));
-      z <- Pp.choose(Seq((1, 1.0), (2, 2.0)))
+      x <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
+      y <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
+      z <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)))
     ) yield (x + y + z)
 
     val values = foo.beamSearch(10)
@@ -59,7 +59,7 @@ class PpSpec extends FlatSpec with Matchers {
         Pp.value(List.empty[Boolean])
       } else {
         for (
-          x <- Pp.choose(Seq((true, 2.0), (false, 1.0)));
+          x <- Pp.chooseMap(Seq((true, 2.0), (false, 1.0)));
           y <- foo(k - 1)
         ) yield (x :: y)
       }
@@ -79,7 +79,7 @@ class PpSpec extends FlatSpec with Matchers {
         Pp.value(List.empty[Int])
       } else {
         for (
-          x <- Pp.choose(Seq((k, 1.0), (k + 1, 2.0)));
+          x <- Pp.chooseMap(Seq((k, 1.0), (k + 1, 2.0)));
           y <- foo(k - 1)
         ) yield (x :: y)
       }
@@ -95,7 +95,7 @@ class PpSpec extends FlatSpec with Matchers {
         Pp.value(List.empty[Int])
       } else {
         for (
-          x <- Pp.choose(Seq((k, 1.0), (k + 1, 2.0)));
+          x <- Pp.chooseMap(Seq((k, 1.0), (k + 1, 2.0)));
           y <- foo(k - 1)
         ) yield (x :: y)
       }
@@ -111,8 +111,8 @@ class PpSpec extends FlatSpec with Matchers {
   it should "correctly collapse inference (2)" in {
     def twoFlips(): Pp[Int] = {
       val pp = for {
-        x <- Pp.choose(Seq((0, 1.0), (1, 2.0)))
-        y <- Pp.choose(Seq((0, 1.0), (1, 2.0)))
+        x <- Pp.chooseMap(Seq((0, 1.0), (1, 2.0)))
+        y <- Pp.chooseMap(Seq((0, 1.0), (1, 2.0)))
       } yield {
         x + y
       }
@@ -139,7 +139,7 @@ class PpSpec extends FlatSpec with Matchers {
     def lm(label: List[String]): Pp[List[String]] = {
       val vocab = Seq(("the", 0.5), ("man", 0.25), ("jumped", 0.125), ("<end>", 0.125))
       for (
-        x <- Pp.choose(vocab);
+        x <- Pp.chooseMap(vocab);
         // TODO: scoring model here.
         rest <- if (label == null || x.equals(label.head)) {
           if (!x.equals("<end>")) {
@@ -167,7 +167,7 @@ class PpSpec extends FlatSpec with Matchers {
         Pp.value(0)
       } else {
         for {
-          draw <- Pp.choose(Seq((true, 2.0), (false, 1.0)));
+          draw <- Pp.chooseMap(Seq((true, 2.0), (false, 1.0)));
           _ <- if (draw) {
             Pp.setVar("foo", k.asInstanceOf[AnyRef])
           } else {

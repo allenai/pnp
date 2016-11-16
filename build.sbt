@@ -1,3 +1,5 @@
+organization := "org.allenai"
+
 name := "pnp"
 
 description := "Library for probabilistic neural programming"
@@ -14,3 +16,9 @@ libraryDependencies ++= Seq(
   "net.sf.jopt-simple" % "jopt-simple" % "4.9",
   "org.scalatest" %% "scalatest" % "3.0.0" % "test"
 )
+
+licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0"))
+
+bintrayOrganization := Some("allenai")
+
+bintrayRepository := "private"
