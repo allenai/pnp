@@ -464,12 +464,16 @@ object Pp {
     * that chooses and returns a single value from
     * {@code dist} with the given probability.
     */
-  def choose[A](dist: Seq[(A, Double)]): Pp[A] = {
+  def chooseMap[A](dist: Seq[(A, Double)]): Pp[A] = {
     CategoricalPp(dist.map(x => (x._1, Math.log(x._2))))
   }
 
   def choose[A](items: Seq[A], weights: Seq[Double]): Pp[A] = {
     CategoricalPp(items.zip(weights).map(x => (x._1, Math.log(x._2))))
+  }
+  
+  def choose[A](items: Seq[A]): Pp[A] = {
+    CategoricalPp(items.map(x => (x, 0.0)))
   }
 
   /** The failure program that has no executions.
