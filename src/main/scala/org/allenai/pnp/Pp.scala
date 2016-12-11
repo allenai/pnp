@@ -12,6 +12,7 @@ import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.KbestQueue
 import com.jayantkrish.jklol.util.ObjectPool
+import java.util.Arrays
 
 /** Neural probabilistic program monad. Pp[X] represents a
   * function from neural network parameters to a probabilistic
@@ -284,11 +285,13 @@ case class ParameterizedCategoricalPp[A](items: Array[A], parameter: CompGraphNo
     }
     val numTensorValues = (endKeyNum - startKeyNum).asInstanceOf[Int]
 
-    Preconditions.checkState(
-      numTensorValues == items.length,
-      "parameter dimensionality %s doesn't match item's %s (%s)",
-      numTensorValues.asInstanceOf[AnyRef], items.length.asInstanceOf[AnyRef], items
-    )
+    if (numTensorValues != items.length) {
+      Preconditions.checkState(
+          numTensorValues == items.length,
+          "parameter dimensionality %s doesn't match item's %s (%s)",
+          numTensorValues.asInstanceOf[AnyRef], items.length.asInstanceOf[AnyRef],
+          Arrays.toString(items.asInstanceOf[Array[AnyRef]]))
+    }
 
     for (i <- 0 until numTensorValues) {
       val keyNum = startKeyNum + i
