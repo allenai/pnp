@@ -1,18 +1,13 @@
 package org.allenai.pnp
 
-import scala.collection.JavaConverters._
-import scala.reflect.ClassTag
+import java.util.Arrays
 
 import com.google.common.base.Preconditions
-import com.google.common.base.Supplier
 import com.jayantkrish.jklol.tensor.DenseTensor
 import com.jayantkrish.jklol.tensor.SparseTensor
 import com.jayantkrish.jklol.tensor.Tensor
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
-import com.jayantkrish.jklol.util.KbestQueue
-import com.jayantkrish.jklol.util.ObjectPool
-import java.util.Arrays
 
 /** Neural probabilistic program monad. Pp[X] represents a
   * function from neural network parameters to a probabilistic
@@ -32,20 +27,30 @@ import java.util.Arrays
   * Pp object.
   */
 sealed trait Pp[A] {
-  // Methods that must be overriden in implementing classes.
 
   /** flatMap is the monad's bind operator. It chains two
     * probabilistic computations together in the natural way
     * where f represents a conditional distribution P(B | A).
     * Hence, binding f to a distribution P(A) returns the
-    * marginal distribution over B, sum_a P(A=a) P(B | A).
+    * marginal distribution over B, sum_a P(A=a) P(B | A=a).
     */
-  def flatMap[B](f: A => Pp[B]): Pp[B]
-
+  def flatMap[B](f: A => Pp[B]): Pp[B] = BindPp(this, PpContinuationFunction(f))
+  
   /** Implements a single search step of beam search.
-    */
-  def searchStep(env: Env, logProb: Double, continuation: (A, Env, Double) => Unit,
-    queue: PpSearchQueue): Unit
+   */
+  def searchStep[C](env: Env, logProb: Double, continuation: PpContinuation[A,C],
+    queue: PpSearchQueue[C], finished: PpSearchQueue[C]): Unit = {
+    val v = step(env, logProb, queue.graph, queue.log)
+    continuation.searchStep(v._1, v._2, v._3, queue, finished)
+  }
+
+  def lastSearchStep(env: Env, logProb: Double, queue: PpSearchQueue[A],
+      finished: PpSearchQueue[A]): Unit = {
+    val v = step(env, logProb, queue.graph, queue.log)
+    finished.offer(ValuePp(v._1), v._2, v._3, v._2)
+  }
+
+  def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double)
 
   // Methods that do not need to be overriden
 
@@ -66,19 +71,13 @@ sealed trait Pp[A] {
       stateCostArg
     }
 
-    val queue = new BeamPpSearchQueue(beamSize, stateCost, graph, log)
-    val finished = new KbestQueue(beamSize, Array.empty[(A, Env)])
-    def finalContinuation(value: A, e: Env, logProb: Double): Unit = {
-      val stateLogProb = stateCost(e) + logProb
-      if (stateLogProb > Double.NegativeInfinity) {
-        finished.offer((value, e), stateLogProb)
-      }
-    }
+    val queue = new BeamPpSearchQueue[A](beamSize, stateCost, graph, log)
+    val finished = new BeamPpSearchQueue[A](beamSize, stateCost, graph, log)
 
     val startEnv = env.setLog(log)
-    this.searchStep(startEnv, 0.0, finalContinuation, queue)
+    queue.offer(this, env, 0.0, env)
 
-    val beam = new Array[Searchable](beamSize)
+    val beam = new Array[SearchState[A]](beamSize)
     val beamScores = new Array[Double](beamSize)
     var numIters = 0
     while (queue.queue.size > 0) {
@@ -91,21 +90,23 @@ sealed trait Pp[A] {
       queue.queue.clear
 
       for (i <- 0 until beamSize) {
-        beam(i).searchStep()
+        val state = beam(i)
+        state.value.lastSearchStep(state.env, state.logProb, queue, finished)
       }
     }
 
     // println(numIters)
 
-    val numFinished = finished.size
-    val finishedItems = finished.getItems.slice(0, numFinished)
-    val finishedScores = finished.getScores.slice(0, numFinished)
+    val finishedQueue = finished.queue
+    val numFinished = finishedQueue.size
+    val finishedItems = finishedQueue.getItems.slice(0, numFinished)
+    val finishedScores = finishedQueue.getScores.slice(0, numFinished)
 
     val executions = finishedItems.zip(finishedScores).sortBy(x => -1 * x._2).map(
-      x => new Execution(x._1._1, x._1._2, x._2)
+      x => new Execution(x._1.value.asInstanceOf[ValuePp[A]].value, x._1.env, x._2)
     )
 
-    new PpBeamMarginals(executions, queue.graph, numIters)
+    new PpBeamMarginals(executions.toSeq, queue.graph, numIters)
   }
 
   def beamSearchWithFilter(beamSize: Int, env: Env, keepState: Env => Boolean,
@@ -149,21 +150,21 @@ sealed trait Pp[A] {
   }
 }
 
-case class ValuePp[A](value: A) extends Pp[A] {
-  override def flatMap[B](f: A => Pp[B]) = f(value)
-
-  override def searchStep(env: Env, logProb: Double, continuation: (A, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    continuation(value, env, logProb)
+case class BindPp[A, C](b: Pp[C], f: PpContinuation[C, A]) extends Pp[A] {
+  override def flatMap[B](g: A => Pp[B]) = BindPp(b, f.append(g))
+  
+  override def searchStep[C](env: Env, logProb: Double, continuation: PpContinuation[A,C],
+    queue: PpSearchQueue[C], finished: PpSearchQueue[C]): Unit = {
+    b.searchStep(env, logProb, f.append(continuation), queue, finished)
   }
-}
 
-case class ScorePp(score: Double) extends Pp[Unit] {
-  override def flatMap[B](f: Unit => Pp[B]) = BindPp(this, f)
+  override def lastSearchStep(env: Env, logProb: Double, queue: PpSearchQueue[A],
+      finished: PpSearchQueue[A]): Unit = {
+    b.searchStep(env, logProb, f, queue, finished)
+  }
 
-  override def searchStep(env: Env, logProb: Double, continuation: (Unit, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    continuation((), env, logProb + Math.log(score))
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
+    throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
 }
 
@@ -172,110 +173,109 @@ case class ScorePp(score: Double) extends Pp[Unit] {
   * scores, i.e., log probabilities.
   */
 case class CategoricalPp[A](dist: Seq[(A, Double)]) extends Pp[A] {
-  override def flatMap[B](f: A => Pp[B]) = BindPp(this, f)
+  
+  override def searchStep[C](env: Env, logProb: Double, continuation: PpContinuation[A,C],
+    queue: PpSearchQueue[C], finished: PpSearchQueue[C]): Unit = {
+    dist.foreach(x => queue.offer(BindPp(ValuePp(x._1), continuation), env, logProb + x._2, env))
+  }
 
-  override def searchStep(env: Env, logProb: Double, continuation: (A, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    dist.foreach(x => queue.offer(x._1, env, continuation, logProb + x._2, env))
+  override def lastSearchStep(env: Env, logProb: Double, queue: PpSearchQueue[A],
+      finished: PpSearchQueue[A]): Unit = {
+    dist.foreach(x => finished.offer(ValuePp(x._1), env, logProb + x._2, env))
+  }
+
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
+    throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
 }
 
-case class BindPp[A, C](b: Pp[C], f: C => Pp[A]) extends Pp[A] {
-  override def flatMap[B](f: A => Pp[B]) = BindPp(this, f)
+case class ValuePp[A](value: A) extends Pp[A] {
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
+    (value, env, logProb)
+  }
+}
 
-  override def searchStep(env: Env, logProb: Double, continuation: (A, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    b.searchStep(env, logProb, (x, e, d) => f(x).searchStep(e, d, continuation, queue), queue)
+case class ScorePp(score: Double) extends Pp[Unit] {
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
+    ((), env, logProb + Math.log(score))
   }
 }
 
 case class GetEnv() extends Pp[Env] {
-  override def flatMap[B](f: Env => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double, continuation: (Env, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    continuation(env, env, logProb)
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Env, Env, Double) = {
+    (env, env, logProb)
   }
 }
 
 case class SetEnv(nextEnv: Env) extends Pp[Unit] {
-  override def flatMap[B](f: Unit => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double, continuation: (Unit, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    continuation((), nextEnv, logProb)
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
+    ((), nextEnv, logProb)
   }
 }
 
 case class SetVar(name: String, value: AnyRef) extends Pp[Unit] {
-  override def flatMap[B](f: Unit => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double, continuation: (Unit, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
     val nextEnv = env.setVar(name, value)
-    continuation((), nextEnv, logProb)
+    ((), nextEnv, logProb)
   }
 }
 
 case class SetVarInt(nameInt: Int, value: AnyRef) extends Pp[Unit] {
-  override def flatMap[B](f: Unit => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double, continuation: (Unit, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
     val nextEnv = env.setVar(nameInt, value)
-    continuation((), nextEnv, logProb)
+    ((), nextEnv, logProb)
   }
 }
 
 // Class for collapsing out multiple choices into a single choice
 case class CollapsedSearch[A](dist: Pp[A]) extends Pp[A] {
-  override def flatMap[B](f: A => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double, continuation: (A, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    def finalContinuation(value: A, e: Env, logProb: Double): Unit = {
-      queue.offer(value, e, continuation, logProb, env)
-    }
-
-    val nextQueue = new EnumeratePpSearchQueue(queue.stateCost, queue.graph, queue.log)
-    dist.searchStep(env, logProb, finalContinuation, nextQueue)
+  override def searchStep[B](env: Env, logProb: Double, continuation: PpContinuation[A, B],
+    queue: PpSearchQueue[B], finished: PpSearchQueue[B]) = {
+    val wrappedQueue = new ContinuationPpSearchQueue(queue, continuation)
+    val nextQueue = new EnumeratePpSearchQueue[A](queue.stateCost, queue.graph, queue.log, wrappedQueue)
+    
+    dist.lastSearchStep(env, logProb, nextQueue, wrappedQueue)
+  }
+  
+  override def lastSearchStep(env: Env, logProb: Double,
+      queue: PpSearchQueue[A], finished: PpSearchQueue[A]) = {
+    val nextQueue = new EnumeratePpSearchQueue[A](queue.stateCost, queue.graph, queue.log, finished)
+    dist.lastSearchStep(env, logProb, nextQueue, finished)
+  }
+  
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
+    throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
 }
 
 // Classes for representing computation graph elements.
 
 case class ParameterPp(name: String, id: Int) extends Pp[CompGraphNode] {
-  override def flatMap[B](f: CompGraphNode => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double,
-    continuation: (CompGraphNode, Env, Double) => Unit, queue: PpSearchQueue) = {
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction
+      ): (CompGraphNode, Env, Double) = {
     val node = if (name == null) {
-      queue.graph.get(id)
+      graph.get(id)
     } else {
-      queue.graph.getParameter(name)
+      graph.getParameter(name)
     }
-    continuation(node, env, logProb)
+    (node, env, logProb)
   }
 }
 
 case class ConstantTensorPp(tensor: Tensor) extends Pp[CompGraphNode] {
-  override def flatMap[B](f: CompGraphNode => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double,
-    continuation: (CompGraphNode, Env, Double) => Unit, queue: PpSearchQueue) = {
-    val graph = queue.graph
+  
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction
+      ): (CompGraphNode, Env, Double) = {
     val constNode = new ConstantNode(graph.nextId(), graph, tensor)
     graph.addNode(constNode)
-    continuation(constNode, env, logProb)
+    (constNode, env, logProb)
   }
 }
 
 case class ParameterizedCategoricalPp[A](items: Array[A], parameter: CompGraphNode,
     keyPrefix: Array[Int]) extends Pp[A] {
-  override def flatMap[B](f: A => Pp[B]) = BindPp(this, f)
 
-  override def searchStep(env: Env, logProb: Double, continuation: (A, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
+  def getTensor(): (Tensor, Long, Int) = {
     val paramTensor = parameter.value
     val startKeyNum = paramTensor.dimKeyPrefixToKeyNum(keyPrefix)
     val endKeyNum = if (keyPrefix.length == 0) {
@@ -293,18 +293,40 @@ case class ParameterizedCategoricalPp[A](items: Array[A], parameter: CompGraphNo
           Arrays.toString(items.asInstanceOf[Array[AnyRef]]))
     }
 
-    for (i <- 0 until numTensorValues) {
-      val keyNum = startKeyNum + i
-      val nextEnv = env.addLabel(parameter, makeLabelIndicator(keyNum, paramTensor))
-      queue.offer(items(i), nextEnv, continuation, logProb + paramTensor.get(keyNum), env)
-    }
+    (paramTensor, startKeyNum, numTensorValues) 
   }
-
+  
   def makeLabelIndicator(keyNum: Long, params: Tensor): Tensor = {
     SparseTensor.singleElement(
       params.getDimensionNumbers,
       params.getDimensionSizes, params.keyNumToDimKey(keyNum), 1.0
     )
+  }
+
+  override def searchStep[B](env: Env, logProb: Double,
+      continuation: PpContinuation[A, B], queue: PpSearchQueue[B], finished: PpSearchQueue[B]) = {
+      
+    val (paramTensor, startKeyNum, numTensorValues) = getTensor
+    for (i <- 0 until numTensorValues) {
+      val keyNum = startKeyNum + i
+      val nextEnv = env.addLabel(parameter, makeLabelIndicator(keyNum, paramTensor))
+      queue.offer(BindPp(ValuePp(items(i)), continuation), nextEnv, logProb + paramTensor.get(keyNum), env)
+    }
+  }
+  
+  override def lastSearchStep(env: Env, logProb: Double,
+      queue: PpSearchQueue[A], finished: PpSearchQueue[A]) = {
+      
+    val (paramTensor, startKeyNum, numTensorValues) = getTensor
+    for (i <- 0 until numTensorValues) {
+      val keyNum = startKeyNum + i
+      val nextEnv = env.addLabel(parameter, makeLabelIndicator(keyNum, paramTensor))
+      finished.offer(ValuePp(items(i)), nextEnv, logProb + paramTensor.get(keyNum), env)
+    }
+  }
+  
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
+      throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
 }
 
@@ -315,10 +337,8 @@ case class ParameterizedArrayCategoricalPp[A](items: Array[A], parameters: Array
     items.length.asInstanceOf[AnyRef], parameters.length.asInstanceOf[AnyRef]
   )
 
-  override def flatMap[B](f: A => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double, continuation: (A, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
+  override def searchStep[B](env: Env, logProb: Double,
+      continuation: PpContinuation[A, B], queue: PpSearchQueue[B], finished: PpSearchQueue[B]) = {
     val paramValues = parameters.map(x => {
       Preconditions.checkState(x.value.getDimensionNumbers.length == 0)
       x.value.get(0)
@@ -326,108 +346,58 @@ case class ParameterizedArrayCategoricalPp[A](items: Array[A], parameters: Array
 
     for (i <- 0 until items.length) {
       val nextEnv = env.addLabel(parameters(i), DenseTensor.scalar(1.0))
-      queue.offer(items(i), nextEnv, continuation, logProb + paramValues(i), env)
+      queue.offer(BindPp(ValuePp(items(i)), continuation), nextEnv, logProb + paramValues(i), env)
     }
+  }
+  
+  override def lastSearchStep(env: Env, logProb: Double,
+      queue: PpSearchQueue[A], finished: PpSearchQueue[A]) = {
+    val paramValues = parameters.map(x => {
+      Preconditions.checkState(x.value.getDimensionNumbers.length == 0)
+      x.value.get(0)
+    })
+
+    for (i <- 0 until items.length) {
+      val nextEnv = env.addLabel(parameters(i), DenseTensor.scalar(1.0))
+      finished.offer(ValuePp(items(i)), nextEnv, logProb + paramValues(i), env)
+    }
+  }
+  
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
+    throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
 }
 
 case class StartTimerPp(timerName: String) extends Pp[Unit] {
-  override def flatMap[B](f: Unit => Pp[B]) = BindPp(this, f)
-
-  override def searchStep(env: Env, logProb: Double, continuation: (Unit, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    queue.offer((), env.startTimer(timerName), continuation, logProb, env)
+  override def searchStep[B](env: Env, logProb: Double,
+      continuation: PpContinuation[Unit, B], queue: PpSearchQueue[B], finished: PpSearchQueue[B]) = {
+    queue.offer(BindPp(ValuePp(()), continuation), env.startTimer(timerName), logProb, env)
+  }
+  
+  override def lastSearchStep(env: Env, logProb: Double,
+      queue: PpSearchQueue[Unit], finished: PpSearchQueue[Unit]) = {
+    queue.offer(ValuePp(()), env.startTimer(timerName), logProb, env)
+  }
+  
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
+    throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
 }
 
 case class StopTimerPp(timerName: String) extends Pp[Unit] {
-  override def flatMap[B](f: Unit => Pp[B]) = BindPp(this, f)
 
-  override def searchStep(env: Env, logProb: Double, continuation: (Unit, Env, Double) => Unit,
-    queue: PpSearchQueue) = {
-    queue.offer((), env.stopTimer(timerName), continuation, logProb, env)
+  override def searchStep[B](env: Env, logProb: Double,
+      continuation: PpContinuation[Unit, B], queue: PpSearchQueue[B], finished: PpSearchQueue[B]) = {
+    queue.offer(BindPp(ValuePp(()), continuation), env.stopTimer(timerName), logProb, env)
   }
-}
-
-// Search queue items for beam search   
-sealed trait Searchable {
-  def searchStep(): Unit
-}
-
-case class SearchState[A](value: A, env: Env, logProb: Double, continuation: (A, Env, Double) => Unit) extends Searchable {
-  def searchStep(): Unit = {
-    env.resumeTimers()
-    continuation.apply(value, env, logProb)
-    env.pauseTimers()
+  
+  override def lastSearchStep(env: Env, logProb: Double,
+      queue: PpSearchQueue[Unit], finished: PpSearchQueue[Unit]) = {
+    queue.offer(ValuePp(()), env.stopTimer(timerName), logProb, env)
   }
-}
-
-class SearchState2(var value: AnyRef, var env: Env, var logProb: Double,
-    var continuation: (AnyRef, Env, Double) => Unit) extends Searchable {
-
-  def searchStep(): Unit = {
-    env.resumeTimers()
-    continuation.apply(value, env, logProb)
-    env.pauseTimers()
-  }
-}
-
-sealed trait PpSearchQueue {
-  val graph: CompGraph
-  val stateCost: Env => Double
-  val log: LogFunction
-
-  def offer[A](value: A, env: Env, continuation: (A, Env, Double) => Unit,
-    logProb: Double, myEnv: Env): Unit
-}
-
-class BeamPpSearchQueue(size: Int, val stateCost: Env => Double,
-    val graph: CompGraph, val log: LogFunction) extends PpSearchQueue {
-
-  val supplier = new Supplier[SearchState2]() {
-    def get: SearchState2 = {
-      new SearchState2(null, null, 0.0, null)
-    }
-  }
-
-  val pool = new ObjectPool(supplier, size + 1, Array.empty[SearchState2])
-  val queue = new KbestQueue(size, Array.empty[Searchable])
-
-  override def offer[A](value: A, env: Env, continuation: (A, Env, Double) => Unit,
-    logProb: Double, myEnv: Env): Unit = {
-    val stateLogProb = stateCost(env) + logProb
-    if (stateLogProb > Double.NegativeInfinity) {
-      /*
-      val next = pool.alloc()
-      next.value = value
-      next.env = env
-      next.continuation = continuation
-      next.logProb = logProb
-      val dequeued = queue.offer(next, logProb)
-
-      if (dequeued != null) {
-        pool.dealloc(dequeued)
-      }
-      */
-      queue.offer(SearchState(value, env, stateLogProb, continuation), logProb)
-    }
-  }
-}
-
-class EnumeratePpSearchQueue(
-    val stateCost: Env => Double,
-    val graph: CompGraph, val log: LogFunction
-) extends PpSearchQueue {
-  override def offer[A](value: A, env: Env, continuation: (A, Env, Double) => Unit,
-    logProb: Double, myEnv: Env): Unit = {
-    myEnv.pauseTimers()
-    val stateLogProb = stateCost(env) + logProb
-    if (stateLogProb > Double.NegativeInfinity) {
-      env.resumeTimers()
-      continuation(value, env, stateLogProb)
-      env.pauseTimers()
-    }
-    myEnv.resumeTimers()
+  
+  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
+    throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
 }
 

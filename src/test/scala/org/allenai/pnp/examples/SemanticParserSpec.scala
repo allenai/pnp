@@ -2,14 +2,13 @@ package org.allenai.pnp.examples
 
 import scala.collection.JavaConverters._
 
-import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
-import com.jayantkrish.jklol.ccg.lambda.ExplicitTypeDeclaration
-import org.scalatest.Matchers
 import org.scalatest.FlatSpec
-import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
+import org.scalatest.Matchers
+
+import com.jayantkrish.jklol.ccg.lambda.ExplicitTypeDeclaration
+import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda.Type
-import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 
 class SemanticParserSpec extends FlatSpec with Matchers {
  
@@ -30,20 +29,18 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   val parser = new SemanticParser(lexicon)
 
   "SemanticParser" should "generate application templates" in {
-    println(lexicon.typeApplicationMap)
-    println(lexicon.lambdaMap)
+    println(lexicon.typeTemplateMap)
   }
 
   it should "beam search" in {
     val exprs = parser.generateExpression(Type.parseFrom("<e,t>"))
     val results = exprs.beamSearch(100)
-    /*
     for (result <- results) {
       println("  " + result)
     }
-    */
   }  
   
+  /*
   it should "condition on expressions" in {
     val label = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
     val exprs = parser.generateLabeledExpression(ExpressionLabel.fromExpression(label, typeDeclaration))
@@ -55,4 +52,5 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     results.length should be(1)
     results(0)._1 should equal(label)
   }
+  */
 }

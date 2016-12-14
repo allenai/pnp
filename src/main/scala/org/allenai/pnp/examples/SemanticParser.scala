@@ -160,15 +160,6 @@ case class Scope(val vars: List[(Expression2, Type)]) {
 
 class SemanticParser(lexicon: Lexicon) {
 
-  def generateLabeledExpression(label: ExpressionLabel): Pp[Expression2] = {
-    for {
-      rootType <- choose(lexicon.rootTypes)
-      e <- generateExpression(rootType, new Scope(List()), label, 0) 
-    } yield {
-      e
-    }
-  }
-  
   def generateExpression(): Pp[Expression2] = {
     for {
       rootType <- choose(lexicon.rootTypes)
@@ -176,6 +167,10 @@ class SemanticParser(lexicon: Lexicon) {
     } yield {
       e
     }
+  }
+  
+  def generateExpression(rootType: Type): Pp[Expression2] = {
+    generateExpression(SemanticParserState.start(rootType))
   }
 
   def generateExpression(state: SemanticParserState): Pp[Expression2] = {
@@ -194,133 +189,12 @@ class SemanticParser(lexicon: Lexicon) {
       }
     }
   }
-  
-  def generateExpression(
-      t: Type,
-      scope: Scope,
-      label: ExpressionLabel,
-      labelInd: Int): Pp[Expression2] = {
-
-    val correctChoice = if (label != null) {
-      val subexpression = label.expr.getSubexpression(labelInd)
-      if (subexpression.isConstant()) {
-        0
-      } else if (StaticAnalysis.isLambda(subexpression)) {
-        2
-      } else {
-        1
-      }
-    } else {
-      -1
-    }
-
-    for {
-      chooseConstant <- choose(Seq(0, 1, 2))
-      condition <- require(correctChoice == -1 || chooseConstant == correctChoice)
-      
-      sub <- if (chooseConstant == 0) {
-        generateConstant(t, scope, label, labelInd)
-      } else if (chooseConstant == 1) {
-        generateApplication(t, scope, label, labelInd)
-      } else {
-        generateLambda(t, scope, label, labelInd)
-      }
-    } yield {
-      sub
-    }
-  }
-  
-  def generateConstant(t: Type, scope: Scope, label: ExpressionLabel, labelInd: Int): Pp[Expression2] = {
-    val constants = lexicon.getExpressions(t)
-    val constantDist = for {
-      chooseLambda <- choose(Seq(true, false))
-      choice <- if (chooseLambda) {
-        choose(scope.getVariableExpressions(t))
-      } else {
-        choose(constants)
-      }
-      
-      labelCondition <- if (label != null) {
-        val labelExpr = label.expr.getSubexpression(labelInd)
-        require(labelExpr.equals(choice))
-      } else {
-        Pp.value(())
-      }
-    } yield {
-      choice
-    }
-    
-    constantDist.inOneStep()
-  }
-  
-  def generateApplication(t: Type, scope: Scope, label: ExpressionLabel, labelInd: Int): Pp[Expression2] = {
-    val templates = lexicon.getApplicationTypes(t)
-    val templateDist = for {
-      template <- choose(templates)
-      
-      labelCondition <- if (label != null) {
-        val labelRoot = label.typeMap(labelInd)
-        val childIndexes = label.expr.getChildIndexes(labelInd).toList
-        val labelElts = childIndexes.map(label.typeMap(_))
-        
-        require(template.root.equals(labelRoot) && template.elts.equals(labelElts))
-      } else {
-        Pp.value(())
-      }
-    } yield {
-      template
-    }
-     
-    for {
-      template <- templateDist.inOneStep()
-      exprValues <- if (label != null) {
-        val childIndexes = label.expr.getChildIndexes(labelInd).toList
-        PpUtil.map((x: (Type, Int)) => generateExpression(x._1, scope, label, x._2),
-            template.elts.zip(childIndexes))
-      } else {
-        PpUtil.map(generateExpression(_:Type, scope, label, labelInd), template.elts)
-      }
-
-    } yield {
-      Expression2.nested(exprValues.asJava)
-    }
-  }
-
-  def generateLambda(t: Type, scope: Scope, label: ExpressionLabel, labelInd: Int): Pp[Expression2] = {
-    val templates = lexicon.getLambdaTypes(t)
-    val templateDist = for {
-      template <- choose(templates)
-      
-      labelCondition <- if (label != null) {
-        require(StaticAnalysis.isLambda(label.expr, labelInd) && template.body.equals(
-                label.typeMap(StaticAnalysis.getLambdaBodyIndex(label.expr, labelInd))))
-      } else {
-        Pp.value(())
-      }
-    } yield {
-      template
-    }
-
-    for {
-      template <- templateDist.inOneStep()
-      (nextScope, varNames) = scope.extend(template.args)
-      body <- if (label != null) {
-        val bodyInd = StaticAnalysis.getLambdaBodyIndex(label.expr, labelInd)
-        generateExpression(template.body, nextScope, label, bodyInd)
-      } else {
-        generateExpression(template.body, nextScope, label, labelInd)
-      }
-      _ <- require(StaticAnalysis.getFreeVariables(body).containsAll(varNames.asJava))
-    } yield {
-      Expression2.lambda(varNames.asJava, body)
-    }
-  }
 }
 
 object SemanticParser {
   
   def generateLexicon(data: Seq[Expression2], typeDeclaration: TypeDeclaration): Lexicon = {
-    val templates = for {
+    val applicationTemplates = for {
       x <- data
       template <- SemanticParser.generateApplicationTemplates(x, typeDeclaration) 
     } yield {
@@ -334,14 +208,14 @@ object SemanticParser {
       template
     }
   
-    val constants = for {
+    val constantTemplates = for {
       x <- data
       typeMap = StaticAnalysis.inferTypeMap(x, TypeDeclaration.TOP, typeDeclaration).asScala
       constant <- StaticAnalysis.getFreeVariables(x).asScala
       typeInd <- StaticAnalysis.getIndexesOfFreeVariable(x, constant)
       t = typeMap(typeInd)
     } yield {
-      (t, Expression2.constant(constant))
+      ConstantTemplate(t, Expression2.constant(constant))
     }
     
     val rootTypes = for {
@@ -351,11 +225,10 @@ object SemanticParser {
       typeMap(0)
     }
   
-    val templateMap = templates.map(x => (x.root, x))
-    val lambdaTemplateMap = lambdaTemplates.map(x => (x.root, x))
+    val allTemplates = (applicationTemplates ++ lambdaTemplates ++ constantTemplates)
+    val templateMap = allTemplates.map(x => (x.root, x))
 
-    new Lexicon(seqToMultimap(constants), seqToMultimap(templateMap),
-        seqToMultimap(lambdaTemplateMap), rootTypes.toSet.toList)
+    new Lexicon(seqToMultimap(templateMap), rootTypes.toSet.toList)
   }
 
   def seqToMultimap[A, B](s: Seq[(A, B)]) = { 
