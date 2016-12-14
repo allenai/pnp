@@ -549,6 +549,10 @@ object Pp {
   def score(parameter: CompGraphNode): Pp[Unit] = {
     ParameterizedCategoricalPp(Array(()), parameter, Array.emptyIntArray)
   }
+  
+  def score(score: Double): Pp[Unit] = {
+    choose(Seq(()), Seq(score))
+  }
 
   // Methods for timing execution
   def startTimer(name: String): Pp[Unit] = {

@@ -8,8 +8,7 @@ import scala.collection.mutable.{ Set => MutableSet }
 import scala.collection.mutable.MultiMap
 
 import org.allenai.pnp.Pp
-import org.allenai.pnp.Pp.choose
-import org.allenai.pnp.Pp.require
+import org.allenai.pnp.Pp._
 import org.allenai.pnp.PpUtil
 
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -19,10 +18,15 @@ import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import scala.collection.mutable.Queue
 import com.google.common.base.Preconditions
+import java.util.Arrays
 
 case class ExpressionPart(val expr: Expression2,
     val holes: Array[Int], val holeIds: Array[Int]) {
+  Preconditions.checkArgument(holes.length == holeIds.length)
   
+  override def toString: String = {
+    "ExpressionPart(" + expr + ", " + Arrays.toString(holes) + ", " + Arrays.toString(holeIds) 
+  }
 }
 
 case class SemanticParserState(val parts: Map[Int, ExpressionPart],
@@ -33,7 +37,7 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     val part = parts(partId)
     
     var expr = part.expr
-    for (i <- 0 to part.holes.length) {
+    for (i <- 1 to part.holes.length) {
       val ind = part.holes.length - i
       var subexpr = decodeExpression(part.holeIds(ind))
       expr = expr.substitute(part.holes(ind), subexpr)
@@ -64,7 +68,7 @@ sealed trait Template {
 case class ApplicationTemplate(val root: Type, val elts: List[Type]) extends Template {
   val varNames: ListBuffer[Expression2] = ListBuffer.empty
   val holesBuffer: ListBuffer[Int] = ListBuffer.empty
-  for (i <- 1 to elts.length + 1) {
+  for (i <- 1 to elts.length) {
     varNames += Expression2.constant("$$" + i)
     holesBuffer += i
   }
@@ -75,7 +79,7 @@ case class ApplicationTemplate(val root: Type, val elts: List[Type]) extends Tem
   
   def apply(state: SemanticParserState): SemanticParserState = {
     val holeIds = ListBuffer.empty[Int]
-    for (i <- state.nextId to (state.nextId + holes.length)) {
+    for (i <- state.nextId until (state.nextId + holes.length)) {
       holeIds += i
     }
 
@@ -182,6 +186,7 @@ class SemanticParser(lexicon: Lexicon) {
       // TODO: variables from lambda expressions
       for {
         template <- choose(applicableTemplates)
+        _ <- score(0.9)
         nextState = template.apply(state)
         expr <- generateExpression(nextState)
       } yield {

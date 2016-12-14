@@ -33,7 +33,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   }
 
   it should "beam search" in {
-    val exprs = parser.generateExpression(Type.parseFrom("<e,t>"))
+    val exprs = parser.generateExpression(Type.parseFrom("e"))
     val results = exprs.beamSearch(100)
     for (result <- results) {
       println("  " + result)
