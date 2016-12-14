@@ -102,7 +102,7 @@ class PpSpec extends FlatSpec with Matchers {
     }
 
     val marginals = foo(3).beamSearch(100, Env.init)
-    marginals.searchSteps should be(3)
+    marginals.searchSteps should be(4)
 
     val marginalsOneStep = foo(3).inOneStep().beamSearch(100, Env.init)
     marginalsOneStep.searchSteps should be(1)
@@ -132,7 +132,7 @@ class PpSpec extends FlatSpec with Matchers {
     }
 
     val marginals = foo(3).beamSearch(100, Env.init)
-    marginals.searchSteps should be(3)
+    marginals.searchSteps should be(4)
   }
 
   it should "work for infinite lists" in {
