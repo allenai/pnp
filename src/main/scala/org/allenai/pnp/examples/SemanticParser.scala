@@ -30,8 +30,7 @@ case class ExpressionPart(val expr: Expression2,
 }
 
 case class SemanticParserState(val parts: Map[Int, ExpressionPart],
-    val unfilledHoleIds: List[(Int, Type, Scope)], val nextId: Int,
-    val currentScope: Scope) {
+    val unfilledHoleIds: List[(Int, Type, Scope)], val nextId: Int) {
   
   def decodeExpression(partId: Int): Expression2 = {
     val part = parts(partId)
@@ -55,14 +54,17 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
 object SemanticParserState {
   def start(t: Type): SemanticParserState = {
     val scope = Scope(List.empty)    
-    SemanticParserState(Map.empty, List((0, t, scope)), 1, scope) 
+    SemanticParserState(Map.empty, List((0, t, scope)), 1) 
   }
 }
 
 sealed trait Template {
   val root: Type
+  val holeIndexes: Array[Int]
   
   def apply(state: SemanticParserState): SemanticParserState
+  
+  def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean
 }
 
 case class ApplicationTemplate(val root: Type, val elts: List[Type]) extends Template {
@@ -74,50 +76,80 @@ case class ApplicationTemplate(val root: Type, val elts: List[Type]) extends Tem
   }
 
   val expr = Expression2.nested(varNames.toList.asJava)
-  val holes = holesBuffer.toArray
+  val holeIndexes = holesBuffer.toArray
   val holeTypes = elts.toArray
   
-  def apply(state: SemanticParserState): SemanticParserState = {
+  override def apply(state: SemanticParserState): SemanticParserState = {
     val holeIds = ListBuffer.empty[Int]
-    for (i <- state.nextId until (state.nextId + holes.length)) {
+    for (i <- state.nextId until (state.nextId + holeIndexes.length)) {
       holeIds += i
     }
 
-    val filled = state.unfilledHoleIds.last
+    val filled = state.unfilledHoleIds.head
+    val holeScope = filled._3
 
-    val part = (filled._1, ExpressionPart(expr, holes.toArray, holeIds.toArray))
+    val part = (filled._1, ExpressionPart(expr, holeIndexes.toArray, holeIds.toArray))
 
-    val nextHoles = holeIds.zip(holeTypes).map(x => (x._1, x._2, state.currentScope))
-    val next = state.unfilledHoleIds.dropRight(1) ++ nextHoles
+    val nextHoles = holeIds.zip(holeTypes).map(x => (x._1, x._2, holeScope))
+    val next = state.unfilledHoleIds.drop(1) ++ nextHoles  
 
-    SemanticParserState(state.parts + part, next, state.nextId + holes.length, state.currentScope)
+    SemanticParserState(state.parts + part, next, state.nextId + holeIndexes.length)
+  }
+
+  override def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean = {
+    val subexp = exp.getSubexpression(expIndex)
+    if (!subexp.isConstant) {
+      val childIndexes = exp.getChildIndexes(expIndex).toList
+      childIndexes.map(typeMap(_)).equals(elts)
+    } else {
+      false
+    }
   }
 }
 
 case class ConstantTemplate(val root: Type, val expr: Expression2) extends Template {
-  def apply(state: SemanticParserState): SemanticParserState = {
-    val filled = state.unfilledHoleIds.last
+  val holeIndexes = Array[Int]()
+  
+  override def apply(state: SemanticParserState): SemanticParserState = {
+    val filled = state.unfilledHoleIds.head
     val part = (filled._1, ExpressionPart(expr, Array.empty[Int], Array.empty[Int]))
-    val next = state.unfilledHoleIds.dropRight(1)
-    SemanticParserState(state.parts + part, next, state.nextId + 1, state.currentScope)
+    val next = state.unfilledHoleIds.drop(1)
+    SemanticParserState(state.parts + part, next, state.nextId + 1)
+  }
+  
+  override def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean = {
+    exp.getSubexpression(expIndex).equals(expr)
   }
 }
 
 case class LambdaTemplate(val root: Type, val args: List[Type], val body: Type) extends Template {
+  val holeIndexes = Array[Int](3 + args.length)
   
-  def apply(state: SemanticParserState): SemanticParserState = {
-    val (nextScope, varNames) = state.currentScope.extend(args)
+  override def apply(state: SemanticParserState): SemanticParserState = {
+    val filled = state.unfilledHoleIds.head
+    val currentScope = filled._3
+    val (nextScope, varNames) = currentScope.extend(args)
     
     val expr = Expression2.lambda(varNames.asJava, Expression2.constant("TEMP"))
     
     val hole = StaticAnalysis.getLambdaBodyIndex(expr, 0)
     val holeId = state.nextId
-    
-    val filled = state.unfilledHoleIds.last
+
     val part = (filled._1, ExpressionPart(expr, Array(hole), Array(holeId)))
     
-    val next = state.unfilledHoleIds.dropRight(1) ++ Array((holeId, body, nextScope))
-    SemanticParserState(state.parts + part, next, state.nextId + 1, nextScope)
+    val next = state.unfilledHoleIds.drop(1) ++ Array((holeId, body, nextScope))
+    SemanticParserState(state.parts + part, next, state.nextId + 1)
+  }
+  
+  override def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean = {
+    if (StaticAnalysis.isLambda(exp, expIndex)) {
+      val subexpArgIndexes = StaticAnalysis.getLambdaArgumentIndexes(exp, expIndex).toList
+      val subexpBodyIndex = StaticAnalysis.getLambdaBodyIndex(exp, expIndex)
+
+      subexpArgIndexes.map(typeMap(_)).equals(args) && typeMap(subexpBodyIndex).equals(body)
+    } else {
+      false
+    }
   }
 }
 
@@ -146,6 +178,10 @@ case class Scope(val vars: List[(Expression2, Type)]) {
 
   def getVariableExpressions(t: Type): List[Expression2] = {
     vars.filter(_._2.equals(t)).map(_._1)
+  }
+  
+  def getVariableTemplates(t: Type): List[Template] = {
+    getVariableExpressions(t).map(x => ConstantTemplate(t, x))
   }
   
   def extend(types: List[Type]): (Scope, List[String]) = {
@@ -181,18 +217,59 @@ class SemanticParser(lexicon: Lexicon) {
     if (state.unfilledHoleIds.length == 0) {
       Pp.value(state.decodeExpression)
     } else {
-      val (holeId, t, scope) = state.unfilledHoleIds.last
-      val applicableTemplates = lexicon.getTemplates(t)
+      val (holeId, t, scope) = state.unfilledHoleIds.head
+      val applicableTemplates = lexicon.getTemplates(t) ++ scope.getVariableTemplates(t)
+
       // TODO: variables from lambda expressions
       for {
         template <- choose(applicableTemplates)
-        _ <- score(0.9)
         nextState = template.apply(state)
         expr <- generateExpression(nextState)
       } yield {
         expr
       }
     }
+  }
+  
+  def generateActionSequence(exp: Expression2, typeDeclaration: TypeDeclaration): List[Template] = {
+    val indexQueue = ListBuffer[(Int, Scope)]()
+    indexQueue += ((0, Scope(List.empty))) 
+    val actions = ListBuffer[Template]()
+
+    val typeMap = StaticAnalysis.inferTypeMap(exp, TypeDeclaration.TOP, typeDeclaration).asScala.toMap
+    var state = SemanticParserState.start(typeMap(0))
+    
+    while (indexQueue.size > 0) {
+      val (expIndex, currentScope) = indexQueue.head
+      indexQueue.remove(0)
+
+      val curType = typeMap(expIndex)
+      val templates = lexicon.typeTemplateMap(curType) ++ currentScope.getVariableTemplates(curType)
+
+      val matches = templates.filter(_.matches(expIndex, exp, typeMap))
+      Preconditions.checkState(matches.size == 1, "Found %s matches for expression %s (expected 1)",
+          matches.size.asInstanceOf[AnyRef], exp.getSubexpression(expIndex))
+      val theMatch = matches.toList(0)
+      state = theMatch.apply(state)
+      val nextScopes = state.unfilledHoleIds.takeRight(theMatch.holeIndexes.size).map(x => x._3)
+      
+      actions += theMatch
+      var holeOffset = 0
+      for ((holeIndex, nextScope) <- theMatch.holeIndexes.zip(nextScopes)) {
+        val curIndex = expIndex + holeIndex + holeOffset
+        indexQueue += ((curIndex, nextScope))
+        holeOffset += (exp.getSubexpression(curIndex).size - 1)
+        // println("   Queued: " + curIndex + " " +  exp.getSubexpression(curIndex))
+      }
+
+      // println(theMatch)
+      // println(indexQueue)
+    }
+    
+    val decoded = state.decodeExpression
+    Preconditions.checkState(decoded.equals(exp), "Expected %s and %s to be equal", decoded, exp)
+    
+    actions.toList
   }
 }
 

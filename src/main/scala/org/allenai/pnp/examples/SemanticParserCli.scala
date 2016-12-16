@@ -33,14 +33,17 @@ class SemanticParserCli extends AbstractCli(
     }
 
     val typeDeclaration = GeoqueryUtil.getTypeDeclaration()
-    val lexicon = SemanticParser.generateLexicon(trainingData.map(_.getLogicalForm), typeDeclaration)
+    val simplifier = GeoqueryUtil.getExpressionSimplifier
+    
+    val lfs = trainingData.map(x => simplifier.apply(x.getLogicalForm))
+    val lexicon = SemanticParser.generateLexicon(lfs, typeDeclaration)
     
     println(lexicon.rootTypes)
     println(lexicon.typeTemplateMap)
     
     val parser = new SemanticParser(lexicon)
     
-    validateLexicon(trainingData.map(_.getLogicalForm), parser, typeDeclaration)
+    validateLexicon(lfs, parser, typeDeclaration)
 
     // TODO: 
     // 2. Parameterization
@@ -49,14 +52,23 @@ class SemanticParserCli extends AbstractCli(
   
   def validateLexicon(exprs: Seq[Expression2], parser: SemanticParser,
       typeDeclaration: TypeDeclaration): Unit = {
+    println("")
     for (e <- exprs) {
-      // val dist = parser.generateLabeledExpression(ExpressionLabel.fromExpression(e, typeDeclaration))
-      val dist = parser.generateExpression()
+      println(e)
+
+      val actions = parser.generateActionSequence(e, typeDeclaration)
+      for (action <- actions) {
+        println("  " + action)
+      }
+
+      /*
+      // val dist = parser.generateExpression()
       val results = dist.beamSearch(100)
       
       if (results.size != 1) {
         println("ERROR: " + e + " " + results)
       }
+      */
     }
   }
 }
