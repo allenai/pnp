@@ -9,7 +9,7 @@ import com.jayantkrish.jklol.tensor.Tensor
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 
-/** Neural probabilistic program monad. Pp[X] represents a
+/** Probabilistic neural program monad. Pp[X] represents a
   * function from neural network parameters to a probabilistic
   * computation that nondeterministically executes to values
   * of type X. Each execution has an associated score proportional
@@ -22,7 +22,7 @@ import com.jayantkrish.jklol.training.NullLogFunction
   * the nondeterministic choices made within the program may
   * influence the structure of the computation graph.
   *
-  * Neural probabilistic programs are constructed and manipulated
+  * Probabilistic neural programs are constructed and manipulated
   * using for/yield comprehensions and the functions in the
   * Pp object.
   */
