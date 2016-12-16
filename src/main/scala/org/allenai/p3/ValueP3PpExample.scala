@@ -5,9 +5,10 @@ import org.allenai.pnp.Env
 import com.jayantkrish.jklol.ccg.chart.ChartCost
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
+import org.allenai.pnp.ExecutionScore
 
 class ValueP3PpExample(sentence: AnnotatedSentence, env: Env,
-  chartCost: ChartCost, executionCost: Env => Double, val label: AnyRef)
+  chartCost: ChartCost, executionCost: ExecutionScore, val label: AnyRef)
     extends P3PpExample(sentence, env, chartCost, executionCost) {
 
   override def lfFilter(expression: Expression2): Boolean = {

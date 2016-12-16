@@ -1,11 +1,15 @@
 package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
+
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
+
 import com.jayantkrish.jklol.ccg.lambda.ExplicitTypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
-import org.allenai.pnp.examples.SemanticParser
+import com.jayantkrish.jklol.training.NullLogFunction
+import org.allenai.pnp.Env
+import org.allenai.pnp.CompGraph
 
 class SemanticParserSpec extends FlatSpec with Matchers {
  
@@ -22,7 +26,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
 
   val data = dataStrings.map(x => (x._1.split(" "), exprParser.parse(x._2)))
 
-  val lexicon = SemanticParser.generateLexicon(data.map(_._2), typeDeclaration)
+  val lexicon = SemanticParser.generateActionSpace(data.map(_._2), typeDeclaration)
   val parser = new SemanticParser(lexicon)
 
   "SemanticParser" should "generate application templates" in {
@@ -46,17 +50,17 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val templates = parser.generateActionSequence(e, typeDeclaration)
   }
   
-  /*
   it should "condition on expressions" in {
     val label = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
-    val exprs = parser.generateLabeledExpression(ExpressionLabel.fromExpression(label, typeDeclaration))
-    val results = exprs.beamSearch(100)
+    val oracle = parser.generateExecutionOracle(label, typeDeclaration)
+    val exprs = parser.generateExpression()
+
+    val results = exprs.beamSearch(100, Env.init, oracle, CompGraph.empty, new NullLogFunction()).executions
     for (result <- results) {
       println("  " + result)
     }
     
     results.length should be(1)
-    results(0)._1 should equal(label)
+    results(0).value should equal(label)
   }
-  */
 }

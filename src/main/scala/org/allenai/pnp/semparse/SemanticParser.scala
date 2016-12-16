@@ -8,13 +8,15 @@ import scala.collection.mutable.MultiMap
 import scala.collection.mutable.{ Set => MutableSet }
 
 import org.allenai.pnp.Pp
-import org.allenai.pnp.Pp.choose
+import org.allenai.pnp.Pp._
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
+import org.allenai.pnp.ExecutionScore
+import org.allenai.pnp.Env
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
@@ -23,7 +25,7 @@ class SemanticParser(actionSpace: ActionSpace) {
 
   def generateExpression(): Pp[Expression2] = {
     for {
-      rootType <- choose(actionSpace.rootTypes)
+      rootType <- chooseTag(actionSpace.rootTypes, -1)
       e <- generateExpression(SemanticParserState.start(rootType)) 
     } yield {
       e
@@ -42,7 +44,7 @@ class SemanticParser(actionSpace: ActionSpace) {
       val applicableTemplates = actionSpace.getTemplates(t) ++ scope.getVariableTemplates(t)
 
       for {
-        template <- choose(applicableTemplates)
+        template <- chooseTag(applicableTemplates, state.numActions)
         nextState = template.apply(state)
         expr <- generateExpression(nextState)
       } yield {
@@ -90,6 +92,12 @@ class SemanticParser(actionSpace: ActionSpace) {
     
     actions.toList
   }
+  
+  def generateExecutionOracle(exp: Expression2, typeDeclaration: TypeDeclaration): ExecutionScore = {
+    val rootType = StaticAnalysis.inferType(exp, typeDeclaration)
+    val templates = generateActionSequence(exp, typeDeclaration)
+    new SemanticParserExecutionScore(rootType, templates.toArray)
+  }
 }
 
 /** A collection of templates and root types for 
@@ -102,6 +110,34 @@ class ActionSpace(
 
   def getTemplates(t: Type): Vector[Template] = {
     typeTemplateMap.getOrElse(t, Set.empty).toVector
+  }
+}
+
+class SemanticParserExecutionScore(val rootType: Type, val templates: Array[Template])
+extends ExecutionScore {
+  def apply(tag: Any, choice: Any, env: Env): Double = {
+    if (tag != null && tag.isInstanceOf[Int]) {
+      val tagInt = tag.asInstanceOf[Int]
+      if (tagInt == -1) {
+        Preconditions.checkArgument(choice.isInstanceOf[Type])
+        if (choice.asInstanceOf[Type].equals(rootType)) {
+          0.0
+        } else {
+          Double.NegativeInfinity
+        }
+      } else if (tagInt < templates.size) {
+        Preconditions.checkArgument(choice.isInstanceOf[Template])
+        if (choice.asInstanceOf[Template].equals(templates(tagInt))) {
+          0.0
+        } else {
+          Double.NegativeInfinity
+        }
+      } else {
+        Double.NegativeInfinity
+      }
+    } else {
+      0.0
+    }
   }
 }
 

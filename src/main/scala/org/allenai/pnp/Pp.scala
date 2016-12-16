@@ -47,7 +47,7 @@ sealed trait Pp[A] {
   def lastSearchStep(env: Env, logProb: Double, queue: PpSearchQueue[A],
       finished: PpSearchQueue[A]): Unit = {
     val v = step(env, logProb, queue.graph, queue.log)
-    finished.offer(ValuePp(v._1), v._2, v._3, v._2)
+    finished.offer(ValuePp(v._1), v._2, v._3, null, null, v._2)
   }
 
   def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double)
@@ -62,11 +62,11 @@ sealed trait Pp[A] {
     * These must contain values for any global variables or neural network
     * parameters referenced in the program.
     */
-  def beamSearch(beamSize: Int, env: Env, stateCostArg: Env => Double,
+  def beamSearch(beamSize: Int, env: Env, stateCostArg: ExecutionScore,
     graph: CompGraph, log: LogFunction): PpBeamMarginals[A] = {
 
     val stateCost = if (stateCostArg == null) {
-      (e: Env) => 0.0
+      ExecutionScore.zero
     } else {
       stateCostArg
     }
@@ -75,7 +75,7 @@ sealed trait Pp[A] {
     val finished = new BeamPpSearchQueue[A](beamSize, stateCost, graph, log)
 
     val startEnv = env.setLog(log)
-    queue.offer(this, env, 0.0, env)
+    queue.offer(this, env, 0.0, null, null, env)
 
     val beam = new Array[SearchState[A]](beamSize)
     val beamScores = new Array[Double](beamSize)
@@ -111,14 +111,8 @@ sealed trait Pp[A] {
 
   def beamSearchWithFilter(beamSize: Int, env: Env, keepState: Env => Boolean,
     graph: CompGraph, log: LogFunction): PpBeamMarginals[A] = {
-    def cost(e: Env): Double = {
-      if (keepState(e)) {
-        0.0
-      } else {
-        Double.NegativeInfinity
-      }
-    }
-    beamSearch(beamSize, env, cost _, graph, log)
+    val cost = ExecutionScore.fromFilter(keepState)
+    beamSearch(beamSize, env, cost, graph, log)
   }
 
   // Version of beam search for programs that don't have trainable
@@ -132,7 +126,7 @@ sealed trait Pp[A] {
   }
 
   def beamSearch(k: Int, env: Env, cg: CompGraph): PpBeamMarginals[A] = {
-    beamSearch(k, env, (x: Env) => 0.0, cg, new NullLogFunction())
+    beamSearch(k, env, ExecutionScore.zero, cg, new NullLogFunction())
   }
 
   def beamSearchWithFilter(
@@ -172,16 +166,17 @@ case class BindPp[A, C](b: Pp[C], f: PpContinuation[C, A]) extends Pp[A] {
   * choice of an element of dist. The elements of dist are
   * scores, i.e., log probabilities.
   */
-case class CategoricalPp[A](dist: Seq[(A, Double)]) extends Pp[A] {
+case class CategoricalPp[A](dist: Seq[(A, Double)], tag: Any) extends Pp[A] {
   
   override def searchStep[C](env: Env, logProb: Double, continuation: PpContinuation[A,C],
     queue: PpSearchQueue[C], finished: PpSearchQueue[C]): Unit = {
-    dist.foreach(x => queue.offer(BindPp(ValuePp(x._1), continuation), env, logProb + x._2, env))
+    dist.foreach(x => queue.offer(BindPp(ValuePp(x._1), continuation), env, logProb + x._2,
+        tag, x._1, env))
   }
 
   override def lastSearchStep(env: Env, logProb: Double, queue: PpSearchQueue[A],
       finished: PpSearchQueue[A]): Unit = {
-    dist.foreach(x => finished.offer(ValuePp(x._1), env, logProb + x._2, env))
+    dist.foreach(x => finished.offer(ValuePp(x._1), env, logProb + x._2, tag, x._1, env))
   }
 
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
@@ -273,7 +268,7 @@ case class ConstantTensorPp(tensor: Tensor) extends Pp[CompGraphNode] {
 }
 
 case class ParameterizedCategoricalPp[A](items: Array[A], parameter: CompGraphNode,
-    keyPrefix: Array[Int]) extends Pp[A] {
+    keyPrefix: Array[Int], tag: Any) extends Pp[A] {
 
   def getTensor(): (Tensor, Long, Int) = {
     val paramTensor = parameter.value
@@ -310,7 +305,8 @@ case class ParameterizedCategoricalPp[A](items: Array[A], parameter: CompGraphNo
     for (i <- 0 until numTensorValues) {
       val keyNum = startKeyNum + i
       val nextEnv = env.addLabel(parameter, makeLabelIndicator(keyNum, paramTensor))
-      queue.offer(BindPp(ValuePp(items(i)), continuation), nextEnv, logProb + paramTensor.get(keyNum), env)
+      queue.offer(BindPp(ValuePp(items(i)), continuation), nextEnv, logProb + paramTensor.get(keyNum),
+          tag, items(i), env)
     }
   }
   
@@ -321,7 +317,7 @@ case class ParameterizedCategoricalPp[A](items: Array[A], parameter: CompGraphNo
     for (i <- 0 until numTensorValues) {
       val keyNum = startKeyNum + i
       val nextEnv = env.addLabel(parameter, makeLabelIndicator(keyNum, paramTensor))
-      finished.offer(ValuePp(items(i)), nextEnv, logProb + paramTensor.get(keyNum), env)
+      finished.offer(ValuePp(items(i)), nextEnv, logProb + paramTensor.get(keyNum), tag, items(i), env)
     }
   }
   
@@ -330,7 +326,9 @@ case class ParameterizedCategoricalPp[A](items: Array[A], parameter: CompGraphNo
   }
 }
 
-case class ParameterizedArrayCategoricalPp[A](items: Array[A], parameters: Array[CompGraphNode]) extends Pp[A] {
+case class ParameterizedArrayCategoricalPp[A](
+    items: Array[A], parameters: Array[CompGraphNode], tag: Any
+) extends Pp[A] {
   Preconditions.checkArgument(
     items.length == parameters.length,
     "Expected arrays to be equal length: items (%s) and parameters (%s)",
@@ -346,7 +344,8 @@ case class ParameterizedArrayCategoricalPp[A](items: Array[A], parameters: Array
 
     for (i <- 0 until items.length) {
       val nextEnv = env.addLabel(parameters(i), DenseTensor.scalar(1.0))
-      queue.offer(BindPp(ValuePp(items(i)), continuation), nextEnv, logProb + paramValues(i), env)
+      queue.offer(BindPp(ValuePp(items(i)), continuation), nextEnv, logProb + paramValues(i),
+          tag, items(i), env)
     }
   }
   
@@ -359,7 +358,7 @@ case class ParameterizedArrayCategoricalPp[A](items: Array[A], parameters: Array
 
     for (i <- 0 until items.length) {
       val nextEnv = env.addLabel(parameters(i), DenseTensor.scalar(1.0))
-      finished.offer(ValuePp(items(i)), nextEnv, logProb + paramValues(i), env)
+      finished.offer(ValuePp(items(i)), nextEnv, logProb + paramValues(i), tag, items(i), env)
     }
   }
   
@@ -371,12 +370,12 @@ case class ParameterizedArrayCategoricalPp[A](items: Array[A], parameters: Array
 case class StartTimerPp(timerName: String) extends Pp[Unit] {
   override def searchStep[B](env: Env, logProb: Double,
       continuation: PpContinuation[Unit, B], queue: PpSearchQueue[B], finished: PpSearchQueue[B]) = {
-    queue.offer(BindPp(ValuePp(()), continuation), env.startTimer(timerName), logProb, env)
+    queue.offer(BindPp(ValuePp(()), continuation), env.startTimer(timerName), logProb, null, null, env)
   }
   
   override def lastSearchStep(env: Env, logProb: Double,
       queue: PpSearchQueue[Unit], finished: PpSearchQueue[Unit]) = {
-    queue.offer(ValuePp(()), env.startTimer(timerName), logProb, env)
+    queue.offer(ValuePp(()), env.startTimer(timerName), logProb, null, null, env)
   }
   
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
@@ -388,12 +387,12 @@ case class StopTimerPp(timerName: String) extends Pp[Unit] {
 
   override def searchStep[B](env: Env, logProb: Double,
       continuation: PpContinuation[Unit, B], queue: PpSearchQueue[B], finished: PpSearchQueue[B]) = {
-    queue.offer(BindPp(ValuePp(()), continuation), env.stopTimer(timerName), logProb, env)
+    queue.offer(BindPp(ValuePp(()), continuation), env.stopTimer(timerName), logProb, null, null, env)
   }
   
   override def lastSearchStep(env: Env, logProb: Double,
       queue: PpSearchQueue[Unit], finished: PpSearchQueue[Unit]) = {
-    queue.offer(ValuePp(()), env.stopTimer(timerName), logProb, env)
+    queue.offer(ValuePp(()), env.stopTimer(timerName), logProb, null, null, env)
   }
   
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
@@ -438,20 +437,24 @@ object Pp {
     * {@code dist} with the given probability.
     */
   def chooseMap[A](dist: Seq[(A, Double)]): Pp[A] = {
-    CategoricalPp(dist.map(x => (x._1, Math.log(x._2))))
+    CategoricalPp(dist.map(x => (x._1, Math.log(x._2))), null)
   }
 
   def choose[A](items: Seq[A], weights: Seq[Double]): Pp[A] = {
-    CategoricalPp(items.zip(weights).map(x => (x._1, Math.log(x._2))))
+    CategoricalPp(items.zip(weights).map(x => (x._1, Math.log(x._2))), null)
   }
   
   def choose[A](items: Seq[A]): Pp[A] = {
-    CategoricalPp(items.map(x => (x, 0.0)))
+    CategoricalPp(items.map(x => (x, 0.0)), null)
+  }
+  
+  def chooseTag[A](items: Seq[A], tag: Any): Pp[A] = {
+    CategoricalPp(items.map(x => (x, 0.0)), tag)
   }
 
   /** The failure program that has no executions.
     */
-  def fail[A]: Pp[A] = { CategoricalPp(Seq.empty[(A, Double)]) }
+  def fail[A]: Pp[A] = { CategoricalPp(Seq.empty[(A, Double)], null) }
 
   def require(value: Boolean): Pp[Unit] = {
     if (value) {
@@ -528,26 +531,39 @@ object Pp {
   /** Chooses an item. The ith item's score is the
     * ith index in parameter.
     */
+  def choose[A](items: Array[A], parameter: CompGraphNode, tag: Any): Pp[A] = {
+    ParameterizedCategoricalPp(items, parameter, Array.emptyIntArray, tag)
+  }
+  
   def choose[A](items: Array[A], parameter: CompGraphNode): Pp[A] = {
-    ParameterizedCategoricalPp(items, parameter, Array.emptyIntArray)
+    choose(items, parameter, null)
   }
 
   /** Chooses an item. The ith item's score is the ith
     * element of parameters, each of which is a scalar.
     */
+  def choose[A](items: Array[A], parameters: Array[CompGraphNode], tag: Any): Pp[A] = {
+    ParameterizedArrayCategoricalPp(items, parameters, tag)
+  }
+  
   def choose[A](items: Array[A], parameters: Array[CompGraphNode]): Pp[A] = {
-    ParameterizedArrayCategoricalPp(items, parameters)
+    choose(items, parameters, null)
+  }
+
+  def chooseSlice[A](items: Array[A], parameter: CompGraphNode,
+    keyPrefix: Array[Int], tag: Any): Pp[A] = {
+    ParameterizedCategoricalPp(items, parameter, keyPrefix, tag)
   }
 
   def chooseSlice[A](items: Array[A], parameter: CompGraphNode,
     keyPrefix: Array[Int]): Pp[A] = {
-    ParameterizedCategoricalPp(items, parameter, keyPrefix)
+      chooseSlice(items, parameter, keyPrefix)
   }
 
   /** Add a scalar value to the score of this execution.
     */
   def score(parameter: CompGraphNode): Pp[Unit] = {
-    ParameterizedCategoricalPp(Array(()), parameter, Array.emptyIntArray)
+    ParameterizedCategoricalPp(Array(()), parameter, Array.emptyIntArray, null)
   }
   
   def score(score: Double): Pp[Unit] = {

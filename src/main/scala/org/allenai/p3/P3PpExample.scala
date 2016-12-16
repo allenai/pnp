@@ -5,6 +5,7 @@ import org.allenai.pnp.Env
 import com.jayantkrish.jklol.ccg.chart.ChartCost
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
+import org.allenai.pnp.ExecutionScore
 
 /** A training example for P3. An example has two model
   * inputs: a sentence and an environment in which its logical
@@ -18,7 +19,7 @@ import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
   * but makes training easier.
   */
 abstract class P3PpExample(val sentence: AnnotatedSentence, val env: Env,
-    val chartCost: ChartCost, val executionCost: Env => Double) {
+    val chartCost: ChartCost, val executionCost: ExecutionScore) {
 
   def lfFilter(expression: Expression2): Boolean
 

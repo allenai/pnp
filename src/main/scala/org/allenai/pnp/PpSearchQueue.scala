@@ -5,13 +5,13 @@ import com.jayantkrish.jklol.training.LogFunction
 
 sealed trait PpSearchQueue[A] {
   val graph: CompGraph
-  val stateCost: Env => Double
+  val stateCost: ExecutionScore
   val log: LogFunction
 
-  def offer(value: Pp[A], env: Env, logProb: Double, myEnv: Env): Unit
+  def offer(value: Pp[A], env: Env, logProb: Double, tag: Any, choice: Any, myEnv: Env): Unit
 }
 
-class BeamPpSearchQueue[A](size: Int, val stateCost: Env => Double,
+class BeamPpSearchQueue[A](size: Int, val stateCost: ExecutionScore,
     val graph: CompGraph, val log: LogFunction) extends PpSearchQueue[A] {
 
   /*
@@ -25,8 +25,9 @@ class BeamPpSearchQueue[A](size: Int, val stateCost: Env => Double,
   
   val queue = new KbestQueue(size, Array.empty[SearchState[A]])
 
-  override def offer(value: Pp[A], env: Env, logProb: Double, myEnv: Env): Unit = {
-    val stateLogProb = stateCost(env) + logProb
+  override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
+      choice: Any, myEnv: Env): Unit = {
+    val stateLogProb = stateCost(tag, choice, env) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
       /*
       val next = pool.alloc()
@@ -40,19 +41,20 @@ class BeamPpSearchQueue[A](size: Int, val stateCost: Env => Double,
         pool.dealloc(dequeued)
       }
       */
-      queue.offer(SearchState(value, env, stateLogProb), logProb)
+      queue.offer(SearchState(value, env, stateLogProb, tag, choice), logProb)
     }
   }
 }
 
 class EnumeratePpSearchQueue[A] (
-    val stateCost: Env => Double,
+    val stateCost: ExecutionScore,
     val graph: CompGraph, val log: LogFunction,
     val finished: PpSearchQueue[A]
 ) extends PpSearchQueue[A] {
-  override def offer(value: Pp[A], env: Env, logProb: Double, myEnv: Env): Unit = {
+  override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
+      choice: Any, myEnv: Env): Unit = {
     myEnv.pauseTimers()
-    val stateLogProb = stateCost(env) + logProb
+    val stateLogProb = stateCost(tag, choice, env) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
       env.resumeTimers()
       value.lastSearchStep(env, logProb, this, finished)
@@ -71,10 +73,11 @@ class ContinuationPpSearchQueue[A, B] (
   val stateCost = queue.stateCost
   val log = queue.log
   
-  override def offer(value: Pp[A], env: Env, logProb: Double, myEnv: Env): Unit = {
-    queue.offer(BindPp(value, cont), env, logProb, myEnv)
+  override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
+      choice: Any, myEnv: Env): Unit = {
+    queue.offer(BindPp(value, cont), env, logProb, tag, choice, myEnv)
   }
 }
 
-case class SearchState[A](val value: Pp[A], val env: Env, val logProb: Double) {
+case class SearchState[A](value: Pp[A], env: Env, logProb: Double, tag: Any, choice: Any) {
 }

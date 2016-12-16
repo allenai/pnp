@@ -14,11 +14,12 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
   * expression have yet to be generated.
   */
 case class SemanticParserState(val parts: Map[Int, ExpressionPart],
-    val unfilledHoleIds: List[(Int, Type, Scope)], val nextId: Int) {
-  
+    val unfilledHoleIds: List[(Int, Type, Scope)], val nextId: Int,
+    val numActions: Int) {
+
   def decodeExpression(partId: Int): Expression2 = {
     val part = parts(partId)
-    
+
     var expr = part.expr
     for (i <- 1 to part.holes.length) {
       val ind = part.holes.length - i
@@ -42,7 +43,7 @@ object SemanticParserState {
     */
   def start(t: Type): SemanticParserState = {
     val scope = Scope(List.empty)    
-    SemanticParserState(Map.empty, List((0, t, scope)), 1) 
+    SemanticParserState(Map.empty, List((0, t, scope)), 1, 0) 
   }
 }
 

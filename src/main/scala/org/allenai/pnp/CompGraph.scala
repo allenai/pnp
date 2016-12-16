@@ -62,6 +62,10 @@ class CompGraph(val paramNames: IndexedList[String], params: Array[Tensor]) {
   }
 }
 
+object CompGraph {
+  val empty = new CompGraph(IndexedList.create[String], Array())
+}
+
 /** Data structure for performing backpropagation on a
   * computation graph. This class is initialized by
   * calling incrementGradient to add inbound gradients to

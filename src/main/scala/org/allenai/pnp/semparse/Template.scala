@@ -59,7 +59,7 @@ case class ApplicationTemplate(val root: Type, val elts: List[Type]) extends Tem
     val nextHoles = holeIds.zip(holeTypes).map(x => (x._1, x._2, holeScope))
     val next = state.unfilledHoleIds.drop(1) ++ nextHoles  
 
-    SemanticParserState(state.parts + part, next, state.nextId + holeIndexes.length)
+    SemanticParserState(state.parts + part, next, state.nextId + holeIndexes.length, state.numActions + 1)
   }
 
   override def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean = {
@@ -84,7 +84,7 @@ case class ConstantTemplate(val root: Type, val expr: Expression2) extends Templ
     val filled = state.unfilledHoleIds.head
     val part = (filled._1, ExpressionPart(expr, Array.empty[Int], Array.empty[Int]))
     val next = state.unfilledHoleIds.drop(1)
-    SemanticParserState(state.parts + part, next, state.nextId + 1)
+    SemanticParserState(state.parts + part, next, state.nextId + 1, state.numActions + 1)
   }
   
   override def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean = {
@@ -110,7 +110,7 @@ case class LambdaTemplate(val root: Type, val args: List[Type], val body: Type) 
     val part = (filled._1, ExpressionPart(expr, Array(hole), Array(holeId)))
     
     val next = state.unfilledHoleIds.drop(1) ++ Array((holeId, body, nextScope))
-    SemanticParserState(state.parts + part, next, state.nextId + 1)
+    SemanticParserState(state.parts + part, next, state.nextId + 1, state.numActions + 1)
   }
   
   override def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean = {

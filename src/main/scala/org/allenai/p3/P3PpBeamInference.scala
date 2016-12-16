@@ -17,6 +17,7 @@ import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
+import org.allenai.pnp.ExecutionScore
 
 /** Beam search inference algorithm for P3. This algorithm
   * performs a beam search over CCG parses using ccgInference,
@@ -30,16 +31,16 @@ class P3PpBeamInference(
 
   def beamSearch(model: P3PpModel, sentence: AnnotatedSentence,
     env: Env): P3PpBeamMarginals[AnyRef] = {
-    beamSearch(model, sentence, env, null, (x: Env) => 0.0, new NullLogFunction())
+    beamSearch(model, sentence, env, null, ExecutionScore.zero, new NullLogFunction())
   }
 
   def beamSearch(model: P3PpModel, sentence: AnnotatedSentence,
     env: Env, log: LogFunction): P3PpBeamMarginals[AnyRef] = {
-    beamSearch(model, sentence, env, null, (x: Env) => 0.0, log)
+    beamSearch(model, sentence, env, null, ExecutionScore.zero, log)
   }
 
   def beamSearch(model: P3PpModel, sentence: AnnotatedSentence, env: Env, chartCost: ChartCost,
-    ppCost: Env => Double, log: LogFunction): P3PpBeamMarginals[AnyRef] = {
+    ppCost: ExecutionScore, log: LogFunction): P3PpBeamMarginals[AnyRef] = {
     log.startTimer("p3_beam/ccg_parse")
     val ccgParses = ccgInference.beamSearch(model.parser, sentence, chartCost, log).asScala
     log.stopTimer("p3_beam/ccg_parse")
