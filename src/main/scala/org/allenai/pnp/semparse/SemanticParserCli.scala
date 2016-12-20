@@ -14,6 +14,9 @@ import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import com.jayantkrish.jklol.training.NullLogFunction
+import org.allenai.pnp.Env
+import org.allenai.pnp.CompGraph
 
 class SemanticParserCli extends AbstractCli(
   CommonOptions.MAP_REDUCE, CommonOptions.STOCHASTIC_GRADIENT, CommonOptions.LBFGS
@@ -55,13 +58,17 @@ class SemanticParserCli extends AbstractCli(
     for (e <- exprs) {
       println(e)
 
-      val actions = parser.generateActionSequence(e, typeDeclaration)
-      for (action <- actions) {
-        println("  " + action)
+      val oracle = parser.generateExecutionOracle(e, typeDeclaration)
+      val dist = parser.generateExpression()
+      val results = dist.beamSearch(1, Env.init, oracle, CompGraph.empty, new NullLogFunction())
+      if (results.executions.size != 1) {
+        println("ERROR: " + e + " " + results)
+      } else {
+        println("OK   : " + e + " " + results.executions(0))
       }
 
       /*
-      // val dist = parser.generateExpression()
+      // 
       val results = dist.beamSearch(100)
       
       if (results.size != 1) {

@@ -55,7 +55,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val oracle = parser.generateExecutionOracle(label, typeDeclaration)
     val exprs = parser.generateExpression()
 
-    val results = exprs.beamSearch(100, Env.init, oracle, CompGraph.empty, new NullLogFunction()).executions
+    val results = exprs.beamSearch(1, Env.init, oracle, CompGraph.empty, new NullLogFunction()).executions
     for (result <- results) {
       println("  " + result)
     }
