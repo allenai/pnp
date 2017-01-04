@@ -7,11 +7,11 @@ package org.allenai.pnp
   * of conditional executions during inference.
   */
 case class PpExample[A](unconditional: Pp[A], conditional: Pp[A],
-    env: Env, conditionalFilter: Env => Boolean) {
+    env: Env, conditionalExecutionScore: ExecutionScore) {
 }
 
 object PpExample {
   def fromDistributions[A](unconditional: Pp[A], conditional: Pp[A]) = {
-    PpExample[A](unconditional, conditional, Env.init, x => true)
+    PpExample[A](unconditional, conditional, Env.init, ExecutionScore.zero)
   }
 }
