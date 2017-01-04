@@ -17,10 +17,18 @@ import joptsimple.OptionSpec
 import com.jayantkrish.jklol.training.NullLogFunction
 import org.allenai.pnp.Env
 import org.allenai.pnp.CompGraph
+import com.jayantkrish.jklol.util.IndexedList
+import edu.cmu.dynet.ComputationGraph
+import edu.cmu.dynet.dynet_swig._
+import org.allenai.pnp.PpExample
+import org.allenai.pnp.LoglikelihoodTrainer
+import edu.cmu.dynet.SimpleSGDTrainer
+import org.allenai.pnp.PpModel
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
+import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 
-class SemanticParserCli extends AbstractCli(
-  CommonOptions.MAP_REDUCE, CommonOptions.STOCHASTIC_GRADIENT, CommonOptions.LBFGS
-) {
+class SemanticParserCli extends AbstractCli() {
   
   var trainingDataOpt: OptionSpec[String] = null
   
@@ -29,6 +37,8 @@ class SemanticParserCli extends AbstractCli(
   }
   
   override def run(options: OptionSet): Unit = {
+    myInitialize()
+    
     val trainingData = ListBuffer[CcgExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
       trainingData ++= TrainSemanticParser.readCcgExamples(filename).asScala
@@ -36,36 +46,53 @@ class SemanticParserCli extends AbstractCli(
 
     val typeDeclaration = GeoqueryUtil.getTypeDeclaration()
     val simplifier = GeoqueryUtil.getExpressionSimplifier
+    val comparator = new SimplificationComparator(simplifier)
     
-    val lfs = trainingData.map(x => simplifier.apply(x.getLogicalForm))
-    val actionSpace = SemanticParser.generateActionSpace(lfs, typeDeclaration)
+    val preprocessed = trainingData.map(x =>
+      new CcgExample(x.getSentence, x.getDependencies, x.getSyntacticParse, 
+          simplifier.apply(x.getLogicalForm))) 
+    
+    val actionSpace = SemanticParser.generateActionSpace(preprocessed.map(_.getLogicalForm), typeDeclaration)
+    val vocab = IndexedList.create[String]
+    for (x <- preprocessed) {
+      vocab.addAll(x.getSentence.getWords)
+    }
     
     println(actionSpace.rootTypes)
     println(actionSpace.typeTemplateMap)
     
-    val parser = new SemanticParser(actionSpace)
+    val parser = new SemanticParser(actionSpace, vocab)
     
-    validateActionSpace(lfs, parser, typeDeclaration)
-
+    // validateActionSpace(preprocessed, parser, typeDeclaration)
+    val trainedModel = train(preprocessed, parser, typeDeclaration)
+    // val trainedModel = parser.getModel
+    test(preprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
     // TODO: 
     // 2. Parameterization
     // 
   }
   
-  def validateActionSpace(exprs: Seq[Expression2], parser: SemanticParser,
+  def validateActionSpace(examples: Seq[CcgExample], parser: SemanticParser,
       typeDeclaration: TypeDeclaration): Unit = {
-    println("")
-    for (e <- exprs) {
-      println(e)
+    val model = parser.getModel
 
-      val oracle = parser.generateExecutionOracle(e, typeDeclaration)
-      val dist = parser.generateExpression()
-      val results = dist.beamSearch(1, Env.init, oracle, CompGraph.empty, new NullLogFunction())
+    println("")
+    for (e <- examples) {
+      println(e.getSentence.getWords)
+      println(e.getLogicalForm)
+
+      val oracle = parser.generateExecutionOracle(e.getLogicalForm, typeDeclaration)
+      val dist = parser.generateExpression(e.getSentence.getWords.asScala.toList)
+
+      val cg = new ComputationGraph
+      val results = dist.beamSearch(1, 50, Env.init, oracle,
+          model.getInitialComputationGraph(cg), new NullLogFunction())
       if (results.executions.size != 1) {
         println("ERROR: " + e + " " + results)
       } else {
         println("OK   : " + e + " " + results.executions(0))
       }
+      cg.delete
 
       /*
       // 
@@ -76,6 +103,65 @@ class SemanticParserCli extends AbstractCli(
       }
       */
     }
+  }
+  
+  def train(examples: Seq[CcgExample], parser: SemanticParser,
+      typeDeclaration: TypeDeclaration): PpModel = {
+    val ppExamples = examples map { x => 
+      val words = x.getSentence.getWords
+      val unconditional = parser.generateExpression(words.asScala.toList)
+      val oracle = parser.generateExecutionOracle(x.getLogicalForm, typeDeclaration)
+      PpExample(unconditional, unconditional, Env.init, oracle)
+    }
+    
+    // Train model
+    val model = parser.getModel
+    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    val trainer = new LoglikelihoodTrainer(100, 100, model, sgd, new NullLogFunction())
+    trainer.train(ppExamples.toList)
+
+    model
+  }
+  
+  def test(examples: Seq[CcgExample], parser: SemanticParser,
+      model: PpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
+      comparator: ExpressionComparator): Unit = {
+    println("")
+    var numCorrect = 0
+    for (e <- examples) {
+      println(e.getSentence.getWords)
+      println(e.getLogicalForm)
+
+      val dist = parser.generateExpression(e.getSentence.getWords.asScala.toList)
+
+      // TODO: null is wrong below
+      val cg = new ComputationGraph
+      val results = dist.beamSearch(100, 50, Env.init, null,
+          model.getInitialComputationGraph(cg), new NullLogFunction())
+          
+      val bestLf = simplifier.apply(results.executions(0).value)
+      if (comparator.equals(e.getLogicalForm, bestLf)) {
+        numCorrect += 1
+        println("C " + bestLf)
+      } else {
+        println("I " + bestLf)
+      }
+      
+      println()
+      cg.delete
+
+      /*
+      // 
+      val results = dist.beamSearch(100)
+      
+      if (results.size != 1) {
+        println("ERROR: " + e + " " + results)
+      }
+      */
+    }
+    
+    val accuracy = numCorrect.asInstanceOf[Double] / examples.length 
+    println(accuracy + " " + numCorrect + " / " + examples.length)
   }
 }
 

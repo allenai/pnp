@@ -7,6 +7,8 @@ import scala.collection.mutable.{ Map => MutableMap }
 import scala.collection.mutable.MultiMap
 import scala.collection.mutable.{ Set => MutableSet }
 
+import org.allenai.pnp.Env
+import org.allenai.pnp.ExecutionScore
 import org.allenai.pnp.Pp
 import org.allenai.pnp.Pp._
 
@@ -15,38 +17,118 @@ import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
-import org.allenai.pnp.ExecutionScore
-import org.allenai.pnp.Env
+import com.jayantkrish.jklol.util.IndexedList
+
+import edu.cmu.dynet._
+import edu.cmu.dynet.dynet_swig._
+import org.allenai.pnp.examples.DynetScalaHelpers._
+import org.allenai.pnp.PpModel
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
   */
-class SemanticParser(actionSpace: ActionSpace) {
+class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
+  
+  var inputBuilder: LSTMBuilder = null
+  var actionBuilder: LSTMBuilder = null
 
-  def generateExpression(): Pp[Expression2] = {
+  def encode(tokens: List[String]): Pp[InputEncoding] = {
+    val intEncoded = tokens.map(wordToIndex _)
+
     for {
-      rootType <- chooseTag(actionSpace.rootTypes, -1)
-      e <- generateExpression(SemanticParserState.start(rootType)) 
+      compGraph <- computationGraph() 
+      wordEmbeddings = compGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM) 
+    } yield {
+      rnnEncode(inputBuilder, wordEmbeddings, compGraph.cg, intEncoded)
+    }
+  }
+
+  def rnnEncode(
+      builder: RNNBuilder,
+      wordEmbeddings: LookupParameter,
+      cg: ComputationGraph,
+      inputs: List[Int]
+    ): InputEncoding = {
+    builder.new_graph(cg)
+    builder.start_new_sequence()
+    
+    val outputs = ListBuffer[Expression]()
+    for (input <- inputs) {
+      val inputEmbedding = lookup(cg, wordEmbeddings, input)
+      outputs += builder.add_input(inputEmbedding)
+    }
+
+    InputEncoding(builder.final_s, outputs.toList)
+  }
+  
+  def wordToIndex(token: String): Int = {
+    // TODO: unknown words
+    vocab.getIndex(token)
+  }
+  
+  def generateExpression(tokens: List[String]): Pp[Expression2] = {
+    for {
+      inputEncoding <- encode(tokens)
+      expr <- generateExpression(inputEncoding)
+    } yield {
+      expr
+    }
+  }
+
+  def generateExpression(input: InputEncoding): Pp[Expression2] = {
+    for {
+      rootWeights <- param(SemanticParser.ROOT_WEIGHTS_PARAM)
+      rootBias <- param(SemanticParser.ROOT_BIAS_PARAM)
+      rootScores = (rootWeights * input.tokenRnnOuts.last) + rootBias
+      rootType <- choose(actionSpace.rootTypes, rootScores, -1)
+      cg <- computationGraph()
+      e <- generateExpression(input, actionBuilder, cg.cg, rootType)
     } yield {
       e
     }
   }
   
-  def generateExpression(rootType: Type): Pp[Expression2] = {
-    generateExpression(SemanticParserState.start(rootType))
+  def generateExpression(input: InputEncoding, builder: RNNBuilder,
+      cg: ComputationGraph, rootType: Type): Pp[Expression2] = {
+    builder.new_graph(cg)
+    builder.start_new_sequence(input.rnnState)
+    
+    val startState = builder.state()
+    
+    for {
+      beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS)
+      e <- generateExpression(input, builder, beginActionsParam, startState, SemanticParserState.start(rootType))
+    } yield {
+      e
+    }
   }
 
-  def generateExpression(state: SemanticParserState): Pp[Expression2] = {
+  def generateExpression(input: InputEncoding, builder: RNNBuilder, prevInput: Expression,
+      rnnState: Int, state: SemanticParserState): Pp[Expression2] = {
     if (state.unfilledHoleIds.length == 0) {
       Pp.value(state.decodeExpression)
     } else {
       val (holeId, t, scope) = state.unfilledHoleIds.head
-      val applicableTemplates = actionSpace.getTemplates(t) ++ scope.getVariableTemplates(t)
-
+      val actionTemplates = actionSpace.getTemplates(t)
+      val variableTemplates = scope.getVariableTemplates(t)
+      
+      val allTemplates = actionSpace.getTemplates(t) ++ scope.getVariableTemplates(t)
+      
+      val rnnOutput = builder.add_input(rnnState, prevInput)
+      val nextRnnState = builder.state
       for {
-        template <- chooseTag(applicableTemplates, state.numActions)
-        nextState = template.apply(state)
-        expr <- generateExpression(nextState)
+        actionWeights <- param(SemanticParser.ACTION_WEIGHTS_PARAM + t)
+        actionBias <- param(SemanticParser.ACTION_BIAS_PARAM + t)
+        actionScores = pickrange((actionWeights * rnnOutput) + actionBias, 0, allTemplates.length)
+
+        templateTuple <- choose(allTemplates.zipWithIndex.toArray, actionScores, state.numActions)
+        nextState = templateTuple._1.apply(state)
+        
+        cg <- computationGraph()
+        actionLookup = cg.getLookupParameter(SemanticParser.ACTION_LOOKUP_PARAM + t)
+        actionInput = lookup(cg.cg, actionLookup, templateTuple._2)
+
+        expr <- generateExpression(input, builder, actionInput, nextRnnState, nextState)
       } yield {
         expr
       }
@@ -98,6 +180,47 @@ class SemanticParser(actionSpace: ActionSpace) {
     val templates = generateActionSequence(exp, typeDeclaration)
     new SemanticParserExecutionScore(rootType, templates.toArray)
   }
+  
+  def getModel: PpModel = {
+    val inputDim = 50
+    val hiddenDim = 50
+    val actionDim = 50
+    val maxVars = 10
+    
+    val names = IndexedList.create[String]
+    val params = ListBuffer[Parameter]()
+    val lookupNames = IndexedList.create[String]
+    val lookupParams = ListBuffer[LookupParameter]()
+    val model = new Model
+    
+    names.add(SemanticParser.ROOT_WEIGHTS_PARAM)
+    params += model.add_parameters(Seq(actionSpace.rootTypes.length, hiddenDim))
+    names.add(SemanticParser.ROOT_BIAS_PARAM)
+    params += model.add_parameters(Seq(actionSpace.rootTypes.length))
+    names.add(SemanticParser.BEGIN_ACTIONS)
+    params += model.add_parameters(Seq(actionDim))
+    
+    lookupNames.add(SemanticParser.WORD_EMBEDDINGS_PARAM)
+    lookupParams += model.add_lookup_parameters(vocab.size, Seq(inputDim))
+    
+    for (t <- actionSpace.getTypes) {
+      val actions = actionSpace.getTemplates(t)
+      val dim = actions.length + maxVars
+      
+      names.add(SemanticParser.ACTION_WEIGHTS_PARAM + t)
+      params += model.add_parameters(Seq(dim, hiddenDim))
+      names.add(SemanticParser.ACTION_BIAS_PARAM + t)
+      params += model.add_parameters(Seq(dim))
+      
+      lookupNames.add(SemanticParser.ACTION_LOOKUP_PARAM + t)
+      lookupParams += model.add_lookup_parameters(dim, Seq(actionDim))
+    }
+    
+    inputBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
+    actionBuilder = new LSTMBuilder(1, actionDim, hiddenDim, model)
+
+    new PpModel(names, params.toArray, lookupNames, lookupParams.toArray, model, true)
+  }
 }
 
 /** A collection of templates and root types for 
@@ -105,11 +228,15 @@ class SemanticParser(actionSpace: ActionSpace) {
   */
 class ActionSpace(
     val typeTemplateMap: MultiMap[Type, Template],
-    val rootTypes: List[Type]
+    val rootTypes: Array[Type]
     ) {
 
   def getTemplates(t: Type): Vector[Template] = {
     typeTemplateMap.getOrElse(t, Set.empty).toVector
+  }
+  
+  def getTypes(): Set[Type] = {
+    typeTemplateMap.keySet.toSet ++ rootTypes.toSet  
   }
 }
 
@@ -126,8 +253,8 @@ extends ExecutionScore {
           Double.NegativeInfinity
         }
       } else if (tagInt < templates.size) {
-        Preconditions.checkArgument(choice.isInstanceOf[Template])
-        if (choice.asInstanceOf[Template].equals(templates(tagInt))) {
+        val chosen = choice.asInstanceOf[(Template, Int)]._1
+        if (chosen.equals(templates(tagInt))) {
           0.0
         } else {
           Double.NegativeInfinity
@@ -142,6 +269,15 @@ extends ExecutionScore {
 }
 
 object SemanticParser {
+  
+  val WORD_EMBEDDINGS_PARAM = "wordEmbeddings"
+  val ROOT_WEIGHTS_PARAM = "rootWeights"
+  val ROOT_BIAS_PARAM = "rootBias"
+  
+  val BEGIN_ACTIONS = "beginActions"
+  val ACTION_WEIGHTS_PARAM = "actionWeights:"
+  val ACTION_BIAS_PARAM = "actionBias:"
+  val ACTION_LOOKUP_PARAM = "actionLookup:"
   
   def generateActionSpace(data: Seq[Expression2], typeDeclaration: TypeDeclaration): ActionSpace = {
     val applicationTemplates = for {
@@ -178,7 +314,7 @@ object SemanticParser {
     val allTemplates = (applicationTemplates ++ lambdaTemplates ++ constantTemplates)
     val templateMap = allTemplates.map(x => (x.root, x))
 
-    new ActionSpace(seqToMultimap(templateMap), rootTypes.toSet.toList)
+    new ActionSpace(seqToMultimap(templateMap), rootTypes.toSet.toArray)
   }
 
   def seqToMultimap[A, B](s: Seq[(A, B)]) = { 
@@ -242,3 +378,7 @@ object SemanticParser {
     }
   }
 }
+
+case class InputEncoding(val rnnState: ExpressionVector, val tokenRnnOuts: List[Expression]) {
+}
+

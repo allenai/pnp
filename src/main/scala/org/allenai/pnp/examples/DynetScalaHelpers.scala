@@ -1,7 +1,7 @@
 package org.allenai.pnp.examples
 
 import edu.cmu.dynet.{ Dim, Expression, LongVector }
-import edu.cmu.dynet.dynet_swig.{ exprPlus, exprTimes }
+import edu.cmu.dynet.dynet_swig.{ exprPlus, exprMinus, exprTimes }
 
 import scala.language.implicitConversions
 
@@ -15,6 +15,7 @@ object DynetScalaHelpers {
 
   implicit class RichExpression(e: Expression) {
     def +(e2: Expression): Expression = exprPlus(e, e2)
+    def -(e2: Expression): Expression = exprMinus(e, e2)
 
     def *(e2: Expression): Expression = exprTimes(e, e2)
   }
