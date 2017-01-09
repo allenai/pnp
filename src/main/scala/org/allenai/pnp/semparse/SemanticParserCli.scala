@@ -3,33 +3,31 @@ package org.allenai.pnp.semparse
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
-import org.allenai.pnp.CompGraph
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.PpExample
 import org.allenai.pnp.PpModel
 
+import com.google.common.collect.Maps
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.cli.TrainSemanticParser
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
-import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
+import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
+import com.jayantkrish.jklol.training.DefaultLogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
+import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
-import com.jayantkrish.jklol.util.IoUtils
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
-import com.jayantkrish.jklol.util.CountAccumulator
-import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
-import com.google.common.collect.Maps
 
 /** Command line program for training a semantic parser.
   */
@@ -84,7 +82,7 @@ class SemanticParserCli extends AbstractCli() {
     
     val parser = new SemanticParser(actionSpace, vocab)
     
-    // validateActionSpace(preprocessed, parser, typeDeclaration)
+    validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
     test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
     test(trainPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
@@ -126,6 +124,8 @@ class SemanticParserCli extends AbstractCli() {
     val model = parser.getModel
 
     println("")
+    var maxParts = 0
+    var numFailed = 0
     for (e <- examples) {
       println(e.getSentence.getWords)
       println(e.getLogicalForm)
@@ -133,7 +133,7 @@ class SemanticParserCli extends AbstractCli() {
       val oracle = parser.generateExecutionOracle(e.getLogicalForm, typeDeclaration)
 
       val sent = e.getSentence
-      val dist = parser.generateExpression(
+      val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
 
@@ -142,11 +142,16 @@ class SemanticParserCli extends AbstractCli() {
           model.getInitialComputationGraph(cg), new NullLogFunction())
       if (results.executions.size != 1) {
         println("ERROR: " + e + " " + results)
+        numFailed += 1
       } else {
-        println("OK   : " + e + " " + results.executions(0))
+        val numParts = results.executions(0).value.parts.size
+        println("OK   : " + numParts + " " + e)
+        maxParts = Math.max(numParts, maxParts)
       }
       cg.delete
     }
+    println("max parts: " + maxParts)
+    println("decoding failures: " + numFailed)
   }
   
   /** Train the parser by maximizing the likelihood of examples.
@@ -166,7 +171,7 @@ class SemanticParserCli extends AbstractCli() {
     // Train model
     val model = parser.getModel
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(100, 100, model, sgd, new NullLogFunction())
+    val trainer = new LoglikelihoodTrainer(100, 100, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
 
     model

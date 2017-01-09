@@ -90,11 +90,19 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
 
     SemanticParser.seqToMultimap(output)
   }
+  
+  def generateExpression(tokens: List[Int], entityLinking: EntityLinking): Pp[Expression2] = {
+    for {
+      state <- parse(tokens, entityLinking)
+    } yield {
+      state.decodeExpression
+    }
+  }
 
   /** Generate a distribution over logical forms given 
     * tokens.
     */
-  def generateExpression(tokens: List[Int], entityLinking: EntityLinking): Pp[Expression2] = {
+  def parse(tokens: List[Int], entityLinking: EntityLinking): Pp[SemanticParserState] = {
     for {
       // Encode input tokens using an LSTM.
       input <- encode(tokens, entityLinking)
@@ -110,21 +118,21 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       // select logical form templates to expand on typed holes
       // in the partially-generated logical form.  
       cg <- computationGraph()
-      expr <- generateExpression(input, actionBuilder, cg.cg, rootType)
+      expr <- parse(input, actionBuilder, cg.cg, rootType)
     } yield {
       expr
     }
   }
 
-  private def generateExpression(input: InputEncoding, builder: RNNBuilder,
-      cg: ComputationGraph, rootType: Type): Pp[Expression2] = {
+  private def parse(input: InputEncoding, builder: RNNBuilder,
+      cg: ComputationGraph, rootType: Type): Pp[SemanticParserState] = {
     // Initialize the output LSTM before generating the logical form.
     builder.start_new_sequence(input.rnnState)
     val startState = builder.state()
     
     for {
       beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS)
-      e <- generateExpression(input, builder, beginActionsParam, startState,
+      e <- parse(input, builder, beginActionsParam, startState,
           SemanticParserState.start(rootType))
     } yield {
       e
@@ -139,11 +147,11 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     * of previously generated templates and select which template to
     * apply. 
     */
-  private def generateExpression(input: InputEncoding, builder: RNNBuilder, prevInput: Expression,
-      rnnState: Int, state: SemanticParserState): Pp[Expression2] = {
+  private def parse(input: InputEncoding, builder: RNNBuilder, prevInput: Expression,
+      rnnState: Int, state: SemanticParserState): Pp[SemanticParserState] = {
     if (state.unfilledHoleIds.length == 0) {
       // If there are no holes, return the completed logical form.
-      Pp.value(state.decodeExpression)
+      Pp.value(state)
     } else {
       // Select the first unfilled hole and select the
       // applicable templates given the hole's type. 
@@ -189,9 +197,9 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         actionInput = lookup(cg.cg, actionLookup, templateTuple._2)
 
         // Recursively fill in any remaining holes.
-        expr <- generateExpression(input, builder, actionInput, nextRnnState, nextState)
+        returnState <- parse(input, builder, actionInput, nextRnnState, nextState)
       } yield {
-        expr
+        returnState
       }
     }
   }
