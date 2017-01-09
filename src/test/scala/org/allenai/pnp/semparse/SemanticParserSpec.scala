@@ -62,7 +62,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   it should "condition on expressions" in {
     val label = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
     val oracle = parser.generateExecutionOracle(label, typeDeclaration)
-    val exprs = parser.generateExpression(List("major", "city"))
+    val exprs = parser.generateExpression(List("major", "city").map(vocab.getIndex(_)).toList, null)
 
     val model = parser.getModel
     val cg = new ComputationGraph

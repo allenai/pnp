@@ -29,6 +29,7 @@ import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
+import com.google.common.collect.Maps
 
 /** Command line program for training a semantic parser.
   */
@@ -104,9 +105,13 @@ class SemanticParserCli extends AbstractCli() {
     val sent = ex.getSentence
     val unkedWords = sent.getWords.asScala.map(
         x => if (vocab.contains(x)) { x } else { SemanticParserCli.UNK })
-        
+
+    val annotations = Maps.newHashMap[String, Object](sent.getAnnotations)
+    annotations.put("originalTokens", sent.getWords)
+    annotations.put("tokenIds", unkedWords.map(x => vocab.getIndex(x)).toList)
+
     val unkedSentence = new AnnotatedSentence(unkedWords.asJava,
-        sent.getPosTags, sent.getAnnotations)
+        sent.getPosTags, annotations)
     
     new CcgExample(unkedSentence, ex.getDependencies, ex.getSyntacticParse, 
           simplifier.apply(ex.getLogicalForm))
@@ -126,7 +131,11 @@ class SemanticParserCli extends AbstractCli() {
       println(e.getLogicalForm)
 
       val oracle = parser.generateExecutionOracle(e.getLogicalForm, typeDeclaration)
-      val dist = parser.generateExpression(e.getSentence.getWords.asScala.toList)
+
+      val sent = e.getSentence
+      val dist = parser.generateExpression(
+          sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
+          sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
 
       val cg = new ComputationGraph
       val results = dist.beamSearch(1, 50, Env.init, oracle,
@@ -145,9 +154,11 @@ class SemanticParserCli extends AbstractCli() {
     */
   def train(examples: Seq[CcgExample], parser: SemanticParser,
       typeDeclaration: TypeDeclaration): PpModel = {
-    val ppExamples = examples map { x => 
-      val words = x.getSentence.getWords
-      val unconditional = parser.generateExpression(words.asScala.toList)
+    val ppExamples = examples map { x =>
+      val sent = x.getSentence
+      val unconditional = parser.generateExpression(
+          sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
+          sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val oracle = parser.generateExecutionOracle(x.getLogicalForm, typeDeclaration)
       PpExample(unconditional, unconditional, Env.init, oracle)
     }
@@ -173,7 +184,10 @@ class SemanticParserCli extends AbstractCli() {
       println(e.getSentence.getWords.asScala.mkString(" "))
       println("  " + e.getLogicalForm)
 
-      val dist = parser.generateExpression(e.getSentence.getWords.asScala.toList)
+      val sent = e.getSentence
+      val dist = parser.generateExpression(
+          sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
+          sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val cg = new ComputationGraph
       val results = dist.beamSearch(100, 75, Env.init, null,
           model.getInitialComputationGraph(cg), new NullLogFunction())

@@ -7,10 +7,13 @@ import scala.collection.mutable.{ Map => MutableMap }
 import scala.collection.mutable.MultiMap
 import scala.collection.mutable.{ Set => MutableSet }
 
+import org.allenai.pnp.CompGraph
 import org.allenai.pnp.Env
 import org.allenai.pnp.ExecutionScore
 import org.allenai.pnp.Pp
 import org.allenai.pnp.Pp._
+import org.allenai.pnp.PpModel
+import org.allenai.pnp.examples.DynetScalaHelpers._
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -21,9 +24,6 @@ import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import org.allenai.pnp.examples.DynetScalaHelpers._
-import org.allenai.pnp.PpModel
-import org.allenai.pnp.CompGraph
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
@@ -33,31 +33,31 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   var inputBuilder: LSTMBuilder = null
   var actionBuilder: LSTMBuilder = null
 
-  /** Map a token to its integer id in the vocabulary. 
-    */
-  def wordToIndex(token: String): Int = {
-    // TODO: unknown words
-    vocab.getIndex(token)
+  def initializeRnns(computationGraph: CompGraph): Unit = {
+    val cg = computationGraph.cg
+    inputBuilder.new_graph(cg)
+    actionBuilder.new_graph(cg)
   }
 
   /** Compute the input encoding of a list of tokens
     */
-  def encode(tokens: List[String]): Pp[InputEncoding] = {
-    val intEncoded = tokens.map(wordToIndex _)
-
+  def encode(tokens: List[Int], entityLinking: EntityLinking): Pp[InputEncoding] = {
     for {
-      compGraph <- computationGraph() 
+      compGraph <- computationGraph()
+      _ = initializeRnns(compGraph)
+      inputEncoding = rnnEncode(inputBuilder, compGraph, tokens)
+      // entityEncoding = rnnEncodeEntities(inputBuilder, compGraph, entityLinking)
+      entityEncoding = null
     } yield {
-      rnnEncode(inputBuilder, compGraph, intEncoded)
+      InputEncoding(inputEncoding._1, inputEncoding._2, entityEncoding)
     }
   }
 
   private def rnnEncode(builder: RNNBuilder, computationGraph: CompGraph, inputs: List[Int]
-    ): InputEncoding = {
+    ): (ExpressionVector, List[Expression]) = {
     val cg = computationGraph.cg
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
-    builder.new_graph(cg)
     builder.start_new_sequence()
     
     val outputs = ListBuffer[Expression]()
@@ -66,16 +66,38 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       outputs += builder.add_input(inputEmbedding)
     }
 
-    InputEncoding(builder.final_s, outputs.toList)
+    (builder.final_s, outputs.toList)
   }
-  
+
+  def rnnEncodeEntities(builder: RNNBuilder, computationGraph: CompGraph,
+      entityLinking: EntityLinking): MultiMap[Type, EntityEncoding] = {
+    val cg = computationGraph.cg
+    val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
+
+    val output = ListBuffer[(Type, EntityEncoding)]()
+    for (entity <- entityLinking.entities) {
+      for (name <- entity.names) {
+        builder.start_new_sequence()
+        var lastOutput: Expression = null
+        for (wordId <- name) {
+          val inputEmbedding = lookup(cg, wordEmbeddings, wordId)
+          lastOutput = builder.add_input(inputEmbedding)
+        }
+        Preconditions.checkState(lastOutput != null)
+        output += ((entity.t, EntityEncoding(entity, lastOutput))) 
+      }
+    }
+
+    SemanticParser.seqToMultimap(output)
+  }
+
   /** Generate a distribution over logical forms given 
     * tokens.
     */
-  def generateExpression(tokens: List[String]): Pp[Expression2] = {
+  def generateExpression(tokens: List[Int], entityLinking: EntityLinking): Pp[Expression2] = {
     for {
       // Encode input tokens using an LSTM.
-      input <- encode(tokens)
+      input <- encode(tokens, entityLinking)
       
       // Choose the root type for the logical form given the
       // final output of the LSTM.
@@ -97,7 +119,6 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   private def generateExpression(input: InputEncoding, builder: RNNBuilder,
       cg: ComputationGraph, rootType: Type): Pp[Expression2] = {
     // Initialize the output LSTM before generating the logical form.
-    builder.new_graph(cg)
     builder.start_new_sequence(input.rnnState)
     val startState = builder.state()
     
@@ -129,6 +150,13 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       val (holeId, t, scope) = state.unfilledHoleIds.head
       val actionTemplates = actionSpace.getTemplates(t)
       val variableTemplates = scope.getVariableTemplates(t)
+
+      /*
+      val entities = input.entityEncoding(t)
+      val entityTemplates = entities.map(_.entity.template)
+      val entityVectors = entities.map(_.vector)
+      */
+
       val allTemplates = actionSpace.getTemplates(t) ++ scope.getVariableTemplates(t)
       
       // Update the LSTM and use its output to score
@@ -141,6 +169,12 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         actionBias <- param(SemanticParser.ACTION_BIAS_PARAM + t)
         actionScores = pickrange((actionWeights * rnnOutput) + actionBias, 0, allTemplates.length)
 
+        // Score the entity templates
+        /*
+        entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + t)
+        entityScores = entityVectors.map(v => (v * rnnOutput) + entityBias)
+        */
+        
         // Nondeterministically select which template to update
         // the parser's state with. The tag for this choice is 
         // its index in the sequence of generated templates, which
@@ -423,6 +457,10 @@ object SemanticParser {
   }
 }
 
-case class InputEncoding(val rnnState: ExpressionVector, val tokenRnnOuts: List[Expression]) {
+case class InputEncoding(val rnnState: ExpressionVector, val tokenRnnOuts: List[Expression],
+    val entityEncoding: MultiMap[Type, EntityEncoding]) {
+}
+
+case class EntityEncoding(val entity: Entity, val vector: Expression) {
 }
 
