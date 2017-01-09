@@ -27,49 +27,89 @@ import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import com.jayantkrish.jklol.util.CountAccumulator
+import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 
 /** Command line program for training a semantic parser.
   */
 class SemanticParserCli extends AbstractCli() {
   
   var trainingDataOpt: OptionSpec[String] = null
+  var testDataOpt: OptionSpec[String] = null
   
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
+    testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
   }
   
   override def run(options: OptionSet): Unit = {
     myInitialize()
     
-    val trainingData = ListBuffer[CcgExample]()
-    for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      trainingData ++= TrainSemanticParser.readCcgExamples(filename).asScala
-    }
-
+    // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getTypeDeclaration()
     val simplifier = GeoqueryUtil.getExpressionSimplifier
     val comparator = new SimplificationComparator(simplifier)
     
-    val preprocessed = trainingData.map(x =>
-      new CcgExample(x.getSentence, x.getDependencies, x.getSyntacticParse, 
-          simplifier.apply(x.getLogicalForm))) 
-    
-    val actionSpace = SemanticParser.generateActionSpace(preprocessed.map(_.getLogicalForm), typeDeclaration)
-    val vocab = IndexedList.create[String]
-    for (x <- preprocessed) {
-      vocab.addAll(x.getSentence.getWords)
+    // Read and preprocess data
+    val trainingData = ListBuffer[CcgExample]()
+    for (filename <- options.valuesOf(trainingDataOpt).asScala) {
+      trainingData ++= TrainSemanticParser.readCcgExamples(filename).asScala
     }
     
-    println(actionSpace.rootTypes)
-    println(actionSpace.typeTemplateMap)
+    val testData = ListBuffer[CcgExample]()
+    if (options.has(testDataOpt)) {
+      for (filename <- options.valuesOf(testDataOpt).asScala) {
+        testData ++= TrainSemanticParser.readCcgExamples(filename).asScala
+      }
+    }
+    
+    println(trainingData.size + " training examples")
+    println(testData.size + " test examples")
+    val wordCounts = getWordCounts(trainingData)
+    
+    // Vocab consists of all words that appear more than once.
+    // TODO: entity names... 
+    val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
+    vocab.add(SemanticParserCli.UNK)
+    
+    val trainPreprocessed = trainingData.map(x => preprocessExample(x, simplifier, vocab)) 
+    val testPreprocessed = testData.map(x => preprocessExample(x, simplifier, vocab))
+          
+    val actionSpace = SemanticParser.generateActionSpace(
+        trainPreprocessed.map(_.getLogicalForm), typeDeclaration)
+    
+    // println(actionSpace.rootTypes)
+    // println(actionSpace.typeTemplateMap)
     
     val parser = new SemanticParser(actionSpace, vocab)
     
-    validateActionSpace(preprocessed, parser, typeDeclaration)
-    val trainedModel = train(preprocessed, parser, typeDeclaration)
-    test(preprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    // validateActionSpace(preprocessed, parser, typeDeclaration)
+    val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
+    test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    test(trainPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
     
     // TODO: serialization
+  }
+  
+  def getWordCounts(examples: Seq[CcgExample]): CountAccumulator[String] = {
+    val acc = CountAccumulator.create[String]
+    for (ex <- examples) {
+      ex.getSentence.getWords.asScala.map(x => acc.increment(x, 1.0)) 
+    }
+    acc
+  }
+  
+  def preprocessExample(ex: CcgExample, simplifier: ExpressionSimplifier,
+      vocab: IndexedList[String]): CcgExample = {
+    val sent = ex.getSentence
+    val unkedWords = sent.getWords.asScala.map(
+        x => if (vocab.contains(x)) { x } else { SemanticParserCli.UNK })
+        
+    val unkedSentence = new AnnotatedSentence(unkedWords.asJava,
+        sent.getPosTags, sent.getAnnotations)
+    
+    new CcgExample(unkedSentence, ex.getDependencies, ex.getSyntacticParse, 
+          simplifier.apply(ex.getLogicalForm))
   }
 
   /** Verify that the parser can generate the logical form
@@ -130,7 +170,7 @@ class SemanticParserCli extends AbstractCli() {
     println("")
     var numCorrect = 0
     for (e <- examples) {
-      println(e.getSentence.getWords)
+      println(e.getSentence.getWords.asScala.mkString(" "))
       println("  " + e.getLogicalForm)
 
       val dist = parser.generateExpression(e.getSentence.getWords.asScala.toList)
@@ -156,6 +196,9 @@ class SemanticParserCli extends AbstractCli() {
 }
 
 object SemanticParserCli {
+  
+  val UNK = "<UNK>"
+  
   def main(args: Array[String]): Unit = {
     (new SemanticParserCli()).run(args)
   }
