@@ -12,9 +12,11 @@ import com.google.common.collect.Maps
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.cli.TrainSemanticParser
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
+import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
+import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
@@ -34,10 +36,12 @@ import joptsimple.OptionSpec
 class SemanticParserCli extends AbstractCli() {
   
   var trainingDataOpt: OptionSpec[String] = null
+  var entityDataOpt: OptionSpec[String] = null
   var testDataOpt: OptionSpec[String] = null
   
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
+    entityDataOpt = parser.accepts("entityData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
   }
   
@@ -55,6 +59,11 @@ class SemanticParserCli extends AbstractCli() {
       trainingData ++= TrainSemanticParser.readCcgExamples(filename).asScala
     }
     
+    val entityData = ListBuffer[CcgExample]()
+    for (filename <- options.valuesOf(entityDataOpt).asScala) {
+      entityData ++= TrainSemanticParser.readCcgExamples(filename).asScala
+    }
+
     val testData = ListBuffer[CcgExample]()
     if (options.has(testDataOpt)) {
       for (filename <- options.valuesOf(testDataOpt).asScala) {
@@ -63,16 +72,21 @@ class SemanticParserCli extends AbstractCli() {
     }
     
     println(trainingData.size + " training examples")
+    println(entityData.size + " entity names")
     println(testData.size + " test examples")
     val wordCounts = getWordCounts(trainingData)
+    val entityWordCounts = getWordCounts(entityData)
     
-    // Vocab consists of all words that appear more than once.
-    // TODO: entity names... 
+    // Vocab consists of all words that appear more than once in
+    // the training data or appear in the entity names.
     val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
+    vocab.addAll(entityWordCounts.getKeysAboveCountThreshold(0.0))
     vocab.add(SemanticParserCli.UNK)
     
-    val trainPreprocessed = trainingData.map(x => preprocessExample(x, simplifier, vocab)) 
-    val testPreprocessed = testData.map(x => preprocessExample(x, simplifier, vocab))
+    val entityDict = buildEntityDictionary(entityData, vocab, typeDeclaration)
+    
+    val trainPreprocessed = trainingData.map(x => preprocessExample(x, simplifier, vocab, entityDict)) 
+    val testPreprocessed = testData.map(x => preprocessExample(x, simplifier, vocab, entityDict))
           
     val actionSpace = SemanticParser.generateActionSpace(
         trainPreprocessed.map(_.getLogicalForm), typeDeclaration)
@@ -98,15 +112,41 @@ class SemanticParserCli extends AbstractCli() {
     acc
   }
   
+  def buildEntityDictionary(examples: Seq[CcgExample], vocab: IndexedList[String],
+      typeDeclaration: TypeDeclaration): EntityDict = {
+    val entityNames = ListBuffer[(Expression2, List[Int])]()
+    for (ex <- examples) {
+      val encodedName = ex.getSentence.getWords.asScala.toList.map(vocab.getIndex(_))
+      entityNames += ((ex.getLogicalForm, encodedName))
+    }
+
+    val entityNameMap = SemanticParser.seqToMultimap(entityNames)
+    val entityDict = ListBuffer[(List[Int], Entity)]()
+    for (e <- entityNameMap.keySet) {
+      val names = entityNameMap(e).toList
+      val t = StaticAnalysis.inferType(e, typeDeclaration)
+      val template = ConstantTemplate(t, e)
+      val entity = Entity(e, t, template, names)
+      for (name <- names) {
+        entityDict += ((name, entity))
+      }
+    }
+
+    new EntityDict(SemanticParser.seqToMultimap(entityDict))
+  }
+
   def preprocessExample(ex: CcgExample, simplifier: ExpressionSimplifier,
-      vocab: IndexedList[String]): CcgExample = {
+      vocab: IndexedList[String], entityDict: EntityDict): CcgExample = {
     val sent = ex.getSentence
     val unkedWords = sent.getWords.asScala.map(
         x => if (vocab.contains(x)) { x } else { SemanticParserCli.UNK })
-
+    val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toList
+    val entityLinking = entityDict.link(tokenIds)
+    
     val annotations = Maps.newHashMap[String, Object](sent.getAnnotations)
     annotations.put("originalTokens", sent.getWords)
-    annotations.put("tokenIds", unkedWords.map(x => vocab.getIndex(x)).toList)
+    annotations.put("tokenIds", tokenIds)
+    annotations.put("entityLinking", entityLinking)
 
     val unkedSentence = new AnnotatedSentence(unkedWords.asJava,
         sent.getPosTags, annotations)
@@ -129,6 +169,7 @@ class SemanticParserCli extends AbstractCli() {
     for (e <- examples) {
       println(e.getSentence.getWords)
       println(e.getLogicalForm)
+      println(e.getSentence.getAnnotation("entityLinking"))
 
       val oracle = parser.generateExecutionOracle(e.getLogicalForm, typeDeclaration)
 
