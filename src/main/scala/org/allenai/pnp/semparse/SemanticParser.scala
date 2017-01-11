@@ -133,7 +133,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     val startState = builder.state()
     
     for {
-      beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS)
+      beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS + rootType)
       e <- parse(input, builder, beginActionsParam, startState,
           SemanticParserState.start(rootType))
     } yield {
@@ -159,7 +159,13 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       // applicable templates given the hole's type. 
       val (holeId, t, scope) = state.unfilledHoleIds.head
       val actionTemplates = actionSpace.getTemplates(t)
-      val variableTemplates = scope.getVariableTemplates(t)
+      val allVariableTemplates = scope.getVariableTemplates(t)
+      val variableTemplates = if (allVariableTemplates.length > SemanticParser.MAX_VARS) {
+        // The model only has parameters for MAX_VARS variables. 
+        allVariableTemplates.slice(0, SemanticParser.MAX_VARS)
+      } else {
+        allVariableTemplates
+      }
       val baseTemplates = actionTemplates ++ variableTemplates
 
       val entities = input.entityEncoding.getOrElse(t, Set()).toArray
@@ -291,10 +297,9 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     // dependence between the LSTM builders here and the
     // returned model.
     
-    val inputDim = 50
-    val hiddenDim = 50
-    val actionDim = 50
-    val maxVars = 100
+    val inputDim = 100
+    val hiddenDim = 100
+    val actionDim = 100
     
     val names = IndexedList.create[String]
     val params = ListBuffer[Parameter]()
@@ -306,16 +311,16 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     params += model.add_parameters(Seq(actionSpace.rootTypes.length, hiddenDim))
     names.add(SemanticParser.ROOT_BIAS_PARAM)
     params += model.add_parameters(Seq(actionSpace.rootTypes.length))
-    names.add(SemanticParser.BEGIN_ACTIONS)
-    params += model.add_parameters(Seq(actionDim))
     
     lookupNames.add(SemanticParser.WORD_EMBEDDINGS_PARAM)
     lookupParams += model.add_lookup_parameters(vocab.size, Seq(inputDim))
     
     for (t <- actionSpace.getTypes) {
       val actions = actionSpace.getTemplates(t)
-      val dim = actions.length + maxVars
-      
+      val dim = actions.length + SemanticParser.MAX_VARS
+
+      names.add(SemanticParser.BEGIN_ACTIONS + t)
+      params += model.add_parameters(Seq(actionDim))
       names.add(SemanticParser.ACTION_WEIGHTS_PARAM + t)
       params += model.add_parameters(Seq(dim, hiddenDim))
       names.add(SemanticParser.ACTION_BIAS_PARAM + t)
@@ -395,13 +400,15 @@ object SemanticParser {
   val ROOT_WEIGHTS_PARAM = "rootWeights"
   val ROOT_BIAS_PARAM = "rootBias"
   
-  val BEGIN_ACTIONS = "beginActions"
+  val BEGIN_ACTIONS = "beginActions:"
   val ACTION_WEIGHTS_PARAM = "actionWeights:"
   val ACTION_BIAS_PARAM = "actionBias:"
   val ACTION_LOOKUP_PARAM = "actionLookup:"
   
   val ENTITY_BIAS_PARAM = "entityBias:"
   val ENTITY_LOOKUP_PARAM = "entityLookup:"
+  
+  val MAX_VARS=10
   
   /** Create a set of templates that can generate all of
     * the logical forms in data.

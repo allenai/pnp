@@ -264,7 +264,7 @@ class SemanticParserCli extends AbstractCli() {
           sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val cg = new ComputationGraph
-      val results = dist.beamSearch(100, 75, Env.init, null,
+      val results = dist.beamSearch(10, 75, Env.init, null,
           model.getInitialComputationGraph(cg), new NullLogFunction())
           
       val bestLf = simplifier.apply(results.executions(0).value)
