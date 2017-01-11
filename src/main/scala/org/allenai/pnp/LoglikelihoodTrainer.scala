@@ -29,7 +29,9 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
         val conditionalPartitionFunction = conditional.partitionFunction
         log.stopTimer("pp_loglikelihood/forward")
        
-        Preconditions.checkState(conditional.executions.size == 1)
+        Preconditions.checkState(conditional.executions.size == 1,
+            "Found %s conditional executions (expected 1) for example: %s",
+            conditional.executions.size.asInstanceOf[AnyRef], example)
        
         val conditionalEx = conditional.executions(0)
         val labeledExpressions = conditionalEx.env.labelNodeIds

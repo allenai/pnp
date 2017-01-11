@@ -87,10 +87,20 @@ class SemanticParserCli extends AbstractCli() {
     
     val trainPreprocessed = trainingData.map(x => preprocessExample(x, simplifier, vocab, entityDict)) 
     val testPreprocessed = testData.map(x => preprocessExample(x, simplifier, vocab, entityDict))
-          
+
     val actionSpace = SemanticParser.generateActionSpace(
         trainPreprocessed.map(_.getLogicalForm), typeDeclaration)
-    
+        
+    // Remove entities from the action space, but ensure that there is
+    // at least one valid action per type
+    for (t <- actionSpace.allTypes) {
+      actionSpace.typeTemplateMap.addBinding(t,
+          ConstantTemplate(t, Expression2.constant("DUMMY:" + t)))
+    }
+    for (entity <- entityDict.map.values.flatten) {
+      actionSpace.typeTemplateMap.removeBinding(entity.t, entity.template)
+    }
+
     // println(actionSpace.rootTypes)
     // println(actionSpace.typeTemplateMap)
     
@@ -167,29 +177,46 @@ class SemanticParserCli extends AbstractCli() {
     var maxParts = 0
     var numFailed = 0
     for (e <- examples) {
-      println(e.getSentence.getWords)
-      println(e.getLogicalForm)
-      println(e.getSentence.getAnnotation("entityLinking"))
-
-      val oracle = parser.generateExecutionOracle(e.getLogicalForm, typeDeclaration)
 
       val sent = e.getSentence
-      val dist = parser.parse(
-          sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
-          sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
+      val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
+      val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
 
-      val cg = new ComputationGraph
-      val results = dist.beamSearch(1, 50, Env.init, oracle,
-          model.getInitialComputationGraph(cg), new NullLogFunction())
-      if (results.executions.size != 1) {
-        println("ERROR: " + e + " " + results)
-        numFailed += 1
+      val oracle = parser.generateExecutionOracle(e.getLogicalForm, entityLinking, typeDeclaration)
+      val dist = parser.parse(tokenIds, entityLinking)
+
+      if (oracle.isDefined) {
+        val cg = new ComputationGraph
+        val results = dist.beamSearch(1, 50, Env.init, oracle.get,
+            model.getInitialComputationGraph(cg), new NullLogFunction())
+        if (results.executions.size != 1) {
+          println("ERROR: " + e + " " + results)
+          println("  " + e.getSentence.getWords)
+          println("  " + e.getLogicalForm)
+          println("  " + e.getSentence.getAnnotation("entityLinking"))
+
+          numFailed += 1
+        } else {
+          val numParts = results.executions(0).value.parts.size
+          maxParts = Math.max(numParts, maxParts)
+          if (results.executions.length > 1) {
+            println("MULTIPLE: " + results.executions.length + " " + e)
+            println("  " + e.getSentence.getWords)
+            println("  " + e.getLogicalForm)
+            println("  " + e.getSentence.getAnnotation("entityLinking"))
+          } else {
+            // println("OK   : " + numParts + " " + " "
+          }
+        }
+        cg.delete
       } else {
-        val numParts = results.executions(0).value.parts.size
-        println("OK   : " + numParts + " " + e)
-        maxParts = Math.max(numParts, maxParts)
+        println("ORACLE: " + e)
+        println("  " + e.getSentence.getWords)
+        println("  " + e.getLogicalForm)
+        println("  " + e.getSentence.getAnnotation("entityLinking"))
+
+        numFailed += 1
       }
-      cg.delete
     }
     println("max parts: " + maxParts)
     println("decoding failures: " + numFailed)
@@ -200,15 +227,17 @@ class SemanticParserCli extends AbstractCli() {
     */
   def train(examples: Seq[CcgExample], parser: SemanticParser,
       typeDeclaration: TypeDeclaration): PpModel = {
-    val ppExamples = examples map { x =>
-      val sent = x.getSentence
-      val unconditional = parser.generateExpression(
-          sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
-          sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
-      val oracle = parser.generateExecutionOracle(x.getLogicalForm, typeDeclaration)
+    val ppExamples = for {
+      x <- examples
+      sent = x.getSentence
+      tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
+      entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
+      unconditional = parser.generateExpression(tokenIds, entityLinking)
+      oracle <- parser.generateExecutionOracle(x.getLogicalForm, entityLinking, typeDeclaration)
+    } yield {
       PpExample(unconditional, unconditional, Env.init, oracle)
     }
-    
+
     // Train model
     val model = parser.getModel
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
