@@ -108,8 +108,16 @@ class SemanticParserCli extends AbstractCli() {
     
     validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
-    test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
-    test(trainPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    println("***************** TEST EVALUATION *****************")
+    val testResults = test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    println("***************** TRAIN EVALUATION *****************")
+    val trainResults = test(trainPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    
+    println("")
+    println("Test: ")
+    println(testResults)
+    println("Train: ")
+    println(trainResults)
     
     // TODO: serialization
   }
@@ -252,12 +260,13 @@ class SemanticParserCli extends AbstractCli() {
     */
   def test(examples: Seq[CcgExample], parser: SemanticParser,
       model: PpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
-      comparator: ExpressionComparator): Unit = {
+      comparator: ExpressionComparator): SemanticParserLoss = {
     println("")
     var numCorrect = 0
+    var numCorrectAt10 = 0
     for (e <- examples) {
       println(e.getSentence.getWords.asScala.mkString(" "))
-      println("  " + e.getLogicalForm)
+      println("C " + e.getLogicalForm)
 
       val sent = e.getSentence
       val dist = parser.generateExpression(
@@ -267,20 +276,31 @@ class SemanticParserCli extends AbstractCli() {
       val results = dist.beamSearch(10, 75, Env.init, null,
           model.getInitialComputationGraph(cg), new NullLogFunction())
           
-      val bestLf = simplifier.apply(results.executions(0).value)
-      if (comparator.equals(e.getLogicalForm, bestLf)) {
-        numCorrect += 1
-        println("C " + bestLf)
-      } else {
-        println("I " + bestLf)
+      val beam = results.executions.slice(0, 10)
+      val correct = beam.map { x =>
+        val simplified = simplifier.apply(x.value)
+        if (comparator.equals(e.getLogicalForm, simplified)) {
+          println("* " + x.logProb + " " + simplified)
+          true
+        } else {
+          println("  " + x.logProb + " " + simplified)
+          false
+        }
       }
       
-      println()
+      if (correct.length > 0 && correct(0)) {
+        numCorrect += 1
+      }
+      if (correct.fold(false)(_ || _)) {
+        numCorrectAt10 += 1
+      }
+      
       cg.delete
     }
     
-    val accuracy = numCorrect.asInstanceOf[Double] / examples.length 
-    println(accuracy + " " + numCorrect + " / " + examples.length)
+    val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)
+    println(loss)
+    loss
   }
 }
 
@@ -290,5 +310,15 @@ object SemanticParserCli {
   
   def main(args: Array[String]): Unit = {
     (new SemanticParserCli()).run(args)
+  }
+}
+
+case class SemanticParserLoss(numCorrect: Int, oracleNumCorrect: Int, numExamples: Int) {
+  val accuracy: Double = numCorrect.asInstanceOf[Double] / numExamples
+  val oracleAccuracy: Double = oracleNumCorrect.asInstanceOf[Double] / numExamples
+  
+  override def toString(): String = {
+    "accuracy: " + accuracy + " " + numCorrect + " / " + numExamples + "\n" +
+    "oracle  : " + oracleAccuracy + " " + oracleNumCorrect + " / " + numExamples  
   }
 }

@@ -298,7 +298,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     // returned model.
     
     val inputDim = 100
-    val hiddenDim = 100
+    val hiddenDim = 200
     val actionDim = 100
     
     val names = IndexedList.create[String]
