@@ -249,7 +249,7 @@ class SemanticParserCli extends AbstractCli() {
     // Train model
     val model = parser.getModel
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(100, 100, model, sgd, new DefaultLogFunction())
+    val trainer = new LoglikelihoodTrainer(20, 100, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
 
     model
@@ -266,8 +266,8 @@ class SemanticParserCli extends AbstractCli() {
     var numCorrectAt10 = 0
     for (e <- examples) {
       println(e.getSentence.getWords.asScala.mkString(" "))
-      println("C " + e.getLogicalForm)
-
+      println("expected: " + e.getLogicalForm)
+      
       val sent = e.getSentence
       val dist = parser.generateExpression(
           sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
@@ -280,10 +280,10 @@ class SemanticParserCli extends AbstractCli() {
       val correct = beam.map { x =>
         val simplified = simplifier.apply(x.value)
         if (comparator.equals(e.getLogicalForm, simplified)) {
-          println("* " + x.logProb + " " + simplified)
+          println("* " + x.logProb.formatted("%02.3f") + "  " + simplified)
           true
         } else {
-          println("  " + x.logProb + " " + simplified)
+          println("  " + x.logProb.formatted("%02.3f") + "  " + simplified)
           false
         }
       }

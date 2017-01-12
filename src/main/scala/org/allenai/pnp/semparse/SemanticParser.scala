@@ -30,12 +30,19 @@ import edu.cmu.dynet.dynet_swig._
   */
 class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   
-  var inputBuilder: LSTMBuilder = null
+  var forwardBuilder: LSTMBuilder = null
+  var backwardBuilder: LSTMBuilder = null
   var actionBuilder: LSTMBuilder = null
+  
+  val inputDim = 100
+  val hiddenDim = 100
+  val actionDim = 100
+  val maxVars = 10
 
   def initializeRnns(computationGraph: CompGraph): Unit = {
     val cg = computationGraph.cg
-    inputBuilder.new_graph(cg)
+    forwardBuilder.new_graph(cg)
+    backwardBuilder.new_graph(cg)
     actionBuilder.new_graph(cg)
   }
 
@@ -45,31 +52,47 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     for {
       compGraph <- computationGraph()
       _ = initializeRnns(compGraph)
-      inputEncoding = rnnEncode(inputBuilder, compGraph, tokens)
-      entityEncoding = rnnEncodeEntities(inputBuilder, compGraph, entityLinking)
+      inputEncoding = rnnEncode(compGraph, tokens)
+      entityEncoding = encodeEntities(compGraph, entityLinking)
       // entityEncoding = null
     } yield {
-      InputEncoding(inputEncoding._1, inputEncoding._2, entityEncoding)
+      InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
+          inputEncoding._4, entityEncoding)
     }
   }
 
-  private def rnnEncode(builder: RNNBuilder, computationGraph: CompGraph, inputs: List[Int]
-    ): (ExpressionVector, List[Expression]) = {
+  private def rnnEncode(computationGraph: CompGraph, tokens: List[Int]
+    ): (ExpressionVector, Expression, Expression, Expression) = {
     val cg = computationGraph.cg
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
-
-    builder.start_new_sequence()
     
-    val outputs = ListBuffer[Expression]()
-    for (input <- inputs) {
-      val inputEmbedding = lookup(cg, wordEmbeddings, input)
-      outputs += builder.add_input(inputEmbedding)
-    }
+    val inputEmbeddings = tokens.map(x => lookup(cg, wordEmbeddings, x)).toArray
 
-    (builder.final_s, outputs.toList)
+    forwardBuilder.start_new_sequence()
+    val fwOutputs = ListBuffer[Expression]()
+    for (inputEmbedding <- inputEmbeddings) {
+      fwOutputs += forwardBuilder.add_input(inputEmbedding)
+    }
+    
+    backwardBuilder.start_new_sequence()
+    val bwOutputs = ListBuffer[Expression]()
+    for (inputEmbedding <- inputEmbeddings.reverse) {
+      bwOutputs += backwardBuilder.add_input(inputEmbedding)
+    }
+    
+    val outputEmbeddings = fwOutputs.toArray.zip(bwOutputs.toList.reverse).map(
+        x => concatenate(Array(x._1, x._2)))
+ 
+    val sentEmbedding = concatenate(Array(fwOutputs.last, bwOutputs.last)) 
+    val inputMatrix = concatenate(inputEmbeddings.map(reshape(_, Seq(1, inputDim))).toArray)
+    val outputMatrix = concatenate(outputEmbeddings.map(reshape(_, Seq(1, 2 * hiddenDim))).toArray)
+    
+    // TODO: figure out how to initialize the decoder from both the
+    // forward and backward LSTMs
+    (forwardBuilder.final_s, sentEmbedding, inputMatrix, outputMatrix)
   }
 
-  def rnnEncodeEntities(builder: RNNBuilder, computationGraph: CompGraph,
+  def encodeEntities(computationGraph: CompGraph,
       entityLinking: EntityLinking): MultiMap[Type, EntityEncoding] = {
     val cg = computationGraph.cg
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
@@ -80,11 +103,15 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       val name = entityMatch._2
       val score = entityMatch._3
 
-      builder.start_new_sequence()
+      // builder.start_new_sequence()
       var lastOutput: Expression = null
       for (wordId <- name) {
         val inputEmbedding = lookup(cg, wordEmbeddings, wordId)
-        lastOutput = builder.add_input(inputEmbedding)
+        if (lastOutput == null) {
+          lastOutput = inputEmbedding
+        } else {
+          lastOutput = lastOutput + inputEmbedding
+        }
       }
       Preconditions.checkState(lastOutput != null)
       output += ((entity.t, EntityEncoding(entity, lastOutput)))
@@ -113,7 +140,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       // final output of the LSTM.
       rootWeights <- param(SemanticParser.ROOT_WEIGHTS_PARAM)
       rootBias <- param(SemanticParser.ROOT_BIAS_PARAM)
-      rootScores = (rootWeights * input.tokenRnnOuts.last) + rootBias
+      rootScores = (rootWeights * input.sentEmbedding) + rootBias
       rootType <- choose(actionSpace.rootTypes, rootScores, -1)
       
       // Recursively generate a logical form using an LSTM to
@@ -160,9 +187,9 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       val (holeId, t, scope) = state.unfilledHoleIds.head
       val actionTemplates = actionSpace.getTemplates(t)
       val allVariableTemplates = scope.getVariableTemplates(t)
-      val variableTemplates = if (allVariableTemplates.length > SemanticParser.MAX_VARS) {
+      val variableTemplates = if (allVariableTemplates.length > maxVars) {
         // The model only has parameters for MAX_VARS variables. 
-        allVariableTemplates.slice(0, SemanticParser.MAX_VARS)
+        allVariableTemplates.slice(0, maxVars)
       } else {
         allVariableTemplates
       }
@@ -179,16 +206,29 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       val rnnOutput = builder.add_input(rnnState, prevInput)
       val nextRnnState = builder.state
       for {
+        // Compute an attention vector
+        attentionWeights <- param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
+        wordAttentions = reshape(softmax(input.encodedTokenMatrix * attentionWeights * rnnOutput), 
+            Seq(1, input.tokens.length))
+        attentionVector = reshape(wordAttentions * input.tokenMatrix, Seq(inputDim))
+        
+        attentionActionWeights <- param(SemanticParser.ATTENTION_ACTION_WEIGHTS_PARAM + t)
+        attentionActionScores = attentionActionWeights * attentionVector
+
         // Score the templates.
         actionWeights <- param(SemanticParser.ACTION_WEIGHTS_PARAM + t)
         actionBias <- param(SemanticParser.ACTION_BIAS_PARAM + t)
-        actionScores = pickrange((actionWeights * rnnOutput) + actionBias, 0, baseTemplates.length)
+        actionScores = pickrange(attentionActionScores + (actionWeights * rnnOutput) + actionBias, 0, baseTemplates.length)
 
         // Score the entity templates
         allScores <- if (entities.size > 0) {
           for {
             entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + t)
-            entityScores = concatenate(entityVectors.map(v => dot_product(v, rnnOutput) + entityBias))
+            entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + t)
+            entityChoiceScore = dot_product(entityWeights, rnnOutput) + entityBias 
+            // TODO: How should we score these entities using attentions?
+            entityScores = concatenate(entityVectors.map(v => dot_product(v, attentionVector)
+                + entityChoiceScore))
           } yield {
             concatenate(Array(actionScores, entityScores))
           }
@@ -216,7 +256,8 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         }
 
         // Recursively fill in any remaining holes.
-        returnState <- parse(input, builder, actionInput, nextRnnState, nextState)
+        returnState <- parse(input, builder, concatenate(Array(actionInput, attentionVector)),
+            nextRnnState, nextState)
       } yield {
         returnState
       }
@@ -296,11 +337,6 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     // a constructor argument. This implementation has a weird
     // dependence between the LSTM builders here and the
     // returned model.
-    
-    val inputDim = 100
-    val hiddenDim = 200
-    val actionDim = 100
-    
     val names = IndexedList.create[String]
     val params = ListBuffer[Parameter]()
     val lookupNames = IndexedList.create[String]
@@ -308,25 +344,33 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     val model = new Model
     
     names.add(SemanticParser.ROOT_WEIGHTS_PARAM)
-    params += model.add_parameters(Seq(actionSpace.rootTypes.length, hiddenDim))
+    params += model.add_parameters(Seq(actionSpace.rootTypes.length, 2 * hiddenDim))
     names.add(SemanticParser.ROOT_BIAS_PARAM)
     params += model.add_parameters(Seq(actionSpace.rootTypes.length))
+    names.add(SemanticParser.ATTENTION_WEIGHTS_PARAM)
+    params += model.add_parameters(Seq(2 * hiddenDim, inputDim))
     
     lookupNames.add(SemanticParser.WORD_EMBEDDINGS_PARAM)
     lookupParams += model.add_lookup_parameters(vocab.size, Seq(inputDim))
     
     for (t <- actionSpace.getTypes) {
       val actions = actionSpace.getTemplates(t)
-      val dim = actions.length + SemanticParser.MAX_VARS
+      val dim = actions.length + maxVars
 
       names.add(SemanticParser.BEGIN_ACTIONS + t)
-      params += model.add_parameters(Seq(actionDim))
+      params += model.add_parameters(Seq(actionDim + inputDim))
       names.add(SemanticParser.ACTION_WEIGHTS_PARAM + t)
       params += model.add_parameters(Seq(dim, hiddenDim))
       names.add(SemanticParser.ACTION_BIAS_PARAM + t)
       params += model.add_parameters(Seq(dim))
+
+      names.add(SemanticParser.ATTENTION_ACTION_WEIGHTS_PARAM + t)
+      params += model.add_parameters(Seq(dim, inputDim))
+      
       names.add(SemanticParser.ENTITY_BIAS_PARAM + t)
       params += model.add_parameters(Seq(1))
+      names.add(SemanticParser.ENTITY_WEIGHTS_PARAM + t)
+      params += model.add_parameters(Seq(hiddenDim))
       
       lookupNames.add(SemanticParser.ACTION_LOOKUP_PARAM + t)
       lookupParams += model.add_lookup_parameters(dim, Seq(actionDim))
@@ -335,8 +379,9 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       lookupParams += model.add_lookup_parameters(1, Seq(actionDim))
     }
     
-    inputBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
-    actionBuilder = new LSTMBuilder(1, actionDim, hiddenDim, model)
+    forwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
+    backwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
+    actionBuilder = new LSTMBuilder(1, actionDim + inputDim, hiddenDim, model)
 
     new PpModel(names, params.toArray, lookupNames, lookupParams.toArray, model, true)
   }
@@ -405,10 +450,12 @@ object SemanticParser {
   val ACTION_BIAS_PARAM = "actionBias:"
   val ACTION_LOOKUP_PARAM = "actionLookup:"
   
-  val ENTITY_BIAS_PARAM = "entityBias:"
-  val ENTITY_LOOKUP_PARAM = "entityLookup:"
+  val ATTENTION_WEIGHTS_PARAM = "attentionWeights:"
+  val ATTENTION_ACTION_WEIGHTS_PARAM = "attentionActionWeights:"
   
-  val MAX_VARS=10
+  val ENTITY_BIAS_PARAM = "entityBias:"
+  val ENTITY_WEIGHTS_PARAM = "entityWeights:"
+  val ENTITY_LOOKUP_PARAM = "entityLookup:"
   
   /** Create a set of templates that can generate all of
     * the logical forms in data.
@@ -513,7 +560,9 @@ object SemanticParser {
   }
 }
 
-case class InputEncoding(val rnnState: ExpressionVector, val tokenRnnOuts: List[Expression],
+case class InputEncoding(val tokens: List[Int], val rnnState: ExpressionVector,
+    val sentEmbedding: Expression,
+    val tokenMatrix: Expression, val encodedTokenMatrix: Expression,
     val entityEncoding: MultiMap[Type, EntityEncoding]) {
 }
 
