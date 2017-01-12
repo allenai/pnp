@@ -48,7 +48,7 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
         trainer.update(1.0f)
         cg.delete()
       }
-      println(i + "  loss: " + loss)
+      // println(i + "  loss: " + loss)
       trainer.update_epoch()
     }
   }
