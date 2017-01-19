@@ -2,12 +2,11 @@ package org.allenai.pnp.examples
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
+import edu.cmu.dynet.DynetScalaHelpers._
 
 object XorDynetExample {
   val HIDDEN_SIZE = 8
   val ITERATIONS = 30
-
-  import DynetScalaHelpers._
 
   def main(args: Array[String]) {
     println("Running XOR example")
@@ -17,10 +16,10 @@ object XorDynetExample {
     val sgd = new SimpleSGDTrainer(m)
     val cg = new ComputationGraph
 
-    val p_W = m.add_parameters(Seq(HIDDEN_SIZE, 2))
-    val p_b = m.add_parameters(Seq(HIDDEN_SIZE))
-    val p_V = m.add_parameters(Seq(1, HIDDEN_SIZE))
-    val p_a = m.add_parameters(Seq(1))
+    val p_W = m.add_parameters(dim(HIDDEN_SIZE, 2))
+    val p_b = m.add_parameters(dim(HIDDEN_SIZE))
+    val p_V = m.add_parameters(dim(1, HIDDEN_SIZE))
+    val p_a = m.add_parameters(dim(1))
 
     val W = parameter(cg, p_W)
     val b = parameter(cg, p_b)
@@ -28,11 +27,11 @@ object XorDynetExample {
     val a = parameter(cg, p_a)
 
     val x_values = new FloatVector(2)
-    val x = input(cg, Seq(2), x_values)
+    val x = input(cg, dim(2), x_values)
 
     // Need a pointer representation of scalars so updates are tracked
-    val y_value = new_floatp()
-    floatp_assign(y_value, 0)
+    val y_value = new FloatPointer
+    y_value.set(0)
     val y = input(cg, y_value)
 
     val h = tanh(W * x + b)
@@ -52,9 +51,7 @@ object XorDynetExample {
         val x2: Boolean = (mi / 2) % 2 > 0
         x_values.set(0, if (x1) 1 else -1)
         x_values.set(1, if (x2) 1 else -1)
-        floatp_assign(y_value, if (x1 != x2) 1 else -1)
-        // Clear cached computations since we have changed the inputs
-        cg.invalidate()
+        y_value.set(if (x1 != x2) 1 else -1)
         loss += as_scalar(cg.forward(loss_expr))
         cg.backward(loss_expr)
         sgd.update(1.0f)
