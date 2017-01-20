@@ -275,10 +275,12 @@ class SemanticParserCli extends AbstractCli() {
         usedRules ++= oracle.holeTypes.zip(oracle.templates)
 
         // Print out the rules used to generate this logical form.
+        /*
         println(e.getLogicalForm)
         for (t <- oracle.templates) {
           println("  " + t)
         }
+        */
         
       } else {
         println("ORACLE: " + e)

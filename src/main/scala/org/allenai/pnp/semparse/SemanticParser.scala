@@ -81,8 +81,9 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         fwOutput
       }
       fwOutputs += fwOutputDropout
+      // fwOutputs += fwOutput
     }
-     
+
     backwardBuilder.start_new_sequence()
     val bwOutputs = ListBuffer[Expression]()
     for (inputEmbedding <- inputEmbeddings.reverse) {
@@ -93,6 +94,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         bwOutput
       }
       bwOutputs += bwOutputDropout
+      // bwOutputs += bwOutput
     }
     
     val outputEmbeddings = fwOutputs.toArray.zip(bwOutputs.toList.reverse).map(
