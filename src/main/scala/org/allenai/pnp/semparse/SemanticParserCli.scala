@@ -2,7 +2,6 @@ package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-import scala.collection.mutable.Map
 
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
@@ -31,7 +30,6 @@ import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
-import com.jayantkrish.jklol.ccg.lambda.Type
 
 /** Command line program for training a semantic parser.
   */
@@ -110,11 +108,11 @@ class SemanticParserCli extends AbstractCli() {
     val parser = new SemanticParser(actionSpace, vocab)
     
     println("*** Validating types ***")
-    validateTypes(trainPreprocessed, typeDeclaration)
+    SemanticParserUtils.validateTypes(trainPreprocessed, typeDeclaration)
     println("*** Validating train set action space ***")
-    validateActionSpace(trainPreprocessed, parser, typeDeclaration)
+    SemanticParserUtils.validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     println("*** Validating test set action space ***")
-    validateActionSpace(testPreprocessed, parser, typeDeclaration)
+    SemanticParserUtils.validateActionSpace(testPreprocessed, parser, typeDeclaration)
     val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
     println("***************** TEST EVALUATION *****************")
     val testResults = test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
@@ -190,125 +188,7 @@ class SemanticParserCli extends AbstractCli() {
     new CcgExample(unkedSentence, ex.getDependencies, ex.getSyntacticParse, 
           simplifier.apply(ex.getLogicalForm))
   }
-  
-  def validateTypes(examples: Seq[CcgExample], typeDeclaration: TypeDeclaration): Unit = {
-    for (e <- examples) {
-      val lf = e.getLogicalForm
-      val typeMap = StaticAnalysis.inferTypeMap(lf, TypeDeclaration.TOP, typeDeclaration).asScala 
-      
-      for (i <- 0 until lf.size()) {
-        if (typeMap.contains(i)) {
-          val t = typeMap(i)
-          if (isBadType(t)) {
-            println(lf)
-            println("  B " + i + " " + t + " " + lf.getSubexpression(i))
-          }
-        }
-      }
-    }
-  }
-
-  def isBadType(t: Type): Boolean = {
-    if (t.isAtomic) {
-      if (t.hasTypeVariables || t.equals(TypeDeclaration.TOP) || t.equals(TypeDeclaration.BOTTOM)) {
-        true
-      } else {
-        false
-      }
-    } else {
-      return isBadType(t.getArgumentType) || isBadType(t.getReturnType)
-    }
-  }
-
-  /** Verify that the parser can generate the logical form
-    * in each training example when the search is constrained
-    * by the execution oracle.  
-    */
-  def validateActionSpace(examples: Seq[CcgExample], parser: SemanticParser,
-      typeDeclaration: TypeDeclaration): Unit = {
-    val model = parser.getModel
-
-    println("")
-    var maxParts = 0
-    var numFailed = 0
-    val usedRules = ListBuffer[(Type, Template)]()
-    for (e <- examples) {
-      val sent = e.getSentence
-      val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
-      val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
-
-      val oracleOpt = parser.generateExecutionOracle(e.getLogicalForm, entityLinking, typeDeclaration)
-      val dist = parser.parse(tokenIds, entityLinking)
-
-      if (oracleOpt.isDefined) {
-        val oracle = oracleOpt.get
-        val cg = new ComputationGraph
-        val results = dist.beamSearch(1, 50, Env.init, oracle,
-            model.getInitialComputationGraph(cg), new NullLogFunction())
-        if (results.executions.size != 1) {
-          println("ERROR: " + e + " " + results)
-          println("  " + e.getSentence.getWords)
-          println("  " + e.getLogicalForm)
-          println("  " + e.getSentence.getAnnotation("entityLinking"))
-
-          numFailed += 1
-        } else {
-          val numParts = results.executions(0).value.parts.size
-          maxParts = Math.max(numParts, maxParts)
-          if (results.executions.length > 1) {
-            println("MULTIPLE: " + results.executions.length + " " + e)
-            println("  " + e.getSentence.getWords)
-            println("  " + e.getLogicalForm)
-            println("  " + e.getSentence.getAnnotation("entityLinking"))
-          } else {
-            // println("OK   : " + numParts + " " + " "
-          }
-        }
-        cg.delete
-        
-        // Accumulate the rules used in each example
-        usedRules ++= oracle.holeTypes.zip(oracle.templates)
-
-        // Print out the rules used to generate this logical form.
-        /*
-        println(e.getLogicalForm)
-        for (t <- oracle.templates) {
-          println("  " + t)
-        }
-        */
-        
-      } else {
-        println("ORACLE: " + e)
-        println("  " + e.getSentence.getWords)
-        println("  " + e.getLogicalForm)
-        println("  " + e.getSentence.getAnnotation("entityLinking"))
-
-        numFailed += 1
-      }
-    }
-    println("max parts: " + maxParts)
-    println("decoding failures: " + numFailed)
     
-    val holeTypes = usedRules.map(_._1).toSet
-    val countMap = Map[Type, CountAccumulator[Template]]()
-    for (t <- holeTypes) {
-      countMap(t) = CountAccumulator.create()
-    }
-    
-    for ((t, template) <- usedRules) {
-      countMap(t).increment(template, 1.0)
-    }
-    
-    for (t <- holeTypes) {
-      println(t)
-      val counts = countMap(t)
-      for (template <- counts.getSortedKeys.asScala) {
-        val count = counts.getCount(template)
-        println("  " + count + " " + template) 
-      }
-    }
-  }
-  
   /** Train the parser by maximizing the likelihood of examples.
     * Returns a model with the trained parameters. 
     */
