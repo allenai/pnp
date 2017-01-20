@@ -2,6 +2,7 @@ package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.Map
 
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
@@ -30,6 +31,7 @@ import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import com.jayantkrish.jklol.ccg.lambda.Type
 
 /** Command line program for training a semantic parser.
   */
@@ -48,8 +50,13 @@ class SemanticParserCli extends AbstractCli() {
   override def run(options: OptionSet): Unit = {
     myInitialize()
     
+    // TODO: 
+    // make templates have the most general type for arguments
+    // allow generation of subtypes (e.g., a hole of type "lo" can be subtyped to a "c")
+    // how do polymorphic types work in this context? -> generate if exists binding of variables such that it's a subtype?
+    
     // Initialize expression processing for Geoquery logical forms. 
-    val typeDeclaration = GeoqueryUtil.getTypeDeclaration()
+    val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
     val simplifier = GeoqueryUtil.getExpressionSimplifier
     val comparator = new SimplificationComparator(simplifier)
     
@@ -82,6 +89,7 @@ class SemanticParserCli extends AbstractCli() {
     val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
     vocab.addAll(entityWordCounts.getKeysAboveCountThreshold(0.0))
     vocab.add(SemanticParserCli.UNK)
+    vocab.add(SemanticParserCli.ENTITY)
     
     val entityDict = buildEntityDictionary(entityData, vocab, typeDeclaration)
     
@@ -106,7 +114,12 @@ class SemanticParserCli extends AbstractCli() {
     
     val parser = new SemanticParser(actionSpace, vocab)
     
+    println("*** Validating types ***")
+    validateTypes(trainPreprocessed, typeDeclaration)
+    println("*** Validating train set action space ***")
     validateActionSpace(trainPreprocessed, parser, typeDeclaration)
+    println("*** Validating test set action space ***")
+    validateActionSpace(testPreprocessed, parser, typeDeclaration)
     val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
     println("***************** TEST EVALUATION *****************")
     val testResults = test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
@@ -161,16 +174,55 @@ class SemanticParserCli extends AbstractCli() {
     val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toList
     val entityLinking = entityDict.link(tokenIds)
     
+    val entityAnonymizedWords = unkedWords.toArray
+    val entityAnonymizedTokenIds = tokenIds.toArray
+    for (entityMatch <- entityLinking.matches) {
+      val span = entityMatch._1
+      for (i <- span.start until span.end) {
+        entityAnonymizedTokenIds(i) = vocab.getIndex(SemanticParserCli.ENTITY)
+        entityAnonymizedWords(i) = SemanticParserCli.ENTITY
+      }
+    }
+
     val annotations = Maps.newHashMap[String, Object](sent.getAnnotations)
-    annotations.put("originalTokens", sent.getWords)
-    annotations.put("tokenIds", tokenIds)
+    annotations.put("originalTokens", sent.getWords.asScala.toList)
+    annotations.put("tokenIds", entityAnonymizedTokenIds.toList)
     annotations.put("entityLinking", entityLinking)
 
-    val unkedSentence = new AnnotatedSentence(unkedWords.asJava,
+    val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
         sent.getPosTags, annotations)
     
     new CcgExample(unkedSentence, ex.getDependencies, ex.getSyntacticParse, 
           simplifier.apply(ex.getLogicalForm))
+  }
+  
+  def validateTypes(examples: Seq[CcgExample], typeDeclaration: TypeDeclaration): Unit = {
+    for (e <- examples) {
+      val lf = e.getLogicalForm
+      val typeMap = StaticAnalysis.inferTypeMap(lf, TypeDeclaration.TOP, typeDeclaration).asScala 
+      
+      for (i <- 0 until lf.size()) {
+        if (typeMap.contains(i)) {
+          val t = typeMap(i)
+          if (isBadType(t)) {
+            println(lf)
+            println("  B " + i + " " + t + " " + lf.getSubexpression(i))
+          }
+        }
+      }
+    }
+  }
+
+  def isBadType(t: Type): Boolean = {
+    if (t.isAtomic) {
+      if (t.hasTypeVariables || t.equals(TypeDeclaration.TOP) || t.equals(TypeDeclaration.BOTTOM)) {
+        true
+      } else {
+        false
+      }
+    } else {
+      return isBadType(t.getArgumentType) || isBadType(t.getReturnType)
+    }
   }
 
   /** Verify that the parser can generate the logical form
@@ -184,18 +236,19 @@ class SemanticParserCli extends AbstractCli() {
     println("")
     var maxParts = 0
     var numFailed = 0
+    val usedRules = ListBuffer[(Type, Template)]()
     for (e <- examples) {
-
       val sent = e.getSentence
       val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
 
-      val oracle = parser.generateExecutionOracle(e.getLogicalForm, entityLinking, typeDeclaration)
+      val oracleOpt = parser.generateExecutionOracle(e.getLogicalForm, entityLinking, typeDeclaration)
       val dist = parser.parse(tokenIds, entityLinking)
 
-      if (oracle.isDefined) {
+      if (oracleOpt.isDefined) {
+        val oracle = oracleOpt.get
         val cg = new ComputationGraph
-        val results = dist.beamSearch(1, 50, Env.init, oracle.get,
+        val results = dist.beamSearch(1, 50, Env.init, oracle,
             model.getInitialComputationGraph(cg), new NullLogFunction())
         if (results.executions.size != 1) {
           println("ERROR: " + e + " " + results)
@@ -217,6 +270,16 @@ class SemanticParserCli extends AbstractCli() {
           }
         }
         cg.delete
+        
+        // Accumulate the rules used in each example
+        usedRules ++= oracle.holeTypes.zip(oracle.templates)
+
+        // Print out the rules used to generate this logical form.
+        println(e.getLogicalForm)
+        for (t <- oracle.templates) {
+          println("  " + t)
+        }
+        
       } else {
         println("ORACLE: " + e)
         println("  " + e.getSentence.getWords)
@@ -228,6 +291,25 @@ class SemanticParserCli extends AbstractCli() {
     }
     println("max parts: " + maxParts)
     println("decoding failures: " + numFailed)
+    
+    val holeTypes = usedRules.map(_._1).toSet
+    val countMap = Map[Type, CountAccumulator[Template]]()
+    for (t <- holeTypes) {
+      countMap(t) = CountAccumulator.create()
+    }
+    
+    for ((t, template) <- usedRules) {
+      countMap(t).increment(template, 1.0)
+    }
+    
+    for (t <- holeTypes) {
+      println(t)
+      val counts = countMap(t)
+      for (template <- counts.getSortedKeys.asScala) {
+        val count = counts.getCount(template)
+        println("  " + count + " " + template) 
+      }
+    }
   }
   
   /** Train the parser by maximizing the likelihood of examples.
@@ -235,6 +317,8 @@ class SemanticParserCli extends AbstractCli() {
     */
   def train(examples: Seq[CcgExample], parser: SemanticParser,
       typeDeclaration: TypeDeclaration): PpModel = {
+    
+    parser.dropoutProb = 0.5
     val ppExamples = for {
       x <- examples
       sent = x.getSentence
@@ -249,9 +333,10 @@ class SemanticParserCli extends AbstractCli() {
     // Train model
     val model = parser.getModel
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(20, 100, model, sgd, new DefaultLogFunction())
+    val trainer = new LoglikelihoodTrainer(50, 100, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
 
+    parser.dropoutProb = -1
     model
   }
 
@@ -266,10 +351,11 @@ class SemanticParserCli extends AbstractCli() {
     var numCorrectAt10 = 0
     for (e <- examples) {
       println(e.getSentence.getWords.asScala.mkString(" "))
+      println(e.getSentence.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
       println("expected: " + e.getLogicalForm)
       
       val sent = e.getSentence
-      val dist = parser.generateExpression(
+      val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val cg = new ComputationGraph
@@ -278,7 +364,7 @@ class SemanticParserCli extends AbstractCli() {
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
-        val simplified = simplifier.apply(x.value)
+        val simplified = simplifier.apply(x.value.decodeExpression)
         if (comparator.equals(e.getLogicalForm, simplified)) {
           println("* " + x.logProb.formatted("%02.3f") + "  " + simplified)
           true
@@ -295,6 +381,38 @@ class SemanticParserCli extends AbstractCli() {
         numCorrectAt10 += 1
       }
       
+      // Print the attentions of the best predicted derivation
+      val state = beam(0).value
+      val templates = state.getTemplates
+      val attentions = state.getAttentions
+      val tokens = e.getSentence.getWords.asScala.toArray
+      for (i <- 0 until templates.length) {
+        val floatVector = as_vector(cg.get_value(attentions(i)))
+        val values = for {
+          j <- 0 until floatVector.size().asInstanceOf[Int]
+        } yield {
+          floatVector.get(j)
+        }
+        
+        val maxIndex = values.zipWithIndex.max._2
+        
+        val tokenStrings = for {
+          j <- 0 until values.length
+        } yield {
+          val color = if (j == maxIndex) {
+            Console.RED
+          } else if (values(j) > 0.1) {
+            Console.YELLOW
+          } else {
+            Console.RESET
+          }
+          
+          color + tokens(j) + Console.RESET
+        }
+
+        println("  " + tokenStrings.mkString(" ") + " " + templates(i))
+      }
+      
       cg.delete
     }
     
@@ -307,7 +425,8 @@ class SemanticParserCli extends AbstractCli() {
 object SemanticParserCli {
   
   val UNK = "<UNK>"
-  
+  val ENTITY = "<ENTITY>"
+
   def main(args: Array[String]): Unit = {
     (new SemanticParserCli()).run(args)
   }

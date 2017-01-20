@@ -5,6 +5,7 @@ import java.util.Arrays
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
+import edu.cmu.dynet.Expression
 
 /** State of the semantic parser during expression generation.
   * Each hole generated during parsing is assigned a unique id.
@@ -15,7 +16,7 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
   */
 case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     val unfilledHoleIds: List[(Int, Type, Scope)], val nextId: Int,
-    val numActions: Int) {
+    val numActions: Int, val templates: List[Template], val attentions: List[Expression]) {
 
   def decodeExpression(partId: Int): Expression2 = {
     val part = parts(partId)
@@ -34,6 +35,19 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     Preconditions.checkState(unfilledHoleIds.length == 0)
     decodeExpression(0)
   }
+  
+  def addAttention(e: Expression): SemanticParserState = {
+    SemanticParserState(parts, unfilledHoleIds, nextId, numActions,
+        templates, e :: attentions)
+  }
+  
+  def getTemplates: Array[Template] = {
+    templates.reverse.toArray
+  }
+  
+  def getAttentions: Array[Expression] = {
+    attentions.reverse.toArray
+  }
 }
 
 object SemanticParserState {
@@ -43,7 +57,7 @@ object SemanticParserState {
     */
   def start(t: Type): SemanticParserState = {
     val scope = Scope(List.empty)    
-    SemanticParserState(Map.empty, List((0, t, scope)), 1, 0) 
+    SemanticParserState(Map.empty, List((0, t, scope)), 1, 0, List(), List()) 
   }
 }
 

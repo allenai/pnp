@@ -34,10 +34,13 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   var backwardBuilder: LSTMBuilder = null
   var actionBuilder: LSTMBuilder = null
   
-  val inputDim = 100
+  val inputDim = 200
   val hiddenDim = 100
   val actionDim = 100
+  val actionHiddenDim = 100
   val maxVars = 10
+  
+  var dropoutProb = -1.0
 
   def initializeRnns(computationGraph: CompGraph): Unit = {
     val cg = computationGraph.cg
@@ -53,7 +56,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       compGraph <- computationGraph()
       _ = initializeRnns(compGraph)
       inputEncoding = rnnEncode(compGraph, tokens)
-      entityEncoding = encodeEntities(compGraph, entityLinking)
+      entityEncoding = encodeEntities(compGraph, entityLinking, tokens)
       // entityEncoding = null
     } yield {
       InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
@@ -71,13 +74,25 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     forwardBuilder.start_new_sequence()
     val fwOutputs = ListBuffer[Expression]()
     for (inputEmbedding <- inputEmbeddings) {
-      fwOutputs += forwardBuilder.add_input(inputEmbedding)
+      val fwOutput = forwardBuilder.add_input(inputEmbedding)
+      val fwOutputDropout = if (dropoutProb > 0.0) {
+        dropout(fwOutput, dropoutProb.asInstanceOf[Float])
+      } else {
+        fwOutput
+      }
+      fwOutputs += fwOutputDropout
     }
-    
+     
     backwardBuilder.start_new_sequence()
     val bwOutputs = ListBuffer[Expression]()
     for (inputEmbedding <- inputEmbeddings.reverse) {
-      bwOutputs += backwardBuilder.add_input(inputEmbedding)
+      val bwOutput = backwardBuilder.add_input(inputEmbedding)
+      val bwOutputDropout = if (dropoutProb > 0.0) {
+        dropout(bwOutput, dropoutProb.asInstanceOf[Float])
+      } else {
+        bwOutput
+      }
+      bwOutputs += bwOutputDropout
     }
     
     val outputEmbeddings = fwOutputs.toArray.zip(bwOutputs.toList.reverse).map(
@@ -93,15 +108,16 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   }
 
   def encodeEntities(computationGraph: CompGraph,
-      entityLinking: EntityLinking): MultiMap[Type, EntityEncoding] = {
+      entityLinking: EntityLinking, tokens: List[Int]): MultiMap[Type, EntityEncoding] = {
     val cg = computationGraph.cg
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
     val output = ListBuffer[(Type, EntityEncoding)]()
     for (entityMatch <- entityLinking.bestEntityMatchesList) {
-      val entity = entityMatch._1
-      val name = entityMatch._2
-      val score = entityMatch._3
+      val span = entityMatch._1
+      val entity = entityMatch._2
+      val name = entityMatch._3
+      val score = entityMatch._4
 
       // builder.start_new_sequence()
       var lastOutput: Expression = null
@@ -114,7 +130,15 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         }
       }
       Preconditions.checkState(lastOutput != null)
-      output += ((entity.t, EntityEncoding(entity, lastOutput)))
+      
+      val spanVector = new FloatVector(tokens.length)
+      for (i <- 0 until tokens.length) {
+        val value = if (i >= span.start && i < span.end) { 1.0 } else { 0.0 }
+        spanVector.set(i, value.asInstanceOf[Float])
+      }
+      val spanExpression = input(cg, Seq(tokens.length), spanVector)
+
+      output += ((entity.t, EntityEncoding(entity, lastOutput, span, spanExpression)))
     }
 
     SemanticParser.seqToMultimap(output)
@@ -204,31 +228,57 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       // Update the LSTM and use its output to score
       // the applicable templates.
       val rnnOutput = builder.add_input(rnnState, prevInput)
+      val rnnOutputDropout = if (dropoutProb > 0.0) {
+        dropout(rnnOutput, dropoutProb.asInstanceOf[Float])
+      } else {
+        rnnOutput
+      }
       val nextRnnState = builder.state
       for {
         // Compute an attention vector
         attentionWeights <- param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
-        wordAttentions = reshape(softmax(input.encodedTokenMatrix * attentionWeights * rnnOutput), 
+        wordAttentions = reshape(softmax(input.encodedTokenMatrix * attentionWeights * rnnOutputDropout), 
             Seq(1, input.tokens.length))
-        attentionVector = reshape(wordAttentions * input.tokenMatrix, Seq(inputDim))
+        // Attention vector using the input token vectors 
+        // attentionVector = reshape(wordAttentions * input.tokenMatrix, Seq(inputDim))
+        // Attention vector using the encoded tokens 
+        attentionVector = reshape(wordAttentions * input.encodedTokenMatrix, Seq(inputDim))
         
         attentionActionWeights <- param(SemanticParser.ATTENTION_ACTION_WEIGHTS_PARAM + t)
         attentionActionScores = attentionActionWeights * attentionVector
 
-        // Score the templates.
         actionWeights <- param(SemanticParser.ACTION_WEIGHTS_PARAM + t)
         actionBias <- param(SemanticParser.ACTION_BIAS_PARAM + t)
-        actionScores = pickrange(attentionActionScores + (actionWeights * rnnOutput) + actionBias, 0, baseTemplates.length)
+        rnnActionScores = actionWeights * rnnOutputDropout
+
+        actionHiddenWeights <- param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
+        actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + t)
+        attentionAndRnn = concatenate(Array(attentionVector, rnnOutputDropout))
+        actionHidden = tanh(actionHiddenWeights * attentionAndRnn)
+        actionHiddenDropout = if (dropoutProb > 0.0) {
+          dropout(actionHidden, dropoutProb.asInstanceOf[Float]) 
+        } else {
+          actionHidden
+        }
+        actionHiddenScores = actionHiddenWeights2 * actionHidden
+ 
+        // Score the templates.
+        actionScores = pickrange(actionHiddenScores, 0, baseTemplates.length)
 
         // Score the entity templates
         allScores <- if (entities.size > 0) {
           for {
             entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + t)
             entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + t)
-            entityChoiceScore = dot_product(entityWeights, rnnOutput) + entityBias 
+            entityChoiceScore = dot_product(entityWeights, rnnOutputDropout) + entityBias 
             // TODO: How should we score these entities using attentions?
+            /*
             entityScores = concatenate(entityVectors.map(v => dot_product(v, attentionVector)
                 + entityChoiceScore))
+            */
+
+            entityScores = concatenate(entities.map(x => wordAttentions * x.spanVector))
+                
           } yield {
             concatenate(Array(actionScores, entityScores))
           }
@@ -241,7 +291,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
         templateTuple <- choose(allTemplates.zipWithIndex.toArray, allScores, state.numActions)
-        nextState = templateTuple._1.apply(state)
+        nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
         // Get the LSTM input parameters associated with the chosen
         // template.
@@ -276,9 +326,10 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     * This method assumes that only one such action sequence exists.  
     */
   def generateActionSequence(exp: Expression2, entityLinking: EntityLinking,
-      typeDeclaration: TypeDeclaration): Option[List[Template]] = {
+      typeDeclaration: TypeDeclaration): Option[(List[Type], List[Template])] = {
     val indexQueue = ListBuffer[(Int, Scope)]()
-    indexQueue += ((0, Scope(List.empty))) 
+    indexQueue += ((0, Scope(List.empty)))
+    val actionTypes = ListBuffer[Type]()
     val actions = ListBuffer[Template]()
 
     val typeMap = StaticAnalysis.inferTypeMap(exp, TypeDeclaration.TOP, typeDeclaration).asScala.toMap
@@ -292,30 +343,35 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       val templates = actionSpace.getTemplates(curType) ++
         currentScope.getVariableTemplates(curType) ++
         entityLinking.getEntitiesWithType(curType).map(_.template)
-
+        
       val matches = templates.filter(_.matches(expIndex, exp, typeMap))
       if (matches.size != 1) {
-        println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) + " (expected 1)")
+        println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) + " : "  + curType + " (expected 1)")
         return None
       }
       
       val theMatch = matches.toList(0)
       state = theMatch.apply(state)
-      val nextScopes = state.unfilledHoleIds.takeRight(theMatch.holeIndexes.size).map(x => x._3)
+      val nextScopes = state.unfilledHoleIds.take(theMatch.holeIndexes.size).map(x => x._3)
       
+      actionTypes += curType
       actions += theMatch
       var holeOffset = 0
+      
+      val generated = ListBuffer[(Int, Scope)]() 
       for ((holeIndex, nextScope) <- theMatch.holeIndexes.zip(nextScopes)) {
         val curIndex = expIndex + holeIndex + holeOffset
-        indexQueue += ((curIndex, nextScope))
+        generated += ((curIndex, nextScope))
         holeOffset += (exp.getSubexpression(curIndex).size - 1)
       }
+
+      indexQueue.prependAll(generated);
     }
 
     val decoded = state.decodeExpression
     Preconditions.checkState(decoded.equals(exp), "Expected %s and %s to be equal", decoded, exp)
     
-    Some(actions.toList)
+    Some((actionTypes.toList, actions.toList))
   }
   
   /** Generate an execution oracle that constrains the
@@ -323,12 +379,11 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     * to supervise the parser.
     */
   def generateExecutionOracle(exp: Expression2, entityLinking: EntityLinking,
-      typeDeclaration: TypeDeclaration): Option[ExecutionScore] = {
-    val rootType = StaticAnalysis.inferType(exp, typeDeclaration)
+      typeDeclaration: TypeDeclaration): Option[SemanticParserExecutionScore] = {
     for {
-      templates <- generateActionSequence(exp, entityLinking, typeDeclaration)
+      (holeTypes, templates) <- generateActionSequence(exp, entityLinking, typeDeclaration)
     } yield {
-      new SemanticParserExecutionScore(rootType, templates.toArray)
+      new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray)
     }
   }
   
@@ -348,7 +403,10 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     names.add(SemanticParser.ROOT_BIAS_PARAM)
     params += model.add_parameters(Seq(actionSpace.rootTypes.length))
     names.add(SemanticParser.ATTENTION_WEIGHTS_PARAM)
-    params += model.add_parameters(Seq(2 * hiddenDim, inputDim))
+    params += model.add_parameters(Seq(2 * hiddenDim, actionDim))
+    
+    names.add(SemanticParser.ACTION_HIDDEN_WEIGHTS)
+    params += model.add_parameters(Seq(actionHiddenDim, inputDim + hiddenDim))
     
     lookupNames.add(SemanticParser.WORD_EMBEDDINGS_PARAM)
     lookupParams += model.add_lookup_parameters(vocab.size, Seq(inputDim))
@@ -366,6 +424,9 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
 
       names.add(SemanticParser.ATTENTION_ACTION_WEIGHTS_PARAM + t)
       params += model.add_parameters(Seq(dim, inputDim))
+      
+      names.add(SemanticParser.ACTION_HIDDEN_ACTION + t)
+      params += model.add_parameters(Seq(dim, actionHiddenDim))
       
       names.add(SemanticParser.ENTITY_BIAS_PARAM + t)
       params += model.add_parameters(Seq(1))
@@ -392,11 +453,10 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   */
 class ActionSpace(
     val typeTemplateMap: MultiMap[Type, Template],
-    val rootTypes: Array[Type]
+    val rootTypes: Array[Type],
+    val allTypes: Set[Type]
     ) {
   
-  val allTypes = rootTypes.toSet ++ typeTemplateMap.keySet
-
   def getTemplates(t: Type): Vector[Template] = {
     typeTemplateMap.getOrElse(t, Set.empty).toVector
   }
@@ -410,8 +470,12 @@ class ActionSpace(
   * to generate the given rootType and sequence of
   * templates. 
   */
-class SemanticParserExecutionScore(val rootType: Type, val templates: Array[Template])
+class SemanticParserExecutionScore(val holeTypes: Array[Type],
+    val templates: Array[Template])
 extends ExecutionScore {
+
+  val rootType = holeTypes(0)
+
   def apply(tag: Any, choice: Any, env: Env): Double = {
     if (tag != null && tag.isInstanceOf[Int]) {
       val tagInt = tag.asInstanceOf[Int]
@@ -453,6 +517,9 @@ object SemanticParser {
   val ATTENTION_WEIGHTS_PARAM = "attentionWeights:"
   val ATTENTION_ACTION_WEIGHTS_PARAM = "attentionActionWeights:"
   
+  val ACTION_HIDDEN_WEIGHTS = "actionHidden"
+  val ACTION_HIDDEN_ACTION = "actionHiddenOutput:"
+  
   val ENTITY_BIAS_PARAM = "entityBias:"
   val ENTITY_WEIGHTS_PARAM = "entityWeights:"
   val ENTITY_LOOKUP_PARAM = "entityLookup:"
@@ -463,11 +530,11 @@ object SemanticParser {
   def generateActionSpace(data: Seq[Expression2], typeDeclaration: TypeDeclaration): ActionSpace = {
     val applicationTemplates = for {
       x <- data
-      template <- SemanticParser.generateApplicationTemplates(x, typeDeclaration) 
+      template <- SemanticParser.generateApplicationTemplates(x, typeDeclaration)
     } yield {
       template
     }
-  
+
     val lambdaTemplates = for {
       x <- data
       template <- SemanticParser.generateLambdaTemplates(x, typeDeclaration) 
@@ -491,11 +558,32 @@ object SemanticParser {
     } yield {
       typeMap(0)
     }
-  
-    val allTemplates = (applicationTemplates ++ lambdaTemplates ++ constantTemplates)
-    val templateMap = allTemplates.map(x => (x.root, x))
+    
+    val allTemplates = if (true) {
+      val constantsWithType = seqToMultimap(constantTemplates.map(x => (x.root, x)).toSeq)
+      val newApplicationTemplates = for {
+        app <- applicationTemplates
+        constant <- constantsWithType(app.holeTypes(0))
+        holeIndex = app.holeIndexesList(0)
+        newExpr = app.expr.substitute(holeIndex, constant.expr)
+      } yield {
+        ApplicationTemplate(app.root, newExpr, app.holeIndexesList.drop(1), app.elts.drop(1))
+      }
+      
+      val functionTypes = applicationTemplates.map(x => x.holeTypes(0)).toSet
+      val newConstantTemplates = constantTemplates.filter(x => !functionTypes.contains(x.root))
+      
+      (newApplicationTemplates ++ lambdaTemplates ++ newConstantTemplates) 
+    } else {
+      (applicationTemplates ++ lambdaTemplates ++ constantTemplates)
+    }
 
-    new ActionSpace(seqToMultimap(templateMap), rootTypes.toSet.toArray)
+    val templateMap = allTemplates.map(x => (x.root, x))
+    
+    val allTypes = rootTypes ++ allTemplates.map(_.root) ++
+      applicationTemplates.map(_.holeTypes).flatten ++ lambdaTemplates.map(_.args).flatten
+
+    new ActionSpace(seqToMultimap(templateMap), rootTypes.toSet.toArray, allTypes.toSet)
   }
 
   def seqToMultimap[A, B](s: Seq[(A, B)]) = { 
@@ -533,7 +621,7 @@ object SemanticParser {
     val typeMap = StaticAnalysis.inferTypeMap(e, TypeDeclaration.TOP, typeDeclaration)
     val builder = ListBuffer[ApplicationTemplate]()
     generateApplicationTemplates(e, 0, typeMap.asScala, builder)
-    builder.toList
+    builder.toSet.toList
   }
   
   def generateApplicationTemplates(
@@ -550,7 +638,7 @@ object SemanticParser {
       if (!subexpr.isConstant) {
         val rootType = typeMap(index)
         val subtypes = e.getChildIndexes(index).map(x => typeMap(x)).toList
-        builder += ApplicationTemplate(rootType, subtypes)
+        builder += ApplicationTemplate.fromTypes(rootType, subtypes)
       
         for (childIndex <- e.getChildIndexes(index)) {
           generateApplicationTemplates(e, childIndex, typeMap, builder)
@@ -566,7 +654,8 @@ case class InputEncoding(val tokens: List[Int], val rnnState: ExpressionVector,
     val entityEncoding: MultiMap[Type, EntityEncoding]) {
 }
 
-case class EntityEncoding(val entity: Entity, val vector: Expression) {
+case class EntityEncoding(val entity: Entity, val vector: Expression, val span: Span,
+    val spanVector: Expression) {
 }
 
 class ExpressionDecodingException extends RuntimeException {
