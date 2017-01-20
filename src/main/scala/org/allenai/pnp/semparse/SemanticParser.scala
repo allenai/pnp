@@ -121,7 +121,6 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       val name = entityMatch._3
       val score = entityMatch._4
 
-      // builder.start_new_sequence()
       var lastOutput: Expression = null
       for (wordId <- name) {
         val inputEmbedding = lookup(cg, wordEmbeddings, wordId)
