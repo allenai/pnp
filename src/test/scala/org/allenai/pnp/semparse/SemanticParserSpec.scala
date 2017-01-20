@@ -56,12 +56,12 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val e = exprParser.parse(
         "(argmax:<<e,t>,e> (lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0))))")
     // This method will throw an error if it can't decode the expression properly. 
-    val templates = parser.generateActionSequence(e, EntityLinking(Map()), typeDeclaration)
+    val templates = parser.generateActionSequence(e, EntityLinking(List()), typeDeclaration)
   }
   
   it should "condition on expressions" in {
     val label = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
-    val entityLinking = EntityLinking(Map())
+    val entityLinking = EntityLinking(List())
     val oracle = parser.generateExecutionOracle(label, entityLinking, typeDeclaration).get
     val exprs = parser.generateExpression(List("major", "city").map(vocab.getIndex(_)).toList, entityLinking)
 
