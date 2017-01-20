@@ -48,6 +48,13 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
   def getAttentions: Array[Expression] = {
     attentions.reverse.toArray
   }
+  
+  def fill(hole: Hole, part: ExpressionPart, newHoles: List[Hole], template: Template): SemanticParserState = {
+    val partTuple = (hole.id, part)
+    val nextHoles = newHoles ++ unfilledHoleIds.drop(1)   
+    SemanticParserState(parts + partTuple, nextHoles, nextId + newHoles.length,
+        numActions + 1, template :: templates, attentions)
+  }
 }
 
 object SemanticParserState {
@@ -57,7 +64,7 @@ object SemanticParserState {
     */
   def start(t: Type): SemanticParserState = {
     val scope = Scope(List.empty)    
-    SemanticParserState(Map.empty, List(Hole(0, t, scope)), 1, 0, List(), List()) 
+    SemanticParserState(Map.empty, List(Hole(0, t, scope, false)), 1, 0, List(), List()) 
   }
 }
 
@@ -70,4 +77,4 @@ case class ExpressionPart(val expr: Expression2,
   }
 }
 
-case class Hole(id: Int, t: Type, scope: Scope)
+case class Hole(id: Int, t: Type, scope: Scope, repeated: Boolean)

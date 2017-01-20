@@ -565,12 +565,13 @@ object SemanticParser {
       val newApplicationTemplates = for {
         app <- applicationTemplates
         constant <- constantsWithType(app.holeTypes(0))
-        holeIndex = app.holeIndexesList(0)
-        newExpr = app.expr.substitute(holeIndex, constant.expr)
+        hole = app.holes(0)
+        holeIndex = hole._1
+        newExpr = app.expr.substitute(holeIndex, constant.expr) 
       } yield {
-        ApplicationTemplate(app.root, newExpr, app.holeIndexesList.drop(1), app.elts.drop(1))
+        ApplicationTemplate(app.root, newExpr, app.holes.drop(1))
       }
-      
+
       val functionTypes = applicationTemplates.map(x => x.holeTypes(0)).toSet
       val newConstantTemplates = constantTemplates.filter(x => !functionTypes.contains(x.root))
       
@@ -638,7 +639,7 @@ object SemanticParser {
       val subexpr = e.getSubexpression(index)
       if (!subexpr.isConstant) {
         val rootType = typeMap(index)
-        val subtypes = e.getChildIndexes(index).map(x => typeMap(x)).toList
+        val subtypes = e.getChildIndexes(index).map(x => (typeMap(x), false)).toList
         builder += ApplicationTemplate.fromTypes(rootType, subtypes)
       
         for (childIndex <- e.getChildIndexes(index)) {
