@@ -50,11 +50,6 @@ class SemanticParserCli extends AbstractCli() {
   override def run(options: OptionSet): Unit = {
     myInitialize()
     
-    // TODO: 
-    // make templates have the most general type for arguments
-    // allow generation of subtypes (e.g., a hole of type "lo" can be subtyped to a "c")
-    // how do polymorphic types work in this context? -> generate if exists binding of variables such that it's a subtype?
-    
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
     val simplifier = GeoqueryUtil.getExpressionSimplifier

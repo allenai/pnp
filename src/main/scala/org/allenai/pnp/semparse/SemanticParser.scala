@@ -208,10 +208,10 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       Pp.value(state)
     } else {
       // Select the first unfilled hole and select the
-      // applicable templates given the hole's type. 
-      val (holeId, t, scope) = state.unfilledHoleIds.head
-      val actionTemplates = actionSpace.getTemplates(t)
-      val allVariableTemplates = scope.getVariableTemplates(t)
+      // applicable templates given the hole's type.
+      val hole = state.unfilledHoleIds.head
+      val actionTemplates = actionSpace.getTemplates(hole.t)
+      val allVariableTemplates = hole.scope.getVariableTemplates(hole.t)
       val variableTemplates = if (allVariableTemplates.length > maxVars) {
         // The model only has parameters for MAX_VARS variables. 
         allVariableTemplates.slice(0, maxVars)
@@ -220,7 +220,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       }
       val baseTemplates = actionTemplates ++ variableTemplates
 
-      val entities = input.entityEncoding.getOrElse(t, Set()).toArray
+      val entities = input.entityEncoding.getOrElse(hole.t, Set()).toArray
       val entityTemplates = entities.map(_.entity.template)
       val entityVectors = entities.map(_.vector)
 
@@ -245,15 +245,15 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         // Attention vector using the encoded tokens 
         attentionVector = reshape(wordAttentions * input.encodedTokenMatrix, Seq(inputDim))
         
-        attentionActionWeights <- param(SemanticParser.ATTENTION_ACTION_WEIGHTS_PARAM + t)
+        attentionActionWeights <- param(SemanticParser.ATTENTION_ACTION_WEIGHTS_PARAM + hole.t)
         attentionActionScores = attentionActionWeights * attentionVector
 
-        actionWeights <- param(SemanticParser.ACTION_WEIGHTS_PARAM + t)
-        actionBias <- param(SemanticParser.ACTION_BIAS_PARAM + t)
+        actionWeights <- param(SemanticParser.ACTION_WEIGHTS_PARAM + hole.t)
+        actionBias <- param(SemanticParser.ACTION_BIAS_PARAM + hole.t)
         rnnActionScores = actionWeights * rnnOutputDropout
 
         actionHiddenWeights <- param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
-        actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + t)
+        actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
         attentionAndRnn = concatenate(Array(attentionVector, rnnOutputDropout))
         actionHidden = tanh(actionHiddenWeights * attentionAndRnn)
         actionHiddenDropout = if (dropoutProb > 0.0) {
@@ -269,8 +269,8 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         // Score the entity templates
         allScores <- if (entities.size > 0) {
           for {
-            entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + t)
-            entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + t)
+            entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
+            entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
             entityChoiceScore = dot_product(entityWeights, rnnOutputDropout) + entityBias 
             // TODO: How should we score these entities using attentions?
             /*
@@ -297,8 +297,8 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         // Get the LSTM input parameters associated with the chosen
         // template.
         cg <- computationGraph()
-        actionLookup = cg.getLookupParameter(SemanticParser.ACTION_LOOKUP_PARAM + t)
-        entityLookup = cg.getLookupParameter(SemanticParser.ENTITY_LOOKUP_PARAM + t)
+        actionLookup = cg.getLookupParameter(SemanticParser.ACTION_LOOKUP_PARAM + hole.t)
+        entityLookup = cg.getLookupParameter(SemanticParser.ENTITY_LOOKUP_PARAM + hole.t)
         index = templateTuple._2
         actionInput = if (index < baseTemplates.length) {
           lookup(cg.cg, actionLookup, templateTuple._2)
@@ -353,8 +353,8 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       
       val theMatch = matches.toList(0)
       state = theMatch.apply(state)
-      val nextScopes = state.unfilledHoleIds.take(theMatch.holeIndexes.size).map(x => x._3)
-      
+      val nextScopes = state.unfilledHoleIds.take(theMatch.holeIndexes.size).map(x => x.scope)
+
       actionTypes += curType
       actions += theMatch
       var holeOffset = 0

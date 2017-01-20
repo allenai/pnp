@@ -15,7 +15,7 @@ import edu.cmu.dynet.Expression
   * expression have yet to be generated.
   */
 case class SemanticParserState(val parts: Map[Int, ExpressionPart],
-    val unfilledHoleIds: List[(Int, Type, Scope)], val nextId: Int,
+    val unfilledHoleIds: List[Hole], val nextId: Int,
     val numActions: Int, val templates: List[Template], val attentions: List[Expression]) {
 
   def decodeExpression(partId: Int): Expression2 = {
@@ -57,7 +57,7 @@ object SemanticParserState {
     */
   def start(t: Type): SemanticParserState = {
     val scope = Scope(List.empty)    
-    SemanticParserState(Map.empty, List((0, t, scope)), 1, 0, List(), List()) 
+    SemanticParserState(Map.empty, List(Hole(0, t, scope)), 1, 0, List(), List()) 
   }
 }
 
@@ -70,3 +70,4 @@ case class ExpressionPart(val expr: Expression2,
   }
 }
 
+case class Hole(id: Int, t: Type, scope: Scope)

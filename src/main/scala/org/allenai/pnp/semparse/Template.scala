@@ -46,11 +46,11 @@ case class ApplicationTemplate(val root: Type, val expr: Expression2, val holeIn
     }
 
     val filled = state.unfilledHoleIds.head
-    val holeScope = filled._3
+    val holeScope = filled.scope
 
-    val part = (filled._1, ExpressionPart(expr, holeIndexes.toArray, holeIds.toArray))
+    val part = (filled.id, ExpressionPart(expr, holeIndexes.toArray, holeIds.toArray))
 
-    val nextHoles = holeIds.zip(holeTypes).map(x => (x._1, x._2, holeScope))
+    val nextHoles = holeIds.zip(holeTypes).map(x => Hole(x._1, x._2, holeScope))
     val next = nextHoles.toList ++ state.unfilledHoleIds.drop(1)   
 
     SemanticParserState(state.parts + part, next, state.nextId + holeIndexes.length,
@@ -116,7 +116,7 @@ case class ConstantTemplate(val root: Type, val expr: Expression2) extends Templ
   
   override def apply(state: SemanticParserState): SemanticParserState = {
     val filled = state.unfilledHoleIds.head
-    val part = (filled._1, ExpressionPart(expr, Array.empty[Int], Array.empty[Int]))
+    val part = (filled.id, ExpressionPart(expr, Array.empty[Int], Array.empty[Int]))
     val next = state.unfilledHoleIds.drop(1)
     SemanticParserState(state.parts + part, next, state.nextId + 1, state.numActions + 1,
         this :: state.templates, state.attentions)
@@ -138,17 +138,17 @@ case class LambdaTemplate(val root: Type, val args: List[Type], val body: Type) 
   
   override def apply(state: SemanticParserState): SemanticParserState = {
     val filled = state.unfilledHoleIds.head
-    val currentScope = filled._3
+    val currentScope = filled.scope
     val (nextScope, varNames) = currentScope.extend(args)
     
     val expr = Expression2.lambda(varNames.asJava, Expression2.constant("TEMP"))
-    
+
     val hole = StaticAnalysis.getLambdaBodyIndex(expr, 0)
     val holeId = state.nextId
 
-    val part = (filled._1, ExpressionPart(expr, Array(hole), Array(holeId)))
+    val part = (filled.id, ExpressionPart(expr, Array(hole), Array(holeId)))
     
-    val next = List((holeId, body, nextScope)) ++ state.unfilledHoleIds.drop(1) 
+    val next = List(Hole(holeId, body, nextScope)) ++ state.unfilledHoleIds.drop(1) 
     SemanticParserState(state.parts + part, next, state.nextId + 1, state.numActions + 1,
         this :: state.templates, state.attentions)
   }
