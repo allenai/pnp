@@ -328,45 +328,50 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     */
   def generateActionSequence(exp: Expression2, entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration): Option[(List[Type], List[Template])] = {
-    val indexQueue = ListBuffer[(Int, Scope)]()
-    indexQueue += ((0, Scope(List.empty)))
+    val holeIndexMap = MutableMap[Int, Int]()
     val actionTypes = ListBuffer[Type]()
     val actions = ListBuffer[Template]()
 
-    val typeMap = StaticAnalysis.inferTypeMap(exp, TypeDeclaration.TOP, typeDeclaration).asScala.toMap
-    var state = SemanticParserState.start(typeMap(0))
+    val typeMap = StaticAnalysis.inferTypeMap(exp, TypeDeclaration.TOP, typeDeclaration)
+      .asScala.toMap
     
-    while (indexQueue.size > 0) {
-      val (expIndex, currentScope) = indexQueue.head
-      indexQueue.remove(0)
+    var state = SemanticParserState.start(typeMap(0))
+    holeIndexMap(state.nextHole.get.id) = 0  
+    
+    while (state.nextHole.isDefined) {
+      val hole = state.nextHole.get
+      val expIndex = holeIndexMap(hole.id)
+      val currentScope = hole.scope
 
       val curType = typeMap(expIndex)
+      Preconditions.checkState(curType.equals(hole.t),
+          "type-checked type %s does not match hole %s at index %s of %s",
+          curType, hole.t, expIndex.asInstanceOf[Integer], exp)
+
       val templates = actionSpace.getTemplates(curType) ++
         currentScope.getVariableTemplates(curType) ++
         entityLinking.getEntitiesWithType(curType).map(_.template)
         
       val matches = templates.filter(_.matches(expIndex, exp, typeMap))
       if (matches.size != 1) {
-        println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) + " : "  + curType + " (expected 1)")
+        println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) +
+            " : "  + curType + " (expected 1)")
         return None
       }
       
       val theMatch = matches.toList(0)
       state = theMatch.apply(state)
-      val nextScopes = state.unfilledHoleIds.take(theMatch.holeIndexes.size).map(x => x.scope)
-
+      
       actionTypes += curType
       actions += theMatch
-      var holeOffset = 0
-      
-      val generated = ListBuffer[(Int, Scope)]() 
-      for ((holeIndex, nextScope) <- theMatch.holeIndexes.zip(nextScopes)) {
+
+      var holeOffset = 0 
+      for ((holeIndex, hole) <- theMatch.holeIndexes.zip(
+          state.unfilledHoleIds.slice(0, theMatch.holeIndexes.length))) {
         val curIndex = expIndex + holeIndex + holeOffset
-        generated += ((curIndex, nextScope))
+        holeIndexMap(hole.id) = curIndex
         holeOffset += (exp.getSubexpression(curIndex).size - 1)
       }
-
-      indexQueue.prependAll(generated);
     }
 
     val decoded = state.decodeExpression

@@ -62,9 +62,9 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     val partTuple = (hole.id, part)
     
     val unfilledHoles = if (hole.repeated) {
-      unfilledHoleIds.drop(1)
-    } else {
       unfilledHoleIds
+    } else {
+      unfilledHoleIds.drop(1)
     }
     val nextHoles = newHoles ++ unfilledHoles
     

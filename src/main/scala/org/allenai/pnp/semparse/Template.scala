@@ -173,7 +173,8 @@ case class DropTemplate(val root: Type) extends Template {
   }
 
   override def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean = {
-    
+    // TODO
+    return false
   }
   
   override def toString(): String = {
