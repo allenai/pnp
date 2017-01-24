@@ -48,7 +48,7 @@ case class ApplicationTemplate(val root: Type, val expr: Expression2,
     val filled = state.nextHole().get
     val holeScope = filled.scope
     val part = ExpressionPart(expr, holeIndexes.toArray, holeIds.toArray)
-    val newHoles = holeIds.zip(holes).map(x => Hole(x._1, x._2._2, holeScope, x._2._3))
+    val newHoles = holeIds.zip(holes).map(x => Hole(x._1, filled.id, x._2._2, holeScope, x._2._3))
     
     state.fill(filled, part, newHoles.toList, this)
   } 
@@ -144,7 +144,7 @@ case class LambdaTemplate(val root: Type, val args: List[Type], val body: Type) 
 
     val part = ExpressionPart(expr, Array(hole), Array(holeId))
     
-    state.fill(filled, part, List(Hole(holeId, body, nextScope, false)), this)
+    state.fill(filled, part, List(Hole(holeId, filled.id, body, nextScope, false)), this)
   }
 
   override def matches(expIndex: Int, exp: Expression2, typeMap: Map[Integer, Type]): Boolean = {

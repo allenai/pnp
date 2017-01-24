@@ -16,7 +16,8 @@ import edu.cmu.dynet.Expression
   */
 case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     val unfilledHoleIds: List[Hole], val nextId: Int,
-    val numActions: Int, val templates: List[Template], val attentions: List[Expression]) {
+    val numActions: Int, val templates: List[Template],
+    val attentions: List[Expression], val holeTreeLstm: Map[Int, (Int, Expression)]) {
 
   def decodeExpression(partId: Int): Expression2 = {
     val part = parts(partId)
@@ -38,7 +39,12 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
   
   def addAttention(e: Expression): SemanticParserState = {
     SemanticParserState(parts, unfilledHoleIds, nextId, numActions,
-        templates, e :: attentions)
+        templates, e :: attentions, holeTreeLstm)
+  }
+  
+  def addTreeState(holeId: Int, rnnState: Int, input: Expression): SemanticParserState = {
+    SemanticParserState(parts, unfilledHoleIds, nextId, numActions,
+        templates, attentions, holeTreeLstm + ((holeId, (rnnState, input)))) 
   }
   
   def getTemplates: Array[Template] = {
@@ -69,13 +75,13 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     val nextHoles = newHoles ++ unfilledHoles
     
     SemanticParserState(parts + partTuple, nextHoles, nextId + newHoles.length,
-        numActions + 1, template :: templates, attentions)
+        numActions + 1, template :: templates, attentions, holeTreeLstm)
   }
 
   def drop(hole: Hole, template: Template): SemanticParserState = {
     Preconditions.checkArgument(unfilledHoleIds(0).id == hole.id)
     SemanticParserState(parts, unfilledHoleIds.drop(1), nextId,
-        numActions + 1, template :: templates, attentions)
+        numActions + 1, template :: templates, attentions, holeTreeLstm)
   }
 }
 
@@ -86,7 +92,7 @@ object SemanticParserState {
     */
   def start(t: Type): SemanticParserState = {
     val scope = Scope(List.empty)    
-    SemanticParserState(Map.empty, List(Hole(0, t, scope, false)), 1, 0, List(), List()) 
+    SemanticParserState(Map.empty, List(Hole(0, -1, t, scope, false)), 1, 0, List(), List(), Map()) 
   }
 }
 
@@ -99,4 +105,4 @@ case class ExpressionPart(val expr: Expression2,
   }
 }
 
-case class Hole(id: Int, t: Type, scope: Scope, repeated: Boolean)
+case class Hole(id: Int, parent: Int, t: Type, scope: Scope, repeated: Boolean)
