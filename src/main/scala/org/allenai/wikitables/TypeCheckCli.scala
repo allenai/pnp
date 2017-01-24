@@ -24,7 +24,8 @@ class TypeCheckCli extends AbstractCli() {
   }
   
   override def run(options: OptionSet): Unit = {
-    val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
+    //val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
+    val typeDeclaration = new WikiTablesTypeDeclaration()
     
     // Read and data
     val trainingData = ListBuffer[CcgExample]()
