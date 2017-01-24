@@ -24,14 +24,30 @@ object SemanticParserUtils {
   def validateTypes(examples: Seq[CcgExample], typeDeclaration: TypeDeclaration): Unit = {
     for (e <- examples) {
       val lf = e.getLogicalForm
-      val typeMap = StaticAnalysis.inferTypeMap(lf, TypeDeclaration.TOP, typeDeclaration).asScala 
-
-      for (i <- 0 until lf.size()) {
-        if (typeMap.contains(i)) {
-          val t = typeMap(i)
-          if (isBadType(t)) {
-            println(lf)
-            println("  B " + i + " " + t + " " + lf.getSubexpression(i))
+      val typeInference = StaticAnalysis.typeInference(lf, TypeDeclaration.TOP, typeDeclaration)
+      
+      val constraints = typeInference.getSolvedConstraints
+      val typeMap = typeInference.getExpressionTypes.asScala
+      
+      if (!constraints.isSolvable) {
+        println(lf)
+        println(typeInference.getConstraints)
+        println(typeInference.getSolvedConstraints)
+        
+        for (i <- 0 until lf.size()) {
+          if (typeMap.contains(i)) {
+            val t = typeMap(i)
+            println("    " + i + " " + t + " " + lf.getSubexpression(i))
+          }
+        }
+      } else {
+        for (i <- 0 until lf.size()) {
+          if (typeMap.contains(i)) {
+            val t = typeMap(i)
+            if (isBadType(t)) {
+              println(lf)
+              println("  B " + i + " " + t + " " + lf.getSubexpression(i))
+            }
           }
         }
       }

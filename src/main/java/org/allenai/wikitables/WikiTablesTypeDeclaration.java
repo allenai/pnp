@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.regex.Pattern;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.jayantkrish.jklol.ccg.lambda.Type;
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration;
@@ -78,12 +79,8 @@ public class WikiTablesTypeDeclaration extends AbstractTypeDeclaration {
         SUPERTYPE_MAP.put("p", "e");
     }
 
-    public WikiTablesTypeDeclaration(Map<String, String> supertypeMap) {
-        super(supertypeMap);
-    }
-
     public WikiTablesTypeDeclaration() {
-        this(SUPERTYPE_MAP);
+        super(SUPERTYPE_MAP);
     }
 
     @Override
@@ -103,21 +100,29 @@ public class WikiTablesTypeDeclaration extends AbstractTypeDeclaration {
         else if (constant.equals("number"))
             return Type.createFunctional(NUMBER_TYPE, NUMBER_TYPE, false);
         else if (constant.equals("date"))
-            return Type.createFunctional(NUMBER_TYPE, DATE_TYPE, true);
+          return Type.parseFrom("<i,<i,<i,d>>>");
         else if (constant.equals("var") || constant.equals(EXPLICIT_FUNCTIONAL_STRING))
             return Type.parseFrom("<#1,#1>");
-        else if (constant.equals("argmax") || constant.equals("argmin") || constant.equals("max") || constant.equals("min"))
+        else if (constant.equals("argmax") || constant.equals("argmin"))
+          // TODO: only dates and numbers (i.e., comparable things) can be bound to #2
+          return Type.parseFrom("<i,<i,<#1,<<#2,#1>,#1>>>>");
+        else if (constant.equals("max") || constant.equals("min"))
             return Type.createFunctional(NUMBER_TYPE, NUMBER_TYPE, true);
         else if (constant.equals("count"))
-            return Type.parseFrom("<e,i>");
+            return Type.parseFrom("<#1,i>");
         else if (constant.equals("reverse"))
             return Type.parseFrom("<<#2,#1>,<#1,#2>>");
         else if (constant.equals("or") || constant.equals("and"))
-            return Type.parseFrom("<<#1,#1>,#1>");
+            return Type.parseFrom("<#1,<#1,#1>>");
+        else if (constant.equals("!=") || constant.equals(">=") || constant.equals("<=") ||
+            constant.equals(">") || constant.equals("<"))
+            return Type.parseFrom("<#1,#1>");
+        else if (constant.equals("avg") || constant.equals("sum"))
+          return Type.parseFrom("<i,i>");
         else if (constant.equals("-"))
-            return Type.parseFrom("<<i,i>,i>");
-        // Return atomic functions and the one prefix function.
-        return TypeDeclaration.TOP;
+            return Type.parseFrom("<i,<i,i>>");
+        else { 
+          return TypeDeclaration.BOTTOM;
+        }
     }
-
 }
