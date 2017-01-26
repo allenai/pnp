@@ -74,8 +74,8 @@ class SemanticParserCli extends AbstractCli() {
     println(trainingData.size + " training examples")
     println(entityData.size + " entity names")
     println(testData.size + " test examples")
-    val wordCounts = getWordCounts(trainingData)
-    val entityWordCounts = getWordCounts(entityData)
+    val wordCounts = SemanticParserUtils.getWordCounts(trainingData)
+    val entityWordCounts = SemanticParserUtils.getWordCounts(entityData)
     
     // Vocab consists of all words that appear more than once in
     // the training data or appear in the entity names.
@@ -127,15 +127,7 @@ class SemanticParserCli extends AbstractCli() {
     
     // TODO: serialization
   }
-  
-  def getWordCounts(examples: Seq[CcgExample]): CountAccumulator[String] = {
-    val acc = CountAccumulator.create[String]
-    for (ex <- examples) {
-      ex.getSentence.getWords.asScala.map(x => acc.increment(x, 1.0)) 
-    }
-    acc
-  }
-  
+
   def buildEntityDictionary(examples: Seq[CcgExample], vocab: IndexedList[String],
       typeDeclaration: TypeDeclaration): EntityDict = {
     val entityNames = ListBuffer[(Expression2, List[Int])]()
