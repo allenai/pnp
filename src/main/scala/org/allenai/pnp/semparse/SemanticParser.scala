@@ -477,6 +477,7 @@ class SemanticParserExecutionScore(val holeTypes: Array[Type],
 extends ExecutionScore {
 
   val rootType = holeTypes(0)
+  val reversedTemplates = templates.reverse
 
   def apply(tag: Any, choice: Any, env: Env): Double = {
     if (tag != null && tag.isInstanceOf[SemanticParserState]) {
@@ -491,10 +492,13 @@ extends ExecutionScore {
           Double.NegativeInfinity
         }
       } else {
-        val tagInt = state.numActions
-        if (tagInt < templates.size) {
+        val actionInd = state.numActions
+        if (actionInd < templates.size) {
+          // TODO: this test may be too inefficient.
           val chosen = choice.asInstanceOf[(Template, Int)]._1
-          if (chosen.equals(templates(tagInt))) {
+          val myTemplates = reversedTemplates.slice(reversedTemplates.length - actionInd, reversedTemplates.length)
+          if (chosen.equals(templates(actionInd)) &&
+              (actionInd == 0 || state.templates.zip(myTemplates).map(x => x._1.equals(x._2)).reduce(_ && _))) { 
             0.0
           } else {
             Double.NegativeInfinity
@@ -506,6 +510,12 @@ extends ExecutionScore {
     } else {
       0.0
     }
+  }
+}
+
+class MaxExecutionScore(val scores: Seq[ExecutionScore]) {
+  def apply(tag: Any, choice: Any, env: Env): Double = {
+    return scores.map(s => s.apply(tag, choice, env)).max
   }
 }
 
