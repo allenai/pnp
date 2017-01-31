@@ -93,6 +93,7 @@ public class WikiTablesTypeDeclaration extends AbstractTypeDeclaration {
     SUPERTYPE_MAP.put("r", "e");
     SUPERTYPE_MAP.put("c", "e");
     SUPERTYPE_MAP.put("p", "e");
+    SUPERTYPE_MAP.put("d", "i");
   }
 
   public WikiTablesTypeDeclaration() {

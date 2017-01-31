@@ -1,5 +1,9 @@
 package org.allenai.wikitables;
 
+import java.io.File;
+import java.io.FileReader;
+import java.io.BufferedReader;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.ArrayList;
@@ -15,31 +19,38 @@ import edu.stanford.nlp.sempre.tables.match.*;
 import fig.basic.*;
 
 public class WikiTablesDataProcessor {
-  private ArrayList<Pair<String, String>> pairedPaths;
-
-  public WikiTablesDataProcessor(Map<String, String> dataPaths) {
-    // dataPaths contains a map of datatype strings to their paths.
-    // Eg: {"train": "/path/to/train", "dev": "/path/to/dev"}
-    pairedPaths = new ArrayList<Pair<String, String>>();
-    Iterator it = dataPaths.entrySet().iterator();
-    while (it.hasNext()) {
-      Map.Entry entry = (Map.Entry)it.next();
-      pairedPaths.add(new Pair(entry.getKey(), entry.getValue()));
+  public static List<CustomExample> getDataset(String path, boolean inSempreFormat) {
+    CustomExample.opts.allowNoAnnotation = true;
+    TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions";
+    if (inSempreFormat) {
+        List<Pair<String, String>> pairedPaths = new ArrayList<Pair<String, String>>();
+        pairedPaths.add(new Pair("train", path));
+        List<CustomExample> dataset = CustomExample.getDataset(pairedPaths, null);
+        return dataset;
+    } else {
+        List<CustomExample> dataset = new ArrayList<CustomExample>();
+        try {
+            BufferedReader reader = new BufferedReader(new FileReader(new File(path)));
+            int exampleId = 0;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] lineParts = line.split("\t");
+                LispTree tree = LispTree.proto.parseFromString(lineParts[0]);
+                CustomExample ex = CustomExample.fromLispTree(tree, Integer.toString(exampleId));
+                // This does things like tokenizing the utterance.
+                ex.preprocess();
+                ex.targetFormula = Formula.fromString(lineParts[1]);
+                dataset.add(ex);
+                exampleId++;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return dataset;
     }
   }
 
-  public WikiTablesDataProcessor(String path) {
-    this(new HashMap<String, String>() {{ put("train", path); }});
-  }
-
-  public List<CustomExample> getDataset() {
-    CustomExample.opts.allowNoAnnotation = true;
-    TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions";
-    List<CustomExample> dataset = CustomExample.getDataset(pairedPaths, null);
-    return dataset;
-  }
-
-  public List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(CustomExample ex) {
+  public static List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(CustomExample ex) {
     List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = new ArrayList<>();
     List<String> exTokens = ex.getTokens();
     EditDistanceFuzzyMatcher.opts.expandAbbreviations = true;
@@ -56,12 +67,17 @@ public class WikiTablesDataProcessor {
   }
 
   public static void main(String[] args) {
-    String path = "data/WikiTableQuestions/data/training-before300.examples";
-    WikiTablesDataProcessor dataProcessor = new WikiTablesDataProcessor(path);
-    CustomExample ex = dataProcessor.getDataset().get(0);
-    List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = dataProcessor.getEntityLinking(ex);
-    for (Pair<Pair<Integer, Integer>, Formula> p: entityLinking) {
-      System.out.println(p.getFirst().getFirst() + " " + p.getFirst().getSecond() + " " + p.getSecond());
+    //String path = "data/WikiTableQuestions/data/training-before300.examples";
+    String path = "data/wikitables/wikitables_data.ldcs";
+    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, false);
+    for (int i = 0; i < dataset.size(); i++) {
+        CustomExample ex = dataset.get(i);
+        System.out.println("Utterance: " + ex.utterance);
+        System.out.println("Formula: " + ex.targetFormula);
+        List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = WikiTablesDataProcessor.getEntityLinking(ex);
+        for (Pair<Pair<Integer, Integer>, Formula> p: entityLinking) {
+        System.out.println("Entity: " + p.getFirst().getFirst() + " " + p.getFirst().getSecond() + " " + p.getSecond());
+        }
     }
   } 
 }
