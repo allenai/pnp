@@ -528,7 +528,8 @@ object SemanticParser {
   /** Create a set of templates that can generate all of
     * the logical forms in data.
     */
-  def generateActionSpace(data: Seq[Expression2], typeDeclaration: TypeDeclaration): ActionSpace = {
+  def generateActionSpace(data: Seq[Expression2], typeDeclaration: TypeDeclaration,
+      combineApplications: Boolean): ActionSpace = {
     val applicationTemplates = for {
       x <- data
       template <- SemanticParser.generateApplicationTemplates(x, typeDeclaration)
@@ -560,7 +561,7 @@ object SemanticParser {
       typeMap(0)
     }
     
-    val allTemplates = if (true) {
+    val allTemplates = if (combineApplications) {
       val constantsWithType = seqToMultimap(constantTemplates.map(x => (x.root, x)).toSeq)
       val newApplicationTemplates = for {
         app <- applicationTemplates

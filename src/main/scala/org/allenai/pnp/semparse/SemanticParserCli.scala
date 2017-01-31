@@ -90,7 +90,7 @@ class SemanticParserCli extends AbstractCli() {
     val testPreprocessed = testData.map(x => preprocessExample(x, simplifier, vocab, entityDict))
 
     val actionSpace = SemanticParser.generateActionSpace(
-        trainPreprocessed.map(_.getLogicalForm), typeDeclaration)
+        trainPreprocessed.map(_.getLogicalForm), typeDeclaration, true)
         
     // Remove entities from the action space, but ensure that there is
     // at least one valid action per type

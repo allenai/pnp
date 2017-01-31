@@ -20,6 +20,7 @@ import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
+import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
@@ -83,22 +84,36 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     
     val actionSpace = SemanticParser.generateActionSpace(
-        trainPreprocessed.map(_.getLogicalForm), typeDeclaration)
-        
-    // Remove entities from the action space, but ensure that there is
-    // at least one valid action per type
-    for (t <- actionSpace.allTypes) {
-      actionSpace.typeTemplateMap.addBinding(t,
-          ConstantTemplate(t, Expression2.constant("DUMMY:" + t)))
+        trainPreprocessed.map(_.getLogicalForm), typeDeclaration, false)
+
+    // Remove specific numbers/rows/cells from the action space.
+    // These need to be added back in on a per-table basis.
+    val filterTypes = Seq(Type.parseFrom("i"), Type.parseFrom("c"), Type.parseFrom("p"), Type.parseFrom("<c,r>"))
+    for (t <- filterTypes) {
+      val templates = actionSpace.typeTemplateMap(t).toSet
+      for (template <- templates) {
+        if (template.isInstanceOf[ConstantTemplate]) {
+          actionSpace.typeTemplateMap.removeBinding(t, template)
+        }
+      }
+
+      // Create a dummy action for the type to ensure that at least
+      // one valid action is always possible.
+      if (actionSpace.typeTemplateMap.getOrElse(t, Set()).size == 0) {
+        actionSpace.typeTemplateMap.addBinding(t,
+            ConstantTemplate(t, Expression2.constant("DUMMY:" + t)))
+      }
     }
+
+    // Print out the action space
     /*
-    for (entity <- entityDict.map.values.flatten) {
-      actionSpace.typeTemplateMap.removeBinding(entity.t, entity.template)
+    for (t <- actionSpace.typeTemplateMap.keys) {
+      println(t)
+      for (template <- actionSpace.typeTemplateMap(t)) {
+        println("  " + template)
+      }
     }
     */
-
-    // println(actionSpace.rootTypes)
-    // println(actionSpace.typeTemplateMap)
     
     val parser = new SemanticParser(actionSpace, vocab)
     

@@ -53,8 +53,9 @@ public class WikiTablesTypeDeclaration extends AbstractTypeDeclaration {
     {"argmax", "<i,<i,<#1,<<#2,#1>,#1>>>>"},
     {"argmin", "<i,<i,<#1,<<#2,#1>,#1>>>>"},
 
-    {"max", "<i,i>"},
-    {"min", "<i,i>"},
+    // TODO: only dates and numbers can be bound to #1
+    {"max", "<#1,#1>"},
+    {"min", "<#1,#1>"},
 
     {"count", "<#1,i>"},
     {"reverse", "<<#2,#1>,<#1,#2>>"},
