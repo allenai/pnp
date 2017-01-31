@@ -54,6 +54,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     
     // Initialize expression processing for Wikitables logical forms. 
     val typeDeclaration = new WikiTablesTypeDeclaration()
+    val simplifier = ExpressionSimplifier.lambdaCalculus()
+    val comparator = new SimplificationComparator(simplifier)
     
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
@@ -124,7 +126,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     println("*** Validating test set action space ***")
     SemanticParserUtils.validateActionSpace(testPreprocessed, parser, typeDeclaration)
 
-    /*
     val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
     println("***************** TEST EVALUATION *****************")
     val testResults = test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
@@ -136,7 +137,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     println(testResults)
     println("Train: ")
     println(trainResults)
-    */
     // TODO: serialization
   }
   
