@@ -18,6 +18,18 @@ import edu.cmu.dynet._
 object SemanticParserUtils {
   
   /**
+   * Count the number of occurrences of each word type
+   * in a collection of examples. 
+   */
+  def getWordCounts(examples: Seq[CcgExample]): CountAccumulator[String] = {
+    val acc = CountAccumulator.create[String]
+    for (ex <- examples) {
+      ex.getSentence.getWords.asScala.map(x => acc.increment(x, 1.0)) 
+    }
+    acc
+  }
+  
+  /**
    * Checks that the logical forms in {@code examples}
    * are well-typed using {@code typeDeclaration}. 
    */
