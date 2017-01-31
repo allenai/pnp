@@ -214,7 +214,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Train model
     val model = parser.getModel
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(50, 100, model, sgd, new DefaultLogFunction())
+    val trainer = new LoglikelihoodTrainer(50, 100, true, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
 
     parser.dropoutProb = -1

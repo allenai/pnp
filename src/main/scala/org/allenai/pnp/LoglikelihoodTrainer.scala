@@ -7,7 +7,7 @@ import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
 import org.allenai.pnp.examples.DynetScalaHelpers
 
-class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
+class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleExecutions: Boolean,
     val model: PpModel, val trainer: Trainer, val log: LogFunction) {
 
   import DynetScalaHelpers._
@@ -29,22 +29,33 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
         val conditionalPartitionFunction = conditional.partitionFunction
         log.stopTimer("pp_loglikelihood/forward")
        
-        Preconditions.checkState(conditional.executions.size == 1,
-            "Found %s conditional executions (expected 1) for example: %s",
-            conditional.executions.size.asInstanceOf[AnyRef], example)
-       
-        val conditionalEx = conditional.executions(0)
-        val labeledExpressions = conditionalEx.env.labelNodeIds
-        val labelIndexes = conditionalEx.env.labels
-        
+        if (!sumMultipleExecutions) {
+          Preconditions.checkState(conditional.executions.size == 1,
+              "Found %s conditional executions (expected 1) for example: %s",
+              conditional.executions.size.asInstanceOf[AnyRef], example)
+        }
+
         log.startTimer("pp_loglikelihood/build_loss")
         var lossExpr: Expression = null
-        for ((expr, labelInd) <- labeledExpressions.zip(labelIndexes)) {
-          val loss = pickneglogsoftmax(expr, labelInd)
+        for (conditionalEx <- conditional.executions) {
+          val labeledExpressions = conditionalEx.env.labelNodeIds
+          val labelIndexes = conditionalEx.env.labels
+        
+          var exLossExpr: Expression = null          
+          for ((expr, labelInd) <- labeledExpressions.zip(labelIndexes)) {
+            val loss = pickneglogsoftmax(expr, labelInd)
+            if (exLossExpr == null) {
+              exLossExpr = loss
+            } else {
+              exLossExpr = (exLossExpr + loss)
+            }
+          }
+          
+          // TODO: sum is not the right combination function.
           if (lossExpr == null) {
-            lossExpr = loss
+            lossExpr = exLossExpr
           } else {
-            lossExpr = (lossExpr + loss)
+            lossExpr = (exLossExpr + lossExpr)
           }
         }
         log.stopTimer("pp_loglikelihood/build_loss")
