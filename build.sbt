@@ -34,4 +34,5 @@ enablePlugins(DockerBuildPlugin)
 dockerImageBase := "allenai-docker-private-docker.bintray.io/java-dynet"
 dockerCopyMappings += ((file("lib"), "lib"))
 dockerCopyMappings += ((file("data"), "data"))
-mainClass := Some("org.allenai.pnp.semparse.SemanticParserCli")
+dockerCopyMappings += ((file("experiments"), "experiments"))
+// mainClass := Some("org.allenai.pnp.semparse.SemanticParserCli")
