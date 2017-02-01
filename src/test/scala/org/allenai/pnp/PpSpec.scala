@@ -26,7 +26,7 @@ class PpSpec extends FlatSpec with Matchers {
 
   val TOLERANCE = 0.01
 
-  "Pp" should "correctly perform inference" in {
+  "Pp" should "perform inference on choices" in {
     val foo = Pp.chooseMap(Seq((1, 1.0), (2, 2.0)))
 
     val values = foo.beamSearch(2)
@@ -35,7 +35,7 @@ class PpSpec extends FlatSpec with Matchers {
     values(1) should be((1, 1.0))
   }
 
-  it should "correctly perform inference (2)" in {
+  it should "perform inference with successive operations" in {
     val foo = for (
       x <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
       y = x + 1;
@@ -48,7 +48,7 @@ class PpSpec extends FlatSpec with Matchers {
     values(1) should be((2, 1.0))
   }
 
-  it should "correctly perform inference (2.5)" in {
+  it should "perform inference on multiple choices" in {
     val foo = for (
       x <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
       y <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
@@ -61,7 +61,7 @@ class PpSpec extends FlatSpec with Matchers {
     values(0)._2 should be(8.0 +- TOLERANCE)
   }
 
-  it should "correctly perform inference (3)" in {
+  it should "perform inference on recursive functions" in {
     def foo(k: Int): Pp[List[Boolean]] = {
       if (k == 0) {
         Pp.value(List.empty[Boolean])
@@ -81,7 +81,7 @@ class PpSpec extends FlatSpec with Matchers {
     values(3)._2 should be(1.0 +- TOLERANCE)
   }
 
-  it should "correctly perform inference (4)" in {
+  it should "truncate the beam during beam search" in {
     def foo(k: Int): Pp[List[Int]] = {
       if (k == 0) {
         Pp.value(List.empty[Int])
@@ -97,7 +97,7 @@ class PpSpec extends FlatSpec with Matchers {
     values.length should be(100)
   }
 
-  it should "correctly collapse inference" in {
+  it should "collapse inference" in {
     def foo(k: Int): Pp[List[Int]] = {
       if (k == 0) {
         Pp.value(List.empty[Int])
@@ -116,7 +116,7 @@ class PpSpec extends FlatSpec with Matchers {
     marginalsOneStep.searchSteps should be(1)
   }
 
-  it should "correctly collapse inference (2)" in {
+  it should "collapse inference (2)" in {
     def twoFlips(): Pp[Int] = {
       val pp = for {
         x <- Pp.chooseMap(Seq((0, 1.0), (1, 2.0)))
@@ -244,225 +244,5 @@ class PpSpec extends FlatSpec with Matchers {
     labels2(1) should be(0)
     
     computationGraph.delete()
-  }
-
-  it should "be trainable" in {
-    def foo(k: Int, label: List[Int]): Pp[List[Int]] = {
-      if (k == 0) {
-        Pp.value(List.empty[Int])
-      } else {
-        for (
-          flip <- Pp.param("flip");
-          x <- Pp.choose(Array(0, 1), flip, k);
-
-          y <- if (label == null) {
-            foo(k - 1, null)
-          } else {
-            if (x == label.head) {
-              foo(k - 1, label.tail)
-            } else {
-              Pp.fail
-            }
-          }
-
-        ) yield (x :: y)
-      }
-    }
-    
-    val m = new Model
-    val paramNames = IndexedList.create[String]
-    val flipParam = m.add_parameters(Seq(2))
-    paramNames.add("flip")
-    val model = new PpModel(paramNames, Array(flipParam),
-        IndexedList.create[String], Array(), m, true)
-    
-    val examples = List(
-//      PpExample.fromDistributions(foo(2, null), foo(1, List(1))),
-        PpExample.fromDistributions(foo(2, null), foo(2, List(1, 0))),
-        PpExample.fromDistributions(foo(3, null), foo(3, List(1, 1, 1)))
-    )
-
-    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.1f)
-    val trainer = new LoglikelihoodTrainer(1000, 100, false, model, sgd, new NullLogFunction())
-//  val trainer = new GlobalLoglikelihoodTrainer(1000, 100, model, sgd, new NullLogFunction())
-    
-    trainer.train(examples)
-    
-    
-    val env = Env.init
-    val computationGraph = new ComputationGraph
-    val marginals = foo(1, null).beamSearch(100, env, model.getInitialComputationGraph(computationGraph))
-    val values = marginals.executions
-    val partitionFunction = marginals.partitionFunction
-    values.length should be(2)
-    values(0).value should be(List(1))
-    (values(0).prob / partitionFunction) should be(0.8 +- TOLERANCE)
-    
-    computationGraph.delete()
-  }
-
-  it should "be trainable with global normalization" in {
-    val vocab = Array(0,1,2)
-    
-    def lm(k: Int): Pp[Array[Int]] = {
-      if (k == 1) {
-        for {
-          params <- Pp.param("start")
-          choice <- Pp.choose(vocab, params, k - 1)
-        } yield {
-          Array(choice)
-        }
-      } else {
-        for {
-          rest <- lm(k - 1)
-          previous = rest.last
-          transition <- Pp.param("transition")
-          params = pickrange(transition, previous * vocab.length, (previous + 1) * vocab.length)
-          choice <- Pp.choose(vocab, params, k - 1)
-        } yield {
-          rest ++ Array(choice)
-        }
-      }
-    }
-
-    def makeOracle(label: Array[Int]): ExecutionScore = {
-      new ExecutionScore() {
-        def apply(tag: Any, choice: Any, env: Env): Double = {
-          if (tag != null && tag.isInstanceOf[Int]) {
-            val tagInt = tag.asInstanceOf[Int]
-            if (tagInt >= 0 && tagInt < label.length) {
-              if (choice == label(tagInt)) {
-                0.0
-              } else {
-                Double.NegativeInfinity
-              }
-            } else {
-              Double.NegativeInfinity
-            }
-          } else {
-            0.0
-          }
-        }
-      }
-    }
-    
-    val m = new Model
-    val paramNames = IndexedList.create[String]
-    val startParam = m.add_parameters(Seq(vocab.length))
-    paramNames.add("start")
-    val transitionParam = m.add_parameters(Seq(vocab.length * vocab.length))
-    paramNames.add("transition")
-    val model = new PpModel(paramNames, Array(startParam, transitionParam),
-        IndexedList.create[String], Array(), m, true)
-    
-    val examples = List(
-        PpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,0))),
-        PpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,2)))
-    )
-
-    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.1f)
-    // val trainer = new LoglikelihoodTrainer(1000, 100, model, sgd, new NullLogFunction())
-    val trainer = new GlobalLoglikelihoodTrainer(1000, 100, model, sgd, new NullLogFunction())
-    
-    trainer.train(examples)
-
-    /*
-    val env = Env.init
-    val computationGraph = new ComputationGraph
-    val marginals = lm(1).beamSearch(100, env, model.getInitialComputationGraph(computationGraph))
-    val values = marginals.executions
-    val partitionFunction = marginals.partitionFunction
-    values.length should be(2)
-    values(0).value should be(List(1))
-    (values(0).prob / partitionFunction) should be(0.8 +- TOLERANCE)
-    
-    computationGraph.delete()
-    */
-  }
-
-  it should "learn xor" in {
-    def xor(left: Boolean, right: Boolean): Pp[Boolean] = {
-      // Build a feature vector from the inputs
-      val values = Array.ofDim[Float](2)
-      values(0) = if (left) { 1 } else { 0 }
-      values(1) = if (right) { 1 } else { 0 }
-      val featureVector = new FloatVector(2)
-      featureVector.set(0, values(0))
-      featureVector.set(1, values(1))
-
-      for {
-        // Build a 2 layer neural network with a tanh
-        // nonlinearity.
-        params <- Pp.param("params")
-        bias <- Pp.param("bias")
-        featureVectorExpression <- Pp.constant(Seq(2), featureVector)
-        hidden = tanh((params * featureVectorExpression) + bias)
-        params2 <- Pp.param("params2")
-        bias2 <- Pp.param("bias2")
-        dist = (params2 * hidden) + bias2
-
-        // Choose the output nondeterministically according to 
-        // the per-class scores generated by the neural network.
-        y <- Pp.choose(Array(false, true), dist)
-
-        // Extraneous values in the computation graph
-        // shouldn't cause problems.
-        // foo = dist * dist
-      } yield {
-        y
-      }
-    }
-    
-    // Initialize model parameters.
-    val m = new Model
-    val paramNames = IndexedList.create[String]
-    val params = ListBuffer[Parameter]()
-    paramNames.add("params")
-    params += m.add_parameters(Seq(8, 2))
-    paramNames.add("bias")
-    params += m.add_parameters(Seq(8))
-    paramNames.add("params2")
-    params += m.add_parameters(Seq(2, 8))
-    paramNames.add("bias2")
-    params += m.add_parameters(Seq(2))
-    
-    val model = new PpModel(paramNames, params.toArray,
-        IndexedList.create[String], Array(), m, true)
-
-    // Create training data.
-    val data = List(
-      (true, true, false),
-      (true, false, true),
-      (false, true, true),
-      (false, false, false)
-    )
-    val examples = data.map(x => {
-      val unconditional = xor(x._1, x._2)
-      val conditional = for {
-        y <- unconditional;
-        x <- Pp.require(y == x._3)
-      } yield {
-        y
-      }
-      PpExample.fromDistributions(unconditional, conditional)
-    })
-
-    // Train model
-    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(1000, 100, false, model, sgd, new NullLogFunction())
-    trainer.train(examples)
-
-    // Check that training error is zero.
-    for (ex <- data) {
-      val env = Env.init
-      val cg = new ComputationGraph
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getInitialComputationGraph(cg))
-      val values = marginals.executions
-      val partitionFunction = marginals.partitionFunction
-
-      values(0).value should be(ex._3)
-      (values(0).prob / partitionFunction) should be(1.0 +- 0.1)
-      cg.delete()
-    }
   }
 }
