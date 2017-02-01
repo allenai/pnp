@@ -148,8 +148,8 @@ sealed trait Pp[A] {
 case class BindPp[A, C](b: Pp[C], f: PpContinuation[C, A]) extends Pp[A] {
   override def flatMap[B](g: A => Pp[B]) = BindPp(b, f.append(g))
   
-  override def searchStep[C](env: Env, logProb: Double, continuation: PpContinuation[A,C],
-    queue: PpSearchQueue[C], finished: PpSearchQueue[C]): Unit = {
+  override def searchStep[D](env: Env, logProb: Double, continuation: PpContinuation[A,D],
+    queue: PpSearchQueue[D], finished: PpSearchQueue[D]): Unit = {
     b.searchStep(env, logProb, f.append(continuation), queue, finished)
   }
 

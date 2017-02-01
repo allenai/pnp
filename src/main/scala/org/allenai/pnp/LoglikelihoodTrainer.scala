@@ -19,6 +19,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
   def train[A](examples: List[PpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
+      var searchErrors = 0
       log.notifyIterationStart(i)
       for (example <- examples) {
         val cg = new ComputationGraph
@@ -51,32 +52,47 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
           exLosses += exLoss
         }
         
-        val lossExpr = if (sumMultipleExecutions) {
-          logsumexp_VE(new ExpressionVector(exLosses.toList.asJava))
-        } else {
-          Preconditions.checkState(conditional.executions.size == 1,
-              "Found %s conditional executions (expected 1) for example: %s",
+        val lossExpr = if (exLosses.length == 0) {
+          Preconditions.checkState(sumMultipleExecutions,
+              "Found %s conditional executions (expected exactly 1) for example: %s",
               conditional.executions.size.asInstanceOf[AnyRef], example)
+
+          null
+        } else if (exLosses.length == 1) {
           exLosses(0)
+        } else {
+          // This flag is used to ensure that training with a
+          // single label per example doesn't work "by accident" 
+          // with an execution score that permits multiple labels.
+          Preconditions.checkState(sumMultipleExecutions,
+              "Found %s conditional executions (expected exactly 1) for example: %s",
+              conditional.executions.size.asInstanceOf[AnyRef], example)
+
+          logsumexp_VE(new ExpressionVector(exLosses.toList.asJava))
         }
-        
         log.stopTimer("pp_loglikelihood/build_loss")
         
-        log.startTimer("pp_loglikelihood/eval_loss")
-        loss += as_scalar(cg.incremental_forward(lossExpr))
-        log.stopTimer("pp_loglikelihood/eval_loss")
+        if (lossExpr != null) {
+          log.startTimer("pp_loglikelihood/eval_loss")
+          loss += as_scalar(cg.incremental_forward(lossExpr))
+          log.stopTimer("pp_loglikelihood/eval_loss")
 
-        // cg.print_graphviz()
-        log.startTimer("pp_loglikelihood/backward")
-        cg.backward(lossExpr)
-        trainer.update(1.0f)
-        log.stopTimer("pp_loglikelihood/backward")
+          // cg.print_graphviz()
+          log.startTimer("pp_loglikelihood/backward")
+          cg.backward(lossExpr)
+          trainer.update(1.0f)
+          log.stopTimer("pp_loglikelihood/backward")
+        } else {
+          searchErrors += 1
+        }
+
         cg.delete()
       }
 
       trainer.update_epoch()
 
       log.logStatistic(i, "loss", loss)
+      log.logStatistic(i, "search errors", searchErrors)
       log.notifyIterationEnd(i)
     }
   }
