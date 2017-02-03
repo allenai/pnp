@@ -1,7 +1,6 @@
 package org.allenai.pnp
 
 trait ExecutionScore {
-  
   def apply(tag: Any, choice: Any, env: Env): Double
 }
 

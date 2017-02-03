@@ -1,7 +1,7 @@
 package org.allenai.pnp
 
-import com.jayantkrish.jklol.util.KbestQueue
 import com.jayantkrish.jklol.training.LogFunction
+import com.jayantkrish.jklol.util.KbestQueue
 
 sealed trait PpSearchQueue[A] {
   val graph: CompGraph
