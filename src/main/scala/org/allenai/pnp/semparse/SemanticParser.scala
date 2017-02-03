@@ -33,6 +33,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   var forwardBuilder: LSTMBuilder = null
   var backwardBuilder: LSTMBuilder = null
   var actionBuilder: LSTMBuilder = null
+  var treeBuilder: LSTMBuilder = null
   
   val inputDim = 200
   val hiddenDim = 100
@@ -47,6 +48,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     forwardBuilder.new_graph(cg)
     backwardBuilder.new_graph(cg)
     actionBuilder.new_graph(cg)
+    treeBuilder.new_graph(cg)
   }
 
   /** Compute the input encoding of a list of tokens
@@ -172,22 +174,26 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       // select logical form templates to expand on typed holes
       // in the partially-generated logical form.  
       cg <- computationGraph()
-      expr <- parse(input, actionBuilder, cg.cg, rootType)
+      expr <- parse(input, cg.cg, rootType)
     } yield {
       expr
     }
   }
 
-  private def parse(input: InputEncoding, builder: RNNBuilder,
-      cg: ComputationGraph, rootType: Type): Pp[SemanticParserState] = {
+  private def parse(input: InputEncoding, cg: ComputationGraph,
+      rootType: Type): Pp[SemanticParserState] = {
     // Initialize the output LSTM before generating the logical form.
-    builder.start_new_sequence(input.rnnState)
-    val startState = builder.state()
+    actionBuilder.start_new_sequence(input.rnnState)
+    val startState = actionBuilder.state()
+
+    treeBuilder.start_new_sequence(input.rnnState)
+    val treeStart = treeBuilder.state()
     
     for {
       beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS + rootType)
-      e <- parse(input, builder, beginActionsParam, startState,
-          SemanticParserState.start(rootType))
+      start = SemanticParserState.start(rootType).addTreeState(-1, treeStart, beginActionsParam)
+
+      e <- parse(input, beginActionsParam, startState, start)
     } yield {
       e
     }
@@ -201,7 +207,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     * of previously generated templates and select which template to
     * apply. 
     */
-  private def parse(input: InputEncoding, builder: RNNBuilder, prevInput: Expression,
+  private def parse(input: InputEncoding, prevInput: Expression,
       rnnState: Int, state: SemanticParserState): Pp[SemanticParserState] = {
     if (state.unfilledHoleIds.length == 0) {
       // If there are no holes, return the completed logical form.
@@ -228,17 +234,29 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
 
       // Update the LSTM and use its output to score
       // the applicable templates.
-      val rnnOutput = builder.add_input(rnnState, prevInput)
+      val rnnOutput = actionBuilder.add_input(rnnState, prevInput)
       val rnnOutputDropout = if (dropoutProb > 0.0) {
         dropout(rnnOutput, dropoutProb.asInstanceOf[Float])
       } else {
         rnnOutput
       }
-      val nextRnnState = builder.state
+      val nextRnnState = actionBuilder.state
+      
+      // Update the tree LSTM
+      val (treeRnnState, treeRnnPrevInput) = state.holeTreeLstm(hole.parent)
+      val treeRnnOutput = treeBuilder.add_input(treeRnnState, treeRnnPrevInput)
+      val treeRnnOutputDropout = if (dropoutProb > 0.0) {
+        dropout(treeRnnOutput, dropoutProb.asInstanceOf[Float])
+      } else {
+        treeRnnOutput
+      }
+      val nextTreeRnnState = treeBuilder.state
+
+      val combinedRnnOutput = concatenate(Array(rnnOutputDropout, treeRnnOutput))  
       for {
         // Compute an attention vector
         attentionWeights <- param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
-        wordAttentions = reshape(softmax(input.encodedTokenMatrix * attentionWeights * rnnOutputDropout), 
+        wordAttentions = reshape(softmax(input.encodedTokenMatrix * attentionWeights * combinedRnnOutput),
             Seq(1, input.tokens.length))
         // Attention vector using the input token vectors 
         // attentionVector = reshape(wordAttentions * input.tokenMatrix, Seq(inputDim))
@@ -250,11 +268,11 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
 
         actionWeights <- param(SemanticParser.ACTION_WEIGHTS_PARAM + hole.t)
         actionBias <- param(SemanticParser.ACTION_BIAS_PARAM + hole.t)
-        rnnActionScores = actionWeights * rnnOutputDropout
+        rnnActionScores = actionWeights * combinedRnnOutput
 
         actionHiddenWeights <- param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
         actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
-        attentionAndRnn = concatenate(Array(attentionVector, rnnOutputDropout))
+        attentionAndRnn = concatenate(Array(attentionVector, combinedRnnOutput))
         actionHidden = tanh(actionHiddenWeights * attentionAndRnn)
         actionHiddenDropout = if (dropoutProb > 0.0) {
           dropout(actionHidden, dropoutProb.asInstanceOf[Float]) 
@@ -292,7 +310,6 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
         templateTuple <- choose(allTemplates.zipWithIndex.toArray, allScores, state.numActions)
-        nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
         // Get the LSTM input parameters associated with the chosen
         // template.
@@ -304,11 +321,13 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
           lookup(cg.cg, actionLookup, templateTuple._2)
         } else {
           lookup(cg.cg, entityLookup, 0)
-        }
+        } 
 
         // Recursively fill in any remaining holes.
-        returnState <- parse(input, builder, concatenate(Array(actionInput, attentionVector)),
-            nextRnnState, nextState)
+        lstmInput = concatenate(Array(actionInput, attentionVector))
+        nextState = templateTuple._1.apply(state).addAttention(wordAttentions).addTreeState(hole.id,
+            treeRnnState, lstmInput)
+        returnState <- parse(input, lstmInput, nextRnnState, nextState)
       } yield {
         returnState
       }
@@ -327,52 +346,57 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     * This method assumes that only one such action sequence exists.  
     */
   def generateActionSequence(exp: Expression2, entityLinking: EntityLinking,
-      typeDeclaration: TypeDeclaration): Option[(List[Type], List[Template])] = {
-    val indexQueue = ListBuffer[(Int, Scope)]()
-    indexQueue += ((0, Scope(List.empty)))
-    val actionTypes = ListBuffer[Type]()
+      typeDeclaration: TypeDeclaration): Option[(List[Hole], List[Template])] = {
+    val holeIndexMap = MutableMap[Int, Int]()
+    val actionHoles = ListBuffer[Hole]()
     val actions = ListBuffer[Template]()
 
-    val typeMap = StaticAnalysis.inferTypeMap(exp, TypeDeclaration.TOP, typeDeclaration).asScala.toMap
-    var state = SemanticParserState.start(typeMap(0))
+    val typeMap = StaticAnalysis.inferTypeMap(exp, TypeDeclaration.TOP, typeDeclaration)
+      .asScala.toMap
     
-    while (indexQueue.size > 0) {
-      val (expIndex, currentScope) = indexQueue.head
-      indexQueue.remove(0)
+    var state = SemanticParserState.start(typeMap(0))
+    holeIndexMap(state.nextHole.get.id) = 0  
+    
+    while (state.nextHole.isDefined) {
+      val hole = state.nextHole.get
+      val expIndex = holeIndexMap(hole.id)
+      val currentScope = hole.scope
 
       val curType = typeMap(expIndex)
+      Preconditions.checkState(curType.equals(hole.t),
+          "type-checked type %s does not match hole %s at index %s of %s",
+          curType, hole.t, expIndex.asInstanceOf[Integer], exp)
+
       val templates = actionSpace.getTemplates(curType) ++
         currentScope.getVariableTemplates(curType) ++
         entityLinking.getEntitiesWithType(curType).map(_.template)
         
       val matches = templates.filter(_.matches(expIndex, exp, typeMap))
       if (matches.size != 1) {
-        println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) + " : "  + curType + " (expected 1)")
+        println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) +
+            " : "  + curType + " (expected 1)")
         return None
       }
       
       val theMatch = matches.toList(0)
       state = theMatch.apply(state)
-      val nextScopes = state.unfilledHoleIds.take(theMatch.holeIndexes.size).map(x => x.scope)
-
-      actionTypes += curType
-      actions += theMatch
-      var holeOffset = 0
       
-      val generated = ListBuffer[(Int, Scope)]() 
-      for ((holeIndex, nextScope) <- theMatch.holeIndexes.zip(nextScopes)) {
+      actionHoles += hole
+      actions += theMatch
+
+      var holeOffset = 0 
+      for ((holeIndex, hole) <- theMatch.holeIndexes.zip(
+          state.unfilledHoleIds.slice(0, theMatch.holeIndexes.length))) {
         val curIndex = expIndex + holeIndex + holeOffset
-        generated += ((curIndex, nextScope))
+        holeIndexMap(hole.id) = curIndex
         holeOffset += (exp.getSubexpression(curIndex).size - 1)
       }
-
-      indexQueue.prependAll(generated);
     }
 
     val decoded = state.decodeExpression
     Preconditions.checkState(decoded.equals(exp), "Expected %s and %s to be equal", decoded, exp)
     
-    Some((actionTypes.toList, actions.toList))
+    Some((actionHoles.toList, actions.toList))
   }
   
   /** Generate an execution oracle that constrains the
@@ -387,7 +411,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray)
     }
   }
-  
+
   def getModel: PpModel = {
     // TODO: I think SemanticParser should take a PpModel as 
     // a constructor argument. This implementation has a weird
@@ -404,10 +428,10 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     names.add(SemanticParser.ROOT_BIAS_PARAM)
     params += model.add_parameters(Seq(actionSpace.rootTypes.length))
     names.add(SemanticParser.ATTENTION_WEIGHTS_PARAM)
-    params += model.add_parameters(Seq(2 * hiddenDim, actionDim))
+    params += model.add_parameters(Seq(2 * hiddenDim, 2 * hiddenDim))
     
     names.add(SemanticParser.ACTION_HIDDEN_WEIGHTS)
-    params += model.add_parameters(Seq(actionHiddenDim, inputDim + hiddenDim))
+    params += model.add_parameters(Seq(actionHiddenDim, inputDim + 2 * hiddenDim))
     
     lookupNames.add(SemanticParser.WORD_EMBEDDINGS_PARAM)
     lookupParams += model.add_lookup_parameters(vocab.size, Seq(inputDim))
@@ -419,7 +443,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       names.add(SemanticParser.BEGIN_ACTIONS + t)
       params += model.add_parameters(Seq(actionDim + inputDim))
       names.add(SemanticParser.ACTION_WEIGHTS_PARAM + t)
-      params += model.add_parameters(Seq(dim, hiddenDim))
+      params += model.add_parameters(Seq(dim, 2 * hiddenDim))
       names.add(SemanticParser.ACTION_BIAS_PARAM + t)
       params += model.add_parameters(Seq(dim))
 
@@ -444,6 +468,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     forwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
     backwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
     actionBuilder = new LSTMBuilder(1, actionDim + inputDim, hiddenDim, model)
+    treeBuilder = new LSTMBuilder(1, actionDim + inputDim, hiddenDim, model)
 
     new PpModel(names, params.toArray, lookupNames, lookupParams.toArray, model, true)
   }
@@ -471,11 +496,11 @@ class ActionSpace(
   * to generate the given rootType and sequence of
   * templates. 
   */
-class SemanticParserExecutionScore(val holeTypes: Array[Type],
+class SemanticParserExecutionScore(val holes: Array[Hole],
     val templates: Array[Template])
 extends ExecutionScore {
 
-  val rootType = holeTypes(0)
+  val rootType = holes(0).t
 
   def apply(tag: Any, choice: Any, env: Env): Double = {
     if (tag != null && tag.isInstanceOf[Int]) {
