@@ -161,33 +161,34 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
       // Encode input tokens using an LSTM.
       input <- encode(tokens, entityLinking)
       
+      state = SemanticParserState.start
+      
       // Choose the root type for the logical form given the
       // final output of the LSTM.
       rootWeights <- param(SemanticParser.ROOT_WEIGHTS_PARAM)
       rootBias <- param(SemanticParser.ROOT_BIAS_PARAM)
       rootScores = (rootWeights * input.sentEmbedding) + rootBias
-      rootType <- choose(actionSpace.rootTypes, rootScores, -1)
+      rootType <- choose(actionSpace.rootTypes, rootScores, state)
       
       // Recursively generate a logical form using an LSTM to
       // select logical form templates to expand on typed holes
       // in the partially-generated logical form.  
       cg <- computationGraph()
-      expr <- parse(input, actionBuilder, cg.cg, rootType)
+      expr <- parse(input, actionBuilder, cg.cg, state.addRootType(rootType))
     } yield {
       expr
     }
   }
 
   private def parse(input: InputEncoding, builder: RNNBuilder,
-      cg: ComputationGraph, rootType: Type): Pp[SemanticParserState] = {
+      cg: ComputationGraph, startState: SemanticParserState): Pp[SemanticParserState] = {
     // Initialize the output LSTM before generating the logical form.
     builder.start_new_sequence(input.rnnState)
-    val startState = builder.state()
+    val startRnnState = builder.state()
     
     for {
-      beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS + rootType)
-      e <- parse(input, builder, beginActionsParam, startState,
-          SemanticParserState.start(rootType))
+      beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS + startState.unfilledHoleIds(0).t)
+      e <- parse(input, builder, beginActionsParam, startRnnState, startState)
     } yield {
       e
     }
@@ -291,7 +292,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
         // the parser's state with. The tag for this choice is 
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
-        templateTuple <- choose(allTemplates.zipWithIndex.toArray, allScores, state.numActions)
+        templateTuple <- choose(allTemplates.zipWithIndex.toArray, allScores, state)
         nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
         // Get the LSTM input parameters associated with the chosen
@@ -334,7 +335,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     val actions = ListBuffer[Template]()
 
     val typeMap = StaticAnalysis.inferTypeMap(exp, TypeDeclaration.TOP, typeDeclaration).asScala.toMap
-    var state = SemanticParserState.start(typeMap(0))
+    var state = SemanticParserState.start().addRootType(typeMap(0))
     
     while (indexQueue.size > 0) {
       val (expIndex, currentScope) = indexQueue.head
@@ -476,30 +477,45 @@ class SemanticParserExecutionScore(val holeTypes: Array[Type],
 extends ExecutionScore {
 
   val rootType = holeTypes(0)
+  val reversedTemplates = templates.reverse
 
   def apply(tag: Any, choice: Any, env: Env): Double = {
-    if (tag != null && tag.isInstanceOf[Int]) {
-      val tagInt = tag.asInstanceOf[Int]
-      if (tagInt == -1) {
+    if (tag != null && tag.isInstanceOf[SemanticParserState]) {
+      val state = tag.asInstanceOf[SemanticParserState]
+      if (state.numActions == 0 && state.unfilledHoleIds.length == 0) {
+        // This state represents the start of parsing where we
+        // choose the root type.
         Preconditions.checkArgument(choice.isInstanceOf[Type])
         if (choice.asInstanceOf[Type].equals(rootType)) {
           0.0
         } else {
           Double.NegativeInfinity
         }
-      } else if (tagInt < templates.size) {
-        val chosen = choice.asInstanceOf[(Template, Int)]._1
-        if (chosen.equals(templates(tagInt))) {
-          0.0
+      } else {
+        val actionInd = state.numActions
+        if (actionInd < templates.size) {
+          // TODO: this test may be too inefficient.
+          val chosen = choice.asInstanceOf[(Template, Int)]._1
+          val myTemplates = reversedTemplates.slice(reversedTemplates.length - actionInd, reversedTemplates.length)
+          if (chosen.equals(templates(actionInd)) &&
+              (actionInd == 0 || state.templates.zip(myTemplates).map(x => x._1.equals(x._2)).reduce(_ && _))) { 
+            0.0
+          } else {
+            Double.NegativeInfinity
+          }
         } else {
           Double.NegativeInfinity
         }
-      } else {
-        Double.NegativeInfinity
       }
     } else {
       0.0
     }
+  }
+}
+
+class MaxExecutionScore(val scores: Seq[ExecutionScore]) {
+  def apply(tag: Any, choice: Any, env: Env): Double = {
+    return scores.map(s => s.apply(tag, choice, env)).max
   }
 }
 

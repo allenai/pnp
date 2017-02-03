@@ -1,10 +1,12 @@
+import org.allenai.plugins.DockerBuildPlugin
+
 organization := "org.allenai"
 
 name := "pnp"
 
 description := "Library for probabilistic neural programming"
 
-version := "0.1.1"
+version := "0.1.2"
 
 scalaVersion := "2.11.8"
 
@@ -26,3 +28,11 @@ bintrayOrganization := Some("allenai")
 bintrayRepository := "private"
 
 fork := true
+
+// Docker configuration
+enablePlugins(DockerBuildPlugin)
+dockerImageBase := "allenai-docker-private-docker.bintray.io/java-dynet"
+dockerCopyMappings += ((file("lib"), "lib"))
+dockerCopyMappings += ((file("data"), "data"))
+dockerCopyMappings += ((file("experiments"), "experiments"))
+// mainClass := Some("org.allenai.pnp.semparse.SemanticParserCli")

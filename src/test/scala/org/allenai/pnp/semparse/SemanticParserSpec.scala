@@ -31,7 +31,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
 
   val data = dataStrings.map(x => (x._1.split(" "), exprParser.parse(x._2)))
 
-  val lexicon = SemanticParser.generateActionSpace(data.map(_._2), typeDeclaration)
+  val lexicon = SemanticParser.generateActionSpace(data.map(_._2), typeDeclaration, true)
   val vocab = IndexedList.create[String]
   for (d <- data) {
     vocab.addAll(d._1.toList.asJava)
