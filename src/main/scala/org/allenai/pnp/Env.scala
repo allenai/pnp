@@ -1,9 +1,9 @@
 package org.allenai.pnp
 
-import com.jayantkrish.jklol.tensor.Tensor
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
+import edu.cmu.dynet.Expression
 
 /** Mutable global state of a neural probabilistic program
   * execution. Env also tracks the chosen values for any
@@ -14,7 +14,7 @@ import com.jayantkrish.jklol.training.NullLogFunction
   *
   * Env is immutable.
   */
-class Env(val labels: List[Tensor], val labelNodeIds: List[Int],
+class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     varnames: IndexedList[String], vars: Array[AnyRef],
     val activeTimers: Set[String], val log: LogFunction) {
 
@@ -64,8 +64,8 @@ class Env(val labels: List[Tensor], val labelNodeIds: List[Int],
   /** Attaches a label to a node of the computation graph in this
     * execution.
     */
-  def addLabel(param: CompGraphNode, label: Tensor): Env = {
-    new Env(label :: labels, param.id :: labelNodeIds, varnames, vars, activeTimers, log)
+  def addLabel(param: Expression, index: Int): Env = {
+    new Env(index :: labels, param :: labelNodeIds, varnames, vars, activeTimers, log)
   }
 
   def setLog(newLog: LogFunction): Env = {
