@@ -8,15 +8,14 @@ import edu.cmu.dynet.dynet_swig._
 /** Computation graph of a neural network.
   */
 class CompGraph(val cg: ComputationGraph, val model: Model,
-    val paramNames: IndexedList[String], val params: Array[Parameter],
-    val lookupParamNames: IndexedList[String], val lookupParams: Array[LookupParameter],
+    val paramNames: IndexedList[String], val lookupParamNames: IndexedList[String], 
     val locallyNormalized: Boolean) {
   
   // Initialize the nodes of the graph with a node per
   // parameter.
-  val paramExpressions = new Array[Expression](params.length)
-  for (i <- 0 until params.length) {
-    paramExpressions(i) = parameter(cg, params(i)) 
+  val paramExpressions = new Array[Expression](paramNames.size)
+  for (i <- 0 until paramNames.size) {
+    paramExpressions(i) = parameter(cg, new Parameter(model, i)) 
   }
 
   def getParameter(name: String): Expression = {
@@ -24,14 +23,14 @@ class CompGraph(val cg: ComputationGraph, val model: Model,
   }
   
   def getLookupParameter(name: String): LookupParameter = {
-    lookupParams(lookupParamNames.getIndex(name))
+    new LookupParameter(model, lookupParamNames.getIndex(name))
   }
 }
 
 object CompGraph {
   def empty(cg: ComputationGraph, model: Model): CompGraph = {
-    new CompGraph(cg, model, IndexedList.create[String], Array(),
-        IndexedList.create[String], Array(), false)
+    new CompGraph(cg, model, IndexedList.create[String], 
+        IndexedList.create[String], false)
   }
 }
 

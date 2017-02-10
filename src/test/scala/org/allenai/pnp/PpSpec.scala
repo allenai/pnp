@@ -221,8 +221,7 @@ class PpSpec extends FlatSpec with Matchers {
     val paramNames = IndexedList.create[String]
     val flipParam = m.add_parameters(Seq(2))
     paramNames.add("flip")
-    val model = new PpModel(paramNames, Array(flipParam),
-        IndexedList.create[String], Array(), m, false)
+    val model = new PpModel(paramNames, IndexedList.create[String], m, false)
     flipParam.zero()
     
     val env = Env.init

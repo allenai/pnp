@@ -30,6 +30,7 @@ import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import com.jayantkrish.jklol.util.IoUtils
 
 /** Command line program for training a semantic parser.
   */
@@ -38,11 +39,13 @@ class SemanticParserCli extends AbstractCli() {
   var trainingDataOpt: OptionSpec[String] = null
   var entityDataOpt: OptionSpec[String] = null
   var testDataOpt: OptionSpec[String] = null
+  var modelOutOpt: OptionSpec[String] = null
   
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     entityDataOpt = parser.accepts("entityData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
+    modelOutOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
   }
   
   override def run(options: OptionSet): Unit = {
@@ -124,8 +127,6 @@ class SemanticParserCli extends AbstractCli() {
     println(testResults)
     println("Train: ")
     println(trainResults)
-    
-    // TODO: serialization
   }
 
   def buildEntityDictionary(examples: Seq[CcgExample], vocab: IndexedList[String],
@@ -202,7 +203,7 @@ class SemanticParserCli extends AbstractCli() {
     // Train model
     val model = parser.getModel
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
+    val trainer = new LoglikelihoodTrainer(2, 100, false, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
 
     parser.dropoutProb = -1

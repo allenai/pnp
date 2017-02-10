@@ -446,7 +446,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     backwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
     actionBuilder = new LSTMBuilder(1, actionDim + inputDim, hiddenDim, model)
 
-    new PpModel(names, params.toArray, lookupNames, lookupParams.toArray, model, true)
+    new PpModel(names, lookupNames, model, true)
   }
 }
 

@@ -9,8 +9,7 @@ import edu.cmu.dynet._
   * parameters are used to initialize the computation
   * graph of a program during inference.
   */
-class PpModel(val names: IndexedList[String], val parameters: Array[Parameter],
-    val lookupNames: IndexedList[String], val lookupParameters: Array[LookupParameter],
+class PpModel(val names: IndexedList[String], val lookupNames: IndexedList[String], 
     val model: Model, val locallyNormalized: Boolean) extends Serializable {
 
   def getParameterIndex(name: String): Int = {
@@ -22,7 +21,6 @@ class PpModel(val names: IndexedList[String], val parameters: Array[Parameter],
   }
 
   def getInitialComputationGraph(cg: ComputationGraph): CompGraph = {
-    new CompGraph(cg, model, names, parameters,
-        lookupNames, lookupParameters, locallyNormalized)
+    new CompGraph(cg, model, names, lookupNames, locallyNormalized)
   }
 }

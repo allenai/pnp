@@ -167,8 +167,7 @@ object LoglikelihoodTrainerSpec {
     val paramNames = IndexedList.create[String]
     val flipParam = m.add_parameters(Seq(2))
     paramNames.add("flip")
-    new PpModel(paramNames, Array(flipParam),
-        IndexedList.create[String], Array(), m, true)
+    new PpModel(paramNames, IndexedList.create[String], m, true)
   }
   
   def xor(left: Boolean, right: Boolean): Pp[Boolean] = {
@@ -217,7 +216,6 @@ object LoglikelihoodTrainerSpec {
     paramNames.add("bias2")
     params += m.add_parameters(Seq(2))
 
-    new PpModel(paramNames, params.toArray,
-        IndexedList.create[String], Array(), m, true)
+    new PpModel(paramNames, IndexedList.create[String], m, true)
   }
 }
