@@ -1,41 +1,41 @@
-package org.allenai.pnp.semparse
+package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.PpExample
 import org.allenai.pnp.PpModel
 import org.allenai.wikitables.WikiTablesTypeDeclaration
 import org.allenai.wikitables.WikiTablesDataProcessor
-
 import com.google.common.collect.Maps
 import com.jayantkrish.jklol.ccg.CcgExample
-import com.jayantkrish.jklol.ccg.cli.TrainSemanticParser
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
-import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.cli.AbstractCli
-import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.training.DefaultLogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.stanford.nlp.sempre.tables.test.CustomExample
-
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import org.allenai.pnp.semparse.ConstantTemplate
+import org.allenai.pnp.semparse.Entity
+import org.allenai.pnp.semparse.EntityLinking
+import org.allenai.pnp.semparse.SemanticParser
+import org.allenai.pnp.semparse.SemanticParserLoss
+import org.allenai.pnp.semparse.SemanticParserUtils
+import org.allenai.pnp.semparse.Span
 
 /** Command line program for training a semantic parser.
   */
