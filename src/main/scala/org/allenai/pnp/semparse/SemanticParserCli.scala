@@ -192,7 +192,7 @@ class SemanticParserCli extends AbstractCli() {
     val ppExamples = for {
       x <- examples
       sent = x.getSentence
-      tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
+      tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       unconditional = parser.generateExpression(tokenIds, entityLinking)
       oracle <- parser.generateExecutionOracle(x.getLogicalForm, entityLinking, typeDeclaration)
@@ -226,7 +226,7 @@ class SemanticParserCli extends AbstractCli() {
       
       val sent = e.getSentence
       val dist = parser.parse(
-          sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
+          sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val cg = new ComputationGraph
       val results = dist.beamSearch(10, 75, Env.init, null,

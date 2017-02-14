@@ -2,33 +2,11 @@ package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
+
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.PpExample
 import org.allenai.pnp.PpModel
-import org.allenai.wikitables.WikiTablesTypeDeclaration
-import org.allenai.wikitables.WikiTablesDataProcessor
-import com.google.common.collect.Maps
-import com.jayantkrish.jklol.ccg.CcgExample
-import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
-import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
-import com.jayantkrish.jklol.ccg.lambda2.Expression2
-import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
-import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
-import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
-import com.jayantkrish.jklol.ccg.lambda.Type
-import com.jayantkrish.jklol.cli.AbstractCli
-import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
-import com.jayantkrish.jklol.training.DefaultLogFunction
-import com.jayantkrish.jklol.training.NullLogFunction
-import com.jayantkrish.jklol.util.CountAccumulator
-import com.jayantkrish.jklol.util.IndexedList
-import edu.stanford.nlp.sempre.tables.test.CustomExample
-import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
-import joptsimple.OptionParser
-import joptsimple.OptionSet
-import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
@@ -36,6 +14,29 @@ import org.allenai.pnp.semparse.SemanticParser
 import org.allenai.pnp.semparse.SemanticParserLoss
 import org.allenai.pnp.semparse.SemanticParserUtils
 import org.allenai.pnp.semparse.Span
+
+import com.google.common.collect.Maps
+import com.jayantkrish.jklol.ccg.CcgExample
+import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
+import com.jayantkrish.jklol.ccg.lambda.Type
+import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
+import com.jayantkrish.jklol.ccg.lambda2.Expression2
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
+import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
+import com.jayantkrish.jklol.cli.AbstractCli
+import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
+import com.jayantkrish.jklol.training.DefaultLogFunction
+import com.jayantkrish.jklol.training.NullLogFunction
+import com.jayantkrish.jklol.util.CountAccumulator
+import com.jayantkrish.jklol.util.IndexedList
+
+import edu.cmu.dynet._
+import edu.cmu.dynet.dynet_swig._
+import edu.stanford.nlp.sempre.tables.test.CustomExample
+import joptsimple.OptionParser
+import joptsimple.OptionSet
+import joptsimple.OptionSpec
 
 /** Command line program for training a semantic parser.
   */
@@ -180,7 +181,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val annotations = Maps.newHashMap[String, Object](sent.getAnnotations)
     annotations.put("originalTokens", sent.getWords.asScala.toList)
-    annotations.put("tokenIds", entityAnonymizedTokenIds.toList)
+    annotations.put("tokenIds", entityAnonymizedTokenIds.toArray)
     annotations.put("entityLinking", entityLinking)
 
     val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
@@ -192,7 +193,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Passing null for dependencies (arg1) and syntactic parse (arg2).
     new CcgExample(unkedSentence, null, null, lfParser.parse(logicalForm))
   }
-    
+
   /** Train the parser by maximizing the likelihood of examples.
     * Returns a model with the trained parameters. 
     */
@@ -203,7 +204,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val ppExamples = for {
       x <- examples
       sent = x.getSentence
-      tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
+      tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       unconditional = parser.generateExpression(tokenIds, entityLinking)
       oracle <- parser.generateExecutionOracle(x.getLogicalForm, entityLinking, typeDeclaration)
@@ -237,7 +238,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       
       val sent = e.getSentence
       val dist = parser.parse(
-          sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
+          sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val cg = new ComputationGraph
       val results = dist.beamSearch(10, 75, Env.init, null,

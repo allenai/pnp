@@ -92,7 +92,7 @@ object SemanticParserUtils {
     val usedRules = ListBuffer[(Type, Template)]()
     for (e <- examples) {
       val sent = e.getSentence
-      val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
+      val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
 
       val oracleOpt = parser.generateExecutionOracle(e.getLogicalForm, entityLinking, typeDeclaration)

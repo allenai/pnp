@@ -24,6 +24,7 @@ import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
+import scala.collection.mutable.SetBuilder
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
@@ -51,7 +52,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
 
   /** Compute the input encoding of a list of tokens
     */
-  def encode(tokens: List[Int], entityLinking: EntityLinking): Pp[InputEncoding] = {
+  def encode(tokens: Array[Int], entityLinking: EntityLinking): Pp[InputEncoding] = {
     for {
       compGraph <- computationGraph()
       _ = initializeRnns(compGraph)
@@ -64,7 +65,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     }
   }
 
-  private def rnnEncode(computationGraph: CompGraph, tokens: List[Int]
+  private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int]
     ): (ExpressionVector, Expression, Expression, Expression) = {
     val cg = computationGraph.cg
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
@@ -110,7 +111,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   }
 
   def encodeEntities(computationGraph: CompGraph,
-      entityLinking: EntityLinking, tokens: List[Int]): MultiMap[Type, EntityEncoding] = {
+      entityLinking: EntityLinking, tokens: Seq[Int]): MultiMap[Type, EntityEncoding] = {
     val cg = computationGraph.cg
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
@@ -145,7 +146,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     SemanticParser.seqToMultimap(output)
   }
   
-  def generateExpression(tokens: List[Int], entityLinking: EntityLinking): Pp[Expression2] = {
+  def generateExpression(tokens: Array[Int], entityLinking: EntityLinking): Pp[Expression2] = {
     for {
       state <- parse(tokens, entityLinking)
     } yield {
@@ -156,7 +157,7 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   /** Generate a distribution over logical forms given 
     * tokens.
     */
-  def parse(tokens: List[Int], entityLinking: EntityLinking): Pp[SemanticParserState] = {
+  def parse(tokens: Array[Int], entityLinking: EntityLinking): Pp[SemanticParserState] = {
     for {
       // Encode input tokens using an LSTM.
       input <- encode(tokens, entityLinking)
@@ -468,6 +469,63 @@ class ActionSpace(
   }
 }
 
+object ActionSpace {
+  def fromLfConstants(constants: Iterable[String], typeDeclaration: TypeDeclaration): ActionSpace = {
+     val typedConstants = constants.map(x => (x, typeDeclaration.getType(x))).toList
+     val atomicTypes = typedConstants.map(x => getAtomicTypes(x._2)).flatten
+
+     val applicationTemplates = for {
+       (c, t) <- typedConstants.filter(_._2.isFunctional)
+       (args, ret) = decomposeType(t)
+     } yield {
+       ApplicationTemplate.fromTypes(ret, (t :: args).map(x => (x, false)))
+     }
+
+     val constantTemplates = for {
+       (c, t) <- typedConstants 
+     } yield {
+       ConstantTemplate(t, Expression2.constant(c))
+     }
+     
+     // TODO: lambda templates?
+
+     // TODO: maybe allow the root type to be non-atomic
+     val rootTypes = atomicTypes
+     val allTemplates = applicationTemplates ++ constantTemplates
+     val allTypes = rootTypes ++ allTemplates.map(_.root) ++
+      applicationTemplates.map(_.holeTypes).flatten
+
+     val templateMap = allTemplates.map(x => (x.root, x))
+     new ActionSpace(SemanticParser.seqToMultimap(templateMap),
+         rootTypes.toSet.toArray, allTypes.toSet)
+  }
+
+  private def getAtomicTypes(t: Type): Set[Type] = {
+    if (t.isAtomic()) {
+      if (t.hasTypeVariables()) {
+        return Set()
+      } else {
+        return Set(t)
+      }
+    } else {
+      val arg = getAtomicTypes(t.getArgumentType)
+      val ret = getAtomicTypes(t.getReturnType)
+      arg ++ ret
+    }
+  }
+  
+  private def decomposeType(t: Type): (List[Type], Type) = {
+    val args = ListBuffer[Type]()
+    var x = t
+    while (x.isFunctional) {
+      args += x.getArgumentType
+      x = x.getReturnType
+    }
+    
+    (args.toList.reverse, x)
+  }
+}
+
 /** Execution score that constrains a SemanticParser
   * to generate the given rootType and sequence of
   * templates. 
@@ -667,7 +725,7 @@ object SemanticParser {
   }
 }
 
-case class InputEncoding(val tokens: List[Int], val rnnState: ExpressionVector,
+case class InputEncoding(val tokens: Array[Int], val rnnState: ExpressionVector,
     val sentEmbedding: Expression,
     val tokenMatrix: Expression, val encodedTokenMatrix: Expression,
     val entityEncoding: MultiMap[Type, EntityEncoding]) {

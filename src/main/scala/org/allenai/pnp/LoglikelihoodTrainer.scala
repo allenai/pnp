@@ -26,7 +26,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
        
         val env = example.env
         val graph = model.getInitialComputationGraph(cg)
-       
+
         // Compute the distribution over correct executions.
         log.startTimer("pp_loglikelihood/forward")
         val conditional = example.conditional.beamSearch(beamSize, -1, env,
