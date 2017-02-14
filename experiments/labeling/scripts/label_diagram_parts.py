@@ -23,7 +23,7 @@ with open(diagram_file, 'r') as f:
                     label_point_map[label].extend(part_labels[label][annotation_id]["annotation"])
 
             for annotation_ind in xrange(3):
-                point_annotated_id = diagram_id + "_" + str(annotation_ind)
+                point_annotated_id = diagram_id + "_" + unicode(annotation_ind)
 
                 labels = sorted(label_point_map.keys())
 

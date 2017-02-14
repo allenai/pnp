@@ -62,7 +62,7 @@ object LabelingExample {
     val diagramId = js("diagramId").convertTo[String]
     
     val answerOptionTokens = answerOptions.map(_.split(" ")).toArray
-    
+
     val d = diagramMap(diagramId)
     LabelingExample(tokens, d._1, d._2, AnswerOptions(answerOptionTokens),
         correctAnswer) 

@@ -1,11 +1,13 @@
 package org.allenai.dqa.labeling
 
-import scala.collection.JavaConverters._
-
-import spray.json._
-import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
-import com.jayantkrish.jklol.util.IoUtils
+
+import spray.json.DefaultJsonProtocol._
+import spray.json.JsArray
+import spray.json.JsNumber
+import spray.json.JsObject
+import spray.json.deserializationError
+import spray.json.pimpString
 
 case class Diagram(id: String, parts: Vector[Part]) {
   
@@ -21,23 +23,23 @@ case class Part(id: String, coords: (Int, Int)) {
 object Diagram {
   
   def fromJsonFile(filename: String): Array[(Diagram, DiagramLabel)] = {
-    val lines = IoUtils.readLines(filename).asScala
-    
-    lines.map(x => fromJsonObject(x.parseJson.asJsObject)).toArray
+    val lines = Source.fromFile(filename).getLines
+    lines.map(fromJsonLine(_)).toArray
   }
 
-  def fromJsonObject(js: JsObject): (Diagram, DiagramLabel) = {
-    val diagramLabel = js.fields("label").toString
-    val diagramId = js.fields("id").toString
-    val imageId = js.fields("imageId").toString
+  def fromJsonLine(line: String): (Diagram, DiagramLabel) = {
+    val js = line.parseJson.asJsObject
+    val diagramLabel = js.fields("label").convertTo[String]
+    val diagramId = js.fields("id").convertTo[String]
+    val imageId = js.fields("imageId").convertTo[String] 
     
     val pointJsons = js.fields("points").asInstanceOf[JsArray]
     
     val labeledParts = for {
       pointJson <- pointJsons.elements
       p = pointJson.asJsObject
-      id = p.fields("textId").toString
-      label = p.fields("label").toString
+      id = p.fields("textId").convertTo[String]
+      label = p.fields("label").convertTo[String]
       xy = p.fields("xy") match {
         case JsArray(Vector(JsNumber(x), JsNumber(y))) => (x.toInt, y.toInt)
         case _ => deserializationError("Array of x/y coordinates expected")

@@ -24,6 +24,7 @@ import org.allenai.pnp.LoglikelihoodTrainer
 import edu.cmu.dynet.SimpleSGDTrainer
 import org.allenai.pnp.semparse.ActionSpace
 import com.google.common.collect.HashMultimap
+import edu.cmu.dynet.ComputationGraph
 
 class LabelingDqaCli extends AbstractCli {
   
@@ -75,9 +76,11 @@ class LabelingDqaCli extends AbstractCli {
         typePartMap.put(diagramTypeId, diagramPartId)
       }
     }
+    /*
     println("diagramTypes: " + diagramTypes)
     println("diagramParts: " + diagramParts)
     println("typePartMap: " + typePartMap)
+    */
     val executor = new LabelingExecutor(diagramTypes, diagramParts, typePartMap)
     
     val answerSelector = new AnswerSelector()
@@ -95,7 +98,25 @@ class LabelingDqaCli extends AbstractCli {
     }
     val parser = new SemanticParser(actionSpace, vocab)
 
+    validateParser(trainPreprocessed, parser)
     train(trainPreprocessed, parser, executor, answerSelector)
+  }
+  
+  def validateParser(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser): Unit = {
+    val model = parser.getModel
+    
+    for (ex <- examples) {
+      val cg = new ComputationGraph
+      
+      val lfDist = parser.generateExpression(ex.tokenIds, ex.entityLinking)
+      val dist = lfDist.beamSearch(100, 100, Env.init, null, model.getInitialComputationGraph(cg), null)
+      println(ex.ex.tokens.mkString(" "))
+      for (x <- dist.executions) {
+        println("  "  + x)
+      }
+
+      cg.delete
+    }
   }
 
   def train(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser,
