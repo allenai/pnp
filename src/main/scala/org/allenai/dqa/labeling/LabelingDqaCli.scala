@@ -82,8 +82,6 @@ class LabelingDqaCli extends AbstractCli {
     println("typePartMap: " + typePartMap)
     */
     val executor = new LabelingExecutor(diagramTypes, diagramParts, typePartMap)
-    
-    val answerSelector = new AnswerSelector()
 
     // Configure semantic parser
     val actionSpace: ActionSpace = ActionSpace.fromLfConstants(executor.bindings.keySet,
@@ -96,22 +94,23 @@ class LabelingDqaCli extends AbstractCli {
         println("  " + template)
       }
     }
-    val parser = new SemanticParser(actionSpace, vocab)
+    
+    val model = PpModel.init(true)
+    val parser = new SemanticParser(actionSpace, vocab, model)
+    val answerSelector = new AnswerSelector()
     val p3 = new LabelingP3Model(parser, executor, answerSelector)
 
     validateParser(trainPreprocessed, parser)
-    val model = train(trainPreprocessed, p3)
+    train(trainPreprocessed, p3)
     test(trainPreprocessed, p3, model)
   }
   
   def validateParser(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser): Unit = {
-    val model = parser.getModel
-    
     for (ex <- examples) {
       val cg = new ComputationGraph
       
       val lfDist = parser.generateExpression(ex.tokenIds, ex.entityLinking)
-      val dist = lfDist.beamSearch(100, 100, Env.init, null, model.getInitialComputationGraph(cg), null)
+      val dist = lfDist.beamSearch(100, 100, Env.init, null, parser.model.getComputationGraph(cg), null)
       println(ex.ex.tokens.mkString(" "))
       for (x <- dist.executions) {
         println("  "  + x)
@@ -146,7 +145,7 @@ class LabelingDqaCli extends AbstractCli {
       val cg = new ComputationGraph
 
       val pp = p3.exampleToPpExample(ex).unconditional
-      val dist = pp.beamSearch(100, 100, Env.init, null, model.getInitialComputationGraph(cg), null)
+      val dist = pp.beamSearch(100, 100, Env.init, null, model.getComputationGraph(cg), null)
 
       println(ex.ex.tokens.mkString(" "))
       println(ex.ex.answerOptions)

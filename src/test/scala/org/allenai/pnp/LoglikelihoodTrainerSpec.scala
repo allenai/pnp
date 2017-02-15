@@ -30,7 +30,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
 
     val env = Env.init
     val computationGraph = new ComputationGraph
-    val marginals = foo(1, null).beamSearch(100, env, model.getInitialComputationGraph(computationGraph))
+    val marginals = foo(1, null).beamSearch(100, env, model.getComputationGraph(computationGraph))
     val values = marginals.executions
     val partitionFunction = marginals.partitionFunction
     values.length should be(2)
@@ -72,7 +72,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     for (ex <- data) {
       val env = Env.init
       val cg = new ComputationGraph
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getInitialComputationGraph(cg))
+      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph(cg))
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
@@ -122,7 +122,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     for (ex <- data) {
       val env = Env.init
       val cg = new ComputationGraph
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getInitialComputationGraph(cg))
+      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph(cg))
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
@@ -163,11 +163,9 @@ object LoglikelihoodTrainerSpec {
   }
   
   def fooModel(): PpModel = {
-    val m = new Model
-    val paramNames = IndexedList.create[String]
-    val flipParam = m.add_parameters(Seq(2))
-    paramNames.add("flip")
-    new PpModel(paramNames, IndexedList.create[String], m, true)
+    val model = PpModel.init(true)
+    model.addParameter("flip", Seq(2))
+    model
   }
   
   def xor(left: Boolean, right: Boolean): Pp[Boolean] = {
@@ -204,18 +202,12 @@ object LoglikelihoodTrainerSpec {
   
   def xorModel(): PpModel = {
     // Initialize model parameters.
-    val m = new Model
-    val paramNames = IndexedList.create[String]
-    val params = ListBuffer[Parameter]()
-    paramNames.add("params")
-    params += m.add_parameters(Seq(8, 2))
-    paramNames.add("bias")
-    params += m.add_parameters(Seq(8))
-    paramNames.add("params2")
-    params += m.add_parameters(Seq(2, 8))
-    paramNames.add("bias2")
-    params += m.add_parameters(Seq(2))
+    val model = PpModel.init(true)
+    model.addParameter("params", Seq(8, 2))
+    model.addParameter("bias", Seq(8))
+    model.addParameter("params2", Seq(2, 8))
+    model.addParameter("bias2", Seq(2))
 
-    new PpModel(paramNames, IndexedList.create[String], m, true)
+    model
   }
 }

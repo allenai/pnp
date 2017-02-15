@@ -59,14 +59,10 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
       }
     }
     
-    val m = new Model
-    val paramNames = IndexedList.create[String]
-    val startParam = m.add_parameters(Seq(vocab.length))
-    paramNames.add("start")
-    val transitionParam = m.add_parameters(Seq(vocab.length * vocab.length))
-    paramNames.add("transition")
-    val model = new PpModel(paramNames, IndexedList.create[String], m, true)
-    
+    val model = PpModel.init(false)
+    val startParam = model.addParameter("start", Seq(vocab.length))
+    val transitionParam = model.addParameter("transition", Seq(vocab.length * vocab.length))
+
     val examples = List(
         PpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,0))),
         PpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,2)))

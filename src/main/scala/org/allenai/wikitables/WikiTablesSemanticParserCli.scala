@@ -117,8 +117,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       }
     }
     */
-    
-    val parser = new SemanticParser(actionSpace, vocab)
+
+    val model = PpModel.init(true)
+    val parser = new SemanticParser(actionSpace, vocab, model)
     
     println("*** Validating types ***")
     SemanticParserUtils.validateTypes(trainPreprocessed, typeDeclaration)
@@ -213,7 +214,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     // Train model
-    val model = parser.getModel
+    val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(50, 100, true, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
@@ -242,7 +243,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val cg = new ComputationGraph
       val results = dist.beamSearch(10, 75, Env.init, null,
-          model.getInitialComputationGraph(cg), new NullLogFunction())
+          model.getComputationGraph(cg), new NullLogFunction())
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>

@@ -45,6 +45,6 @@ class LabelingP3Model(val parser: SemanticParser,
   
   def getModel: PpModel = {
     // TODO: need to be able to append parameters from each model.
-    parser.getModel
+    parser.model
   }
 }

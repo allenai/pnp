@@ -108,7 +108,8 @@ class SemanticParserCli extends AbstractCli() {
     // println(actionSpace.rootTypes)
     // println(actionSpace.typeTemplateMap)
     
-    val parser = new SemanticParser(actionSpace, vocab)
+    val model = PpModel.init(true)
+    val parser = new SemanticParser(actionSpace, vocab, model)
     
     println("*** Validating types ***")
     SemanticParserUtils.validateTypes(trainPreprocessed, typeDeclaration)
@@ -116,12 +117,12 @@ class SemanticParserCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     println("*** Validating test set action space ***")
     SemanticParserUtils.validateActionSpace(testPreprocessed, parser, typeDeclaration)
-    val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
+    train(trainPreprocessed, parser, typeDeclaration)
     println("***************** TEST EVALUATION *****************")
-    val testResults = test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    val testResults = test(testPreprocessed, parser, typeDeclaration, simplifier, comparator)
     println("***************** TRAIN EVALUATION *****************")
-    val trainResults = test(trainPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
-    
+    val trainResults = test(trainPreprocessed, parser, typeDeclaration, simplifier, comparator)
+
     println("")
     println("Test: ")
     println(testResults)
@@ -183,10 +184,12 @@ class SemanticParserCli extends AbstractCli() {
   }
     
   /** Train the parser by maximizing the likelihood of examples.
-    * Returns a model with the trained parameters. 
+    * The model inside {@code parser} is used as the initial
+    * parameters and is updated by this method to contain the
+    * trained parameters.  
     */
   def train(examples: Seq[CcgExample], parser: SemanticParser,
-      typeDeclaration: TypeDeclaration): PpModel = {
+      typeDeclaration: TypeDeclaration): Unit = {
     
     parser.dropoutProb = 0.5
     val ppExamples = for {
@@ -201,20 +204,19 @@ class SemanticParserCli extends AbstractCli() {
     }
 
     // Train model
-    val model = parser.getModel
+    val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
 
     parser.dropoutProb = -1
-    model
   }
 
   /** Evaluate the test accuracy of parser on examples. Logical
     * forms are compared for equality using comparator.  
     */
   def test(examples: Seq[CcgExample], parser: SemanticParser,
-      model: PpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
+      typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
       comparator: ExpressionComparator): SemanticParserLoss = {
     println("")
     var numCorrect = 0
@@ -230,7 +232,7 @@ class SemanticParserCli extends AbstractCli() {
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val cg = new ComputationGraph
       val results = dist.beamSearch(10, 75, Env.init, null,
-          model.getInitialComputationGraph(cg), new NullLogFunction())
+          parser.model.getComputationGraph(cg), new NullLogFunction())
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>

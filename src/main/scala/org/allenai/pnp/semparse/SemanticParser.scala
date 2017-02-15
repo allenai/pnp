@@ -29,11 +29,7 @@ import scala.collection.mutable.SetBuilder
 /** A parser mapping token sequences to a distribution over
   * logical forms.
   */
-class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
-  
-  var forwardBuilder: LSTMBuilder = null
-  var backwardBuilder: LSTMBuilder = null
-  var actionBuilder: LSTMBuilder = null
+class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String], val model: PpModel) {
   
   val inputDim = 200
   val hiddenDim = 100
@@ -42,8 +38,47 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
   val maxVars = 10
   
   var dropoutProb = -1.0
+  
+  import SemanticParser._
+  
+  // Initialize model
+  // TODO: document these parameters.
+  model.addParameter(ROOT_WEIGHTS_PARAM, Seq(actionSpace.rootTypes.length, 2 * hiddenDim))
+  model.addParameter(ROOT_BIAS_PARAM, Seq(actionSpace.rootTypes.length))
+  model.addParameter(ATTENTION_WEIGHTS_PARAM, Seq(2 * hiddenDim, actionDim))
+    
+  model.addParameter(ACTION_HIDDEN_WEIGHTS, Seq(actionHiddenDim, inputDim + hiddenDim))
+    
+  model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size, Seq(inputDim))
+    
+  for (t <- actionSpace.getTypes) {
+    val actions = actionSpace.getTemplates(t)
+    val dim = actions.length + maxVars
 
-  def initializeRnns(computationGraph: CompGraph): Unit = {
+    model.addParameter(BEGIN_ACTIONS + t, Seq(actionDim + inputDim))
+    model.addParameter(ACTION_WEIGHTS_PARAM + t, Seq(dim, hiddenDim))
+    model.addParameter(ACTION_BIAS_PARAM + t, Seq(dim))
+
+    model.addParameter(ATTENTION_ACTION_WEIGHTS_PARAM + t, Seq(dim, inputDim))
+      
+    model.addParameter(ACTION_HIDDEN_ACTION + t, Seq(dim, actionHiddenDim))
+      
+    model.addParameter(ENTITY_BIAS_PARAM + t, Seq(1))
+    model.addParameter(ENTITY_WEIGHTS_PARAM + t, Seq(hiddenDim))
+
+    model.addLookupParameter(ACTION_LOOKUP_PARAM + t, dim, Seq(actionDim))
+
+    model.addLookupParameter(ENTITY_LOOKUP_PARAM + t, 1, Seq(actionDim))
+  }
+
+  // Forward and backward RNNs for encoding the input token sequence
+  val forwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model.model)
+  val backwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model.model)
+  // RNN for generating actions given previous actions (and the input)
+  val actionBuilder = new LSTMBuilder(1, actionDim + inputDim, hiddenDim, model.model)
+
+
+  private def initializeRnns(computationGraph: CompGraph): Unit = {
     val cg = computationGraph.cg
     forwardBuilder.new_graph(cg)
     backwardBuilder.new_graph(cg)
@@ -388,66 +423,6 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String]) {
     } yield {
       new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray)
     }
-  }
-  
-  def getModel: PpModel = {
-    // TODO: I think SemanticParser should take a PpModel as 
-    // a constructor argument. This implementation has a weird
-    // dependence between the LSTM builders here and the
-    // returned model.
-    val names = IndexedList.create[String]
-    val params = ListBuffer[Parameter]()
-    val lookupNames = IndexedList.create[String]
-    val lookupParams = ListBuffer[LookupParameter]()
-    val model = new Model
-    
-    names.add(SemanticParser.ROOT_WEIGHTS_PARAM)
-    params += model.add_parameters(Seq(actionSpace.rootTypes.length, 2 * hiddenDim))
-    names.add(SemanticParser.ROOT_BIAS_PARAM)
-    params += model.add_parameters(Seq(actionSpace.rootTypes.length))
-    names.add(SemanticParser.ATTENTION_WEIGHTS_PARAM)
-    params += model.add_parameters(Seq(2 * hiddenDim, actionDim))
-    
-    names.add(SemanticParser.ACTION_HIDDEN_WEIGHTS)
-    params += model.add_parameters(Seq(actionHiddenDim, inputDim + hiddenDim))
-    
-    lookupNames.add(SemanticParser.WORD_EMBEDDINGS_PARAM)
-    lookupParams += model.add_lookup_parameters(vocab.size, Seq(inputDim))
-    
-    for (t <- actionSpace.getTypes) {
-      val actions = actionSpace.getTemplates(t)
-      val dim = actions.length + maxVars
-
-      names.add(SemanticParser.BEGIN_ACTIONS + t)
-      params += model.add_parameters(Seq(actionDim + inputDim))
-      names.add(SemanticParser.ACTION_WEIGHTS_PARAM + t)
-      params += model.add_parameters(Seq(dim, hiddenDim))
-      names.add(SemanticParser.ACTION_BIAS_PARAM + t)
-      params += model.add_parameters(Seq(dim))
-
-      names.add(SemanticParser.ATTENTION_ACTION_WEIGHTS_PARAM + t)
-      params += model.add_parameters(Seq(dim, inputDim))
-      
-      names.add(SemanticParser.ACTION_HIDDEN_ACTION + t)
-      params += model.add_parameters(Seq(dim, actionHiddenDim))
-      
-      names.add(SemanticParser.ENTITY_BIAS_PARAM + t)
-      params += model.add_parameters(Seq(1))
-      names.add(SemanticParser.ENTITY_WEIGHTS_PARAM + t)
-      params += model.add_parameters(Seq(hiddenDim))
-      
-      lookupNames.add(SemanticParser.ACTION_LOOKUP_PARAM + t)
-      lookupParams += model.add_lookup_parameters(dim, Seq(actionDim))
-      
-      lookupNames.add(SemanticParser.ENTITY_LOOKUP_PARAM + t)
-      lookupParams += model.add_lookup_parameters(1, Seq(actionDim))
-    }
-    
-    forwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
-    backwardBuilder = new LSTMBuilder(1, inputDim, hiddenDim, model)
-    actionBuilder = new LSTMBuilder(1, actionDim + inputDim, hiddenDim, model)
-
-    new PpModel(names, lookupNames, model, true)
   }
 }
 

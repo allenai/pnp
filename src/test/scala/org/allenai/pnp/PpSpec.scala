@@ -217,15 +217,13 @@ class PpSpec extends FlatSpec with Matchers {
 
     val computationGraph = new ComputationGraph
     
-    val m = new Model
-    val paramNames = IndexedList.create[String]
-    val flipParam = m.add_parameters(Seq(2))
-    paramNames.add("flip")
-    val model = new PpModel(paramNames, IndexedList.create[String], m, false)
+
+    val model = PpModel.init(false)
+    val flipParam = model.addParameter("flip", Seq(2))
     flipParam.zero()
     
     val env = Env.init
-    val cg = model.getInitialComputationGraph(computationGraph)
+    val cg = model.getComputationGraph(computationGraph)
 
     val values = foo(1).beamSearch(100, env, cg).executions
     values.length should be(2)

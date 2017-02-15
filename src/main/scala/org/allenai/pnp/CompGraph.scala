@@ -8,7 +8,7 @@ import edu.cmu.dynet.dynet_swig._
 /** Computation graph of a neural network.
   */
 class CompGraph(val cg: ComputationGraph, val model: Model,
-    val paramNames: IndexedList[String], val lookupParamNames: IndexedList[String], 
+    val paramNames: Map[String, Parameter], val lookupParamNames: Map[String, LookupParameter], 
     val locallyNormalized: Boolean) {
   
   // Initialize the nodes of the graph with a node per
@@ -18,19 +18,18 @@ class CompGraph(val cg: ComputationGraph, val model: Model,
     paramExpressions(i) = parameter(cg, new Parameter(model, i)) 
   }
 
-  def getParameter(name: String): Expression = {
-    paramExpressions(paramNames.getIndex(name))
+  def getParameter(name: String): Parameter = {
+    paramNames(name)
   }
-  
+
   def getLookupParameter(name: String): LookupParameter = {
-    new LookupParameter(model, lookupParamNames.getIndex(name))
+    lookupParamNames(name)
   }
 }
 
 object CompGraph {
   def empty(cg: ComputationGraph, model: Model): CompGraph = {
-    new CompGraph(cg, model, IndexedList.create[String], 
-        IndexedList.create[String], false)
+    new CompGraph(cg, model, Map(), Map(), false)
   }
 }
 

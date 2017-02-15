@@ -84,8 +84,6 @@ object SemanticParserUtils {
    */
   def validateActionSpace(examples: Seq[CcgExample], parser: SemanticParser,
       typeDeclaration: TypeDeclaration): Unit = {
-    val model = parser.getModel
-
     println("")
     var maxParts = 0
     var numFailed = 0
@@ -102,7 +100,7 @@ object SemanticParserUtils {
         val oracle = oracleOpt.get
         val cg = new ComputationGraph
         val results = dist.beamSearch(1, 50, Env.init, oracle,
-            model.getInitialComputationGraph(cg), new NullLogFunction())
+            parser.model.getComputationGraph(cg), new NullLogFunction())
         if (results.executions.size != 1) {
           println("ERROR: " + e + " " + results)
           println("  " + e.getSentence.getWords)

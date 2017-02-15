@@ -250,7 +250,7 @@ case class CollapsedSearch[A](dist: Pp[A]) extends Pp[A] {
 case class ParameterPp(name: String) extends Pp[Expression] {
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction
       ): (Expression, Env, Double) = {
-    val expression = graph.getParameter(name)
+    val expression = parameter(graph.cg, graph.getParameter(name))
     (expression, env, logProb)
   }
 }
