@@ -15,7 +15,8 @@ class AnswerSelector {
       }
     } else {
       // TODO
-      Pp.choose((0 until answerOptions.length).toArray)
+      Pp.fail
+      // Pp.choose((0 until answerOptions.length).toArray)
     }
   }
 }

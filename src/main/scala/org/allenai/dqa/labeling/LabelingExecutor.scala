@@ -8,7 +8,14 @@ import org.allenai.pnp.PpUtil
 import com.google.common.collect.Multimap
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.util.IndexedList
+import org.allenai.pnp.ExecutionScore
+import org.allenai.pnp.semparse.SemanticParserState
+import org.allenai.pnp.Env
 
+/**
+ * Executes logical forms against a diagram to produce a
+ * denotation, i.e., the answer to the question.
+ */
 class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[String], 
     typePartMap: Multimap[Int, Int]) {
  
@@ -51,7 +58,7 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
   def labelDiagram(diagram: Diagram): Pp[DiagramLabel] = {
     for {
       // TODO: parameters
-      diagramType <- Pp.choose(diagramTypes.items().asScala)
+      diagramType <- Pp.chooseTag(diagramTypes.items().asScala, diagram)
       // TODO: don't treat parts as independent.
       permittedLabels = typePartMap.get(diagramTypes.getIndex(diagramType))
         .asScala.map(parts.get(_)).toList
@@ -67,12 +74,15 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
   def labelPart(part: Part, permittedLabels: List[String]): Pp[String] = {
     for {
       // TODO: parameters
-      part <- Pp.choose(permittedLabels)
+      partLabel <- Pp.chooseTag(permittedLabels, part)
     } yield {
-      part
+      partLabel
     }
   }
-  
+
+  /**
+   * Execute {@code lf} against {@code diagram}.
+   */
   def execute(lf: Expression2, diagram: Diagram): Pp[AnyRef] = {
     println("executing: " + lf)
 
@@ -85,6 +95,41 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
       value <- PpUtil.lfToPp(lf, bindings)
     } yield {
       value
+    }
+  }
+  
+  /**
+   * Get an execution score that assigns 0 probability to
+   * executions whose diagram interpretations are inconsistent
+   * with {@code label}.
+   */
+  def labelToExecutionScore(label: DiagramLabel): ExecutionScore = {
+    new DiagramLabelExecutionScore(label)
+  }
+}
+
+class DiagramLabelExecutionScore(val label: DiagramLabel) extends ExecutionScore {
+  def apply(tag: Any, choice: Any, env: Env): Double = {
+    if (tag != null) {
+      if (tag.isInstanceOf[Diagram]) {
+        if (choice.equals(label.diagramType)) {
+          0.0
+        } else {
+          Double.NegativeInfinity
+        }
+      } else if (tag.isInstanceOf[Part]) {
+        val part = tag.asInstanceOf[Part]
+        if (label.partLabels.length > part.ind && choice.equals(label.partLabels(part.ind))) {
+          0.0
+        } else {
+          Double.NegativeInfinity
+        }
+      } else {
+        // Unknown tag type
+        0.0
+      }
+    } else {
+      0.0
     }
   }
 }

@@ -97,9 +97,11 @@ class LabelingDqaCli extends AbstractCli {
       }
     }
     val parser = new SemanticParser(actionSpace, vocab)
+    val p3 = new LabelingP3Model(parser, executor, answerSelector)
 
     validateParser(trainPreprocessed, parser)
-    train(trainPreprocessed, parser, executor, answerSelector)
+    val model = train(trainPreprocessed, p3)
+    test(trainPreprocessed, p3, model)
   }
   
   def validateParser(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser): Unit = {
@@ -119,56 +121,52 @@ class LabelingDqaCli extends AbstractCli {
     }
   }
 
-  def train(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser,
-      executor: LabelingExecutor, answerSelector: AnswerSelector): PpModel = {
-    
+  def train(examples: Seq[PreprocessedLabelingExample], p3: LabelingP3Model): PpModel = {
+
     // TODO: figure out how to set this configuration in a more
     // reliable way.
-    parser.dropoutProb = -1
-    
-    val ppExamples = for {
-      ex <- examples
-      denotationDist = for {
-        // TODO: stage beam search?
-        lf <- parser.generateExpression(ex.tokenIds, ex.entityLinking)
-        denotation <- executor.execute(lf, ex.ex.diagram)
-      } yield {
-        denotation
-      }
+    p3.parser.dropoutProb = -1
 
-      unconditional = for {
-        denotation <- denotationDist
-        answer <- answerSelector.selectAnswer(denotation, ex.ex.answerOptions)
-      } yield {
-        answer
-      }
-
-      conditional = for {
-        denotation <- denotationDist
-        // choose the answer and condition on getting the correct answer
-        // in a single search step to reduce the possibility of search errors.
-        correctAnswer <- (for {
-          answer <- answerSelector.selectAnswer(denotation, ex.ex.answerOptions)
-          _ <- Pp.require(answer.equals(ex.ex.correctAnswer))
-        } yield {
-          answer
-        }).inOneStep()
-      } yield {
-        correctAnswer
-      }
-    } yield {
-      PpExample(unconditional, conditional, Env.init, null)
-    }
+    val ppExamples = examples.map(p3.exampleToPpExample(_))
 
     // Train model
-    // TODO: need to be able to append parameters from each model.
-    val model = parser.getModel
+    val model = p3.getModel
 
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(50, 100, true, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
 
     model
+  }
+  
+  def test(examples: Seq[PreprocessedLabelingExample], p3: LabelingP3Model,
+      model: PpModel): Unit = {
+    var numCorrect = 0 
+    for (ex <- examples) {
+      val cg = new ComputationGraph
+
+      val pp = p3.exampleToPpExample(ex).unconditional
+      val dist = pp.beamSearch(100, 100, Env.init, null, model.getInitialComputationGraph(cg), null)
+
+      println(ex.ex.tokens.mkString(" "))
+      println(ex.ex.answerOptions)
+      val marginals = dist.marginals
+      for (x <- marginals.getSortedKeys.asScala) {
+        println("  "  + x + " " + marginals.getProbability(x))
+      }
+
+      if (marginals.getSortedKeys.size > 0) {
+        val bestAnswer = marginals.getSortedKeys.get(0)
+        if (bestAnswer == ex.ex.correctAnswer) {
+          numCorrect += 1
+        }
+      }
+
+      cg.delete
+    }
+    
+    val accuracy = numCorrect.asInstanceOf[Double] / examples.length
+    println("Accuracy: " + accuracy + " (" + numCorrect + " / " + examples.length + ")")
   }
 }
 

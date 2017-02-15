@@ -26,10 +26,9 @@ case class LabelingExample(val tokens: Array[String],
 }
 
 case class PreprocessedLabelingExample(val tokenIds: Array[Int], val unkedTokens: Array[String],
-    val entityLinking: EntityLinking, val ex: LabelingExample) {
-}
+    val entityLinking: EntityLinking, val ex: LabelingExample)
 
-case class AnswerOptions(val optionTokens: Array[Array[String]]) {
+case class AnswerOptions(val optionTokens: Vector[Vector[String]]) {
   
   val length = optionTokens.length
   
@@ -38,7 +37,13 @@ case class AnswerOptions(val optionTokens: Array[Array[String]]) {
     val indexMatches = optionTokens.zipWithIndex.map(x =>
       (x._2, x._1.filter(t => t.equals(s)).length))
     
-    indexMatches.maxBy(x => x._2)._1
+    val best = indexMatches.maxBy(x => x._2)
+
+    if (best._2 > 0) {
+      best._1
+    } else {
+      -1
+    }
   }
 }
 
@@ -61,7 +66,7 @@ object LabelingExample {
     val correctAnswer = js("correctAnswer").convertTo[Int]
     val diagramId = js("diagramId").convertTo[String]
     
-    val answerOptionTokens = answerOptions.map(_.split(" ")).toArray
+    val answerOptionTokens = answerOptions.map(_.split(" ").toVector).toVector
 
     val d = diagramMap(diagramId)
     LabelingExample(tokens, d._1, d._2, AnswerOptions(answerOptionTokens),

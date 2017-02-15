@@ -8,6 +8,7 @@ import com.jayantkrish.jklol.training.NullLogFunction
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
+import com.jayantkrish.jklol.util.CountAccumulator
 
 
 /** Probabilistic neural program monad. Pp[X] represents a
@@ -420,14 +421,31 @@ class Execution[A](val value: A, val env: Env, val logProb: Double) {
 class PpBeamMarginals[A](val executions: Seq[Execution[A]], val graph: CompGraph,
     val searchSteps: Int) {
 
-  /*
   def logPartitionFunction(): Double = {
-    executions.map(x => x.logProb).sum
+    if (executions.length > 0) {
+      val logProbs = executions.map(x => x.logProb)
+      val max = logProbs.max
+      max + Math.log(logProbs.map(x => Math.exp(x - max)).sum)
+    } else {
+      Double.NegativeInfinity
+    }
   }
-  */
 
   def partitionFunction(): Double = {
     executions.map(x => x.prob).sum
+  }
+
+  def marginals(): CountAccumulator[A] = {
+    val counts = CountAccumulator.create[A]
+    
+    if (executions.length > 0) {
+      val lpf = logPartitionFunction
+      for (ex <- executions) {
+        counts.increment(ex.value, Math.exp(ex.logProb - lpf))
+      }
+    }
+
+    counts
   }
 
   def condition(pred: (A, Env) => Boolean): PpBeamMarginals[A] = {
