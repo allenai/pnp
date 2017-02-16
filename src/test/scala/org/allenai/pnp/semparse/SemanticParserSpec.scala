@@ -17,7 +17,7 @@ import org.allenai.pnp.PpModel
 
 class SemanticParserSpec extends FlatSpec with Matchers {
   
-  myInitialize()
+  initialize(new DynetParams())
  
   val dataStrings = List(
       ("state", "state:<e,t>"),

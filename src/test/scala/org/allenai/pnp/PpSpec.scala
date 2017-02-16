@@ -15,14 +15,14 @@ import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import org.allenai.pnp.examples.DynetScalaHelpers._
 import scala.collection.mutable.ListBuffer
 
 /** Test cases for the probabilistic programming monad.
   */
 class PpSpec extends FlatSpec with Matchers {
 
-  myInitialize()
+  import DynetScalaHelpers._
+  initialize(new DynetParams())
 
   val TOLERANCE = 0.01
 

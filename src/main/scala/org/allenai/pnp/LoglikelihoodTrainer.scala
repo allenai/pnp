@@ -3,8 +3,6 @@ package org.allenai.pnp
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
-import org.allenai.pnp.examples.DynetScalaHelpers
-
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 

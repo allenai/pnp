@@ -6,6 +6,7 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.mutable.{ Map => MutableMap }
 import scala.collection.mutable.MultiMap
 import scala.collection.mutable.{ Set => MutableSet }
+import scala.collection.mutable.SetBuilder
 
 import org.allenai.pnp.CompGraph
 import org.allenai.pnp.Env
@@ -13,7 +14,6 @@ import org.allenai.pnp.ExecutionScore
 import org.allenai.pnp.Pp
 import org.allenai.pnp.Pp._
 import org.allenai.pnp.PpModel
-import org.allenai.pnp.examples.DynetScalaHelpers._
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -24,7 +24,6 @@ import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import scala.collection.mutable.SetBuilder
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
@@ -40,7 +39,8 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String], val m
   var dropoutProb = -1.0
   
   import SemanticParser._
-  
+  import DynetScalaHelpers._
+
   // Initialize model
   // TODO: document these parameters.
   model.addParameter(ROOT_WEIGHTS_PARAM, Seq(actionSpace.rootTypes.length, 2 * hiddenDim))

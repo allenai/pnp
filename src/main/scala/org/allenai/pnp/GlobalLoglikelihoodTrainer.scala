@@ -1,7 +1,5 @@
 package org.allenai.pnp
 
-import org.allenai.pnp.examples.DynetScalaHelpers
-
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 

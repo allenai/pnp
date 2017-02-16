@@ -4,13 +4,14 @@ import scala.collection.JavaConverters._
 import org.scalatest._
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import org.allenai.pnp.examples.DynetScalaHelpers._
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.NullLogFunction
 
 class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   
-  myInitialize()
+  import DynetScalaHelpers._
+  
+  initialize(new DynetParams())
 
   val TOLERANCE = 0.01
 
