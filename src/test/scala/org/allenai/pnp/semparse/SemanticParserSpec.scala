@@ -32,28 +32,18 @@ class SemanticParserSpec extends FlatSpec with Matchers {
 
   val data = dataStrings.map(x => (x._1.split(" "), exprParser.parse(x._2)))
 
-  val lexicon = SemanticParser.generateActionSpace(data.map(_._2), typeDeclaration, true)
+  val lexicon = ActionSpace.fromExpressions(data.map(_._2), typeDeclaration, true)
   val vocab = IndexedList.create[String]
   for (d <- data) {
     vocab.addAll(d._1.toList.asJava)
   }
   val model = PpModel.init(true)
-  val parser = new SemanticParser(lexicon, vocab, model)
+  val parser = SemanticParser.create(lexicon, vocab, model)
 
   "SemanticParser" should "generate application templates" in {
     println(lexicon.typeTemplateMap)
   }
 
-  /*
-  it should "beam search" in {
-    val exprs = parser.generateExpression(Type.parseFrom("e"))
-    val results = exprs.beamSearch(100)
-    for (result <- results) {
-      println("  " + result)
-    }
-  }
-  */
-  
   it should "decode expressions to template sequences" in {
     val e = exprParser.parse(
         "(argmax:<<e,t>,e> (lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0))))")

@@ -37,6 +37,7 @@ import edu.stanford.nlp.sempre.tables.test.CustomExample
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import org.allenai.pnp.semparse.ActionSpace
 
 /** Command line program for training a semantic parser.
   */
@@ -85,8 +86,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val trainPreprocessed = trainingData.map(x => preprocessExample(x, vocab, logicalFormParser)) 
     val testPreprocessed = testData.map(x => preprocessExample(x, vocab, logicalFormParser))
 
-    
-    val actionSpace = SemanticParser.generateActionSpace(
+    val actionSpace = ActionSpace.fromExpressions(
         trainPreprocessed.map(_.getLogicalForm), typeDeclaration, false)
 
     // Remove specific numbers/rows/cells from the action space.
@@ -119,7 +119,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     */
 
     val model = PpModel.init(true)
-    val parser = new SemanticParser(actionSpace, vocab, model)
+    val parser = SemanticParser.create(actionSpace, vocab, model)
     
     println("*** Validating types ***")
     SemanticParserUtils.validateTypes(trainPreprocessed, typeDeclaration)
