@@ -29,7 +29,7 @@ import edu.cmu.dynet.dynet_swig._
 /** A parser mapping token sequences to a distribution over
   * logical forms.
   */
-class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String], inputDim: Int,
+class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String], inputDim: Int,
     hiddenDim: Int, maxVars: Int, forwardBuilder: LSTMBuilder, backwardBuilder: LSTMBuilder,
     actionBuilder: LSTMBuilder, val model: PpModel) {
 
@@ -388,8 +388,23 @@ class SemanticParser(actionSpace: ActionSpace, vocab: IndexedList[String], input
       new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray)
     }
   }
+  
+  /**
+   * Serialize this parser into {@code saver}. This method
+   * assumes that the {@code model} has already been 
+   * serialized (using {@code model.save}).
+   */
+  def save(saver: ModelSaver): Unit = {
+    saver.add_object(actionSpace)
+    saver.add_object(vocab)
+    saver.add_int(inputDim)
+    saver.add_int(hiddenDim)
+    saver.add_int(maxVars)
+    saver.add_lstm_builder(forwardBuilder)
+    saver.add_lstm_builder(backwardBuilder)
+    saver.add_lstm_builder(actionBuilder)
+  }
 }
-
 
 /** Execution score that constrains a SemanticParser
   * to generate the given rootType and sequence of
@@ -509,6 +524,20 @@ object SemanticParser {
 
     new SemanticParser(actionSpace, vocab, inputDim, hiddenDim, maxVars, forwardBuilder,
         backwardBuilder, actionBuilder, model)
+  }
+
+  def load(loader: ModelLoader, model: PpModel): SemanticParser = {
+    val actionSpace = loader.load_object(classOf[ActionSpace])
+    val vocab = loader.load_object(classOf[IndexedList[String]])
+    val inputDim = loader.load_int()
+    val hiddenDim = loader.load_int()
+    val maxVars = loader.load_int()
+    val forwardBuilder = loader.load_lstm_builder()
+    val backwardBuilder = loader.load_lstm_builder()
+    val actionBuilder = loader.load_lstm_builder()
+    
+    new SemanticParser(actionSpace, vocab, inputDim, hiddenDim, maxVars,
+        forwardBuilder, backwardBuilder, actionBuilder, model)
   }
   
   // TODO: move this method somewhere else.

@@ -1,13 +1,13 @@
 package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.MultiMap
+import scala.collection.mutable.{Map => MutableMap}
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
+import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import scala.collection.mutable.ListBuffer
-import scala.collection.mutable.MultiMap
-import scala.collection.mutable.{ Map => MutableMap }
 import com.jayantkrish.jklol.ccg.lambda.Type
-import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 
 /** A collection of actions to be used in a semantic parser
  *  to generate expressions. An action space has a set
@@ -19,8 +19,8 @@ class ActionSpace(
     val typeTemplateMap: MultiMap[Type, Template],
     val rootTypes: Array[Type],
     val allTypes: Set[Type]
-    ) {
-  
+    ) extends Serializable {
+
   def getTemplates(t: Type): Vector[Template] = {
     typeTemplateMap.getOrElse(t, Set.empty).toVector
   }

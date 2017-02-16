@@ -44,16 +44,6 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     println(lexicon.typeTemplateMap)
   }
 
-  /*
-  it should "beam search" in {
-    val exprs = parser.generateExpression(Type.parseFrom("e"))
-    val results = exprs.beamSearch(100)
-    for (result <- results) {
-      println("  " + result)
-    }
-  }
-  */
-  
   it should "decode expressions to template sequences" in {
     val e = exprParser.parse(
         "(argmax:<<e,t>,e> (lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0))))")
