@@ -22,7 +22,6 @@ import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.training.DefaultLogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
-import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
@@ -38,15 +37,17 @@ class SemanticParserCli extends AbstractCli() {
   var trainingDataOpt: OptionSpec[String] = null
   var entityDataOpt: OptionSpec[String] = null
   var testDataOpt: OptionSpec[String] = null
+  var modelOutOpt: OptionSpec[String] = null
   
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     entityDataOpt = parser.accepts("entityData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
+    modelOutOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
   }
   
   override def run(options: OptionSet): Unit = {
-    myInitialize()
+    initialize(new DynetParams())
     
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
@@ -105,7 +106,8 @@ class SemanticParserCli extends AbstractCli() {
     // println(actionSpace.rootTypes)
     // println(actionSpace.typeTemplateMap)
     
-    val parser = new SemanticParser(actionSpace, vocab)
+    val model = PpModel.init(true)
+    val parser = new SemanticParser(actionSpace, vocab, model)
     
     println("*** Validating types ***")
     SemanticParserUtils.validateTypes(trainPreprocessed, typeDeclaration)
@@ -113,19 +115,17 @@ class SemanticParserCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     println("*** Validating test set action space ***")
     SemanticParserUtils.validateActionSpace(testPreprocessed, parser, typeDeclaration)
-    val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
+    train(trainPreprocessed, parser, typeDeclaration)
     println("***************** TEST EVALUATION *****************")
-    val testResults = test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    val testResults = test(testPreprocessed, parser, typeDeclaration, simplifier, comparator)
     println("***************** TRAIN EVALUATION *****************")
-    val trainResults = test(trainPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
-    
+    val trainResults = test(trainPreprocessed, parser, typeDeclaration, simplifier, comparator)
+
     println("")
     println("Test: ")
     println(testResults)
     println("Train: ")
     println(trainResults)
-    
-    // TODO: serialization
   }
 
   def buildEntityDictionary(examples: Seq[CcgExample], vocab: IndexedList[String],
@@ -171,7 +171,7 @@ class SemanticParserCli extends AbstractCli() {
 
     val annotations = Maps.newHashMap[String, Object](sent.getAnnotations)
     annotations.put("originalTokens", sent.getWords.asScala.toList)
-    annotations.put("tokenIds", entityAnonymizedTokenIds.toList)
+    annotations.put("tokenIds", entityAnonymizedTokenIds.toArray)
     annotations.put("entityLinking", entityLinking)
 
     val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
@@ -182,16 +182,18 @@ class SemanticParserCli extends AbstractCli() {
   }
     
   /** Train the parser by maximizing the likelihood of examples.
-    * Returns a model with the trained parameters. 
+    * The model inside {@code parser} is used as the initial
+    * parameters and is updated by this method to contain the
+    * trained parameters.  
     */
   def train(examples: Seq[CcgExample], parser: SemanticParser,
-      typeDeclaration: TypeDeclaration): PpModel = {
+      typeDeclaration: TypeDeclaration): Unit = {
     
     parser.dropoutProb = 0.5
     val ppExamples = for {
       x <- examples
       sent = x.getSentence
-      tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
+      tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       unconditional = parser.generateExpression(tokenIds, entityLinking)
       oracle <- parser.generateExecutionOracle(x.getLogicalForm, entityLinking, typeDeclaration)
@@ -200,20 +202,19 @@ class SemanticParserCli extends AbstractCli() {
     }
 
     // Train model
-    val model = parser.getModel
+    val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
     trainer.train(ppExamples.toList)
 
     parser.dropoutProb = -1
-    model
   }
 
   /** Evaluate the test accuracy of parser on examples. Logical
     * forms are compared for equality using comparator.  
     */
   def test(examples: Seq[CcgExample], parser: SemanticParser,
-      model: PpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
+      typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
       comparator: ExpressionComparator): SemanticParserLoss = {
     println("")
     var numCorrect = 0
@@ -225,11 +226,11 @@ class SemanticParserCli extends AbstractCli() {
       
       val sent = e.getSentence
       val dist = parser.parse(
-          sent.getAnnotation("tokenIds").asInstanceOf[List[Int]],
+          sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
       val cg = new ComputationGraph
       val results = dist.beamSearch(10, 75, Env.init, null,
-          model.getInitialComputationGraph(cg), new NullLogFunction())
+          parser.model.getComputationGraph(cg), new NullLogFunction())
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>

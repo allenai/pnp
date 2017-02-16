@@ -16,7 +16,8 @@ libraryDependencies ++= Seq(
   "com.fasterxml.jackson.core" % "jackson-core" % "2.2.3",
   "com.fasterxml.jackson.core" % "jackson-annotations" % "2.2.3",
   "net.sf.jopt-simple" % "jopt-simple" % "4.9",
-  "org.scalatest" %% "scalatest" % "3.0.0" % "test"
+  "org.scalatest" %% "scalatest" % "3.0.0" % "test",
+  "io.spray" %%  "spray-json" % "1.3.3"
 )
 
 // For linked dynet library

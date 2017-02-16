@@ -49,10 +49,32 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     attentions.reverse.toArray
   }
   
+  def nextHole(): Option[Hole] = {
+    if (unfilledHoleIds.size > 0) {
+      Some(unfilledHoleIds(0))
+    } else {
+      None
+    }
+  }
+
   def fill(hole: Hole, part: ExpressionPart, newHoles: List[Hole], template: Template): SemanticParserState = {
+    Preconditions.checkArgument(unfilledHoleIds(0).id == hole.id)
     val partTuple = (hole.id, part)
-    val nextHoles = newHoles ++ unfilledHoleIds.drop(1)   
+    
+    val unfilledHoles = if (hole.repeated) {
+      unfilledHoleIds
+    } else {
+      unfilledHoleIds.drop(1)
+    }
+    val nextHoles = newHoles ++ unfilledHoles
+    
     SemanticParserState(parts + partTuple, nextHoles, nextId + newHoles.length,
+        numActions + 1, template :: templates, attentions)
+  }
+
+  def drop(hole: Hole, template: Template): SemanticParserState = {
+    Preconditions.checkArgument(unfilledHoleIds(0).id == hole.id)
+    SemanticParserState(parts, unfilledHoleIds.drop(1), nextId,
         numActions + 1, template :: templates, attentions)
   }
   

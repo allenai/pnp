@@ -84,15 +84,13 @@ object SemanticParserUtils {
    */
   def validateActionSpace(examples: Seq[CcgExample], parser: SemanticParser,
       typeDeclaration: TypeDeclaration): Unit = {
-    val model = parser.getModel
-
     println("")
     var maxParts = 0
     var numFailed = 0
     val usedRules = ListBuffer[(Type, Template)]()
     for (e <- examples) {
       val sent = e.getSentence
-      val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[List[Int]]
+      val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
 
       val oracleOpt = parser.generateExecutionOracle(e.getLogicalForm, entityLinking, typeDeclaration)
@@ -102,7 +100,7 @@ object SemanticParserUtils {
         val oracle = oracleOpt.get
         val cg = new ComputationGraph
         val results = dist.beamSearch(1, 50, Env.init, oracle,
-            model.getInitialComputationGraph(cg), new NullLogFunction())
+            parser.model.getComputationGraph(cg), new NullLogFunction())
         if (results.executions.size != 1) {
           println("ERROR: " + e + " " + results)
           println("  " + e.getSentence.getWords)

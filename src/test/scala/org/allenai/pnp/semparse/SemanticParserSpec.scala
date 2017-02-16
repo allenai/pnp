@@ -13,10 +13,11 @@ import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
+import org.allenai.pnp.PpModel
 
 class SemanticParserSpec extends FlatSpec with Matchers {
   
-  myInitialize()
+  initialize(new DynetParams())
  
   val dataStrings = List(
       ("state", "state:<e,t>"),
@@ -36,7 +37,8 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   for (d <- data) {
     vocab.addAll(d._1.toList.asJava)
   }
-  val parser = new SemanticParser(lexicon, vocab)
+  val model = PpModel.init(true)
+  val parser = new SemanticParser(lexicon, vocab, model)
 
   "SemanticParser" should "generate application templates" in {
     println(lexicon.typeTemplateMap)
@@ -63,11 +65,10 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val label = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
     val entityLinking = EntityLinking(List())
     val oracle = parser.generateExecutionOracle(label, entityLinking, typeDeclaration).get
-    val exprs = parser.generateExpression(List("major", "city").map(vocab.getIndex(_)).toList, entityLinking)
+    val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)), entityLinking)
 
-    val model = parser.getModel
     val cg = new ComputationGraph
-    val compGraph = model.getInitialComputationGraph(cg)
+    val compGraph = parser.model.getComputationGraph(cg)
     
     val results = exprs.beamSearch(1, -1, Env.init, oracle, compGraph, new NullLogFunction()).executions
     for (result <- results) {
