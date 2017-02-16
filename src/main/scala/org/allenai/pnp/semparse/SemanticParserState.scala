@@ -77,16 +77,24 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     SemanticParserState(parts, unfilledHoleIds.drop(1), nextId,
         numActions + 1, template :: templates, attentions)
   }
+  
+  def addRootType(rootType: Type): SemanticParserState = {
+    Preconditions.checkState(unfilledHoleIds.length == 0 && numActions == 0,
+        "The root type can only be added at the beginning of parsing".asInstanceOf[AnyRef])
+    
+    val scope = Scope(List.empty)
+    SemanticParserState(parts, List(Hole(0, rootType, scope, false)), 1, 0, List(), List())
+  }
 }
 
 object SemanticParserState {
 
-  /** The start state of a semantic parser for generating
-    * an expression of type t.
+  /** The start state of a semantic parser. The expected
+    * use of this state is to call addRootType, followed by
+    * applying a sequence of templates.  
     */
-  def start(t: Type): SemanticParserState = {
-    val scope = Scope(List.empty)    
-    SemanticParserState(Map.empty, List(Hole(0, t, scope, false)), 1, 0, List(), List()) 
+  def start(): SemanticParserState = {
+    SemanticParserState(Map.empty, List(), 1, 0, List(), List()) 
   }
 }
 

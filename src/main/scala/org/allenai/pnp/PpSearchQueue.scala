@@ -14,33 +14,12 @@ sealed trait PpSearchQueue[A] {
 class BeamPpSearchQueue[A](size: Int, val stateCost: ExecutionScore,
     val graph: CompGraph, val log: LogFunction) extends PpSearchQueue[A] {
 
-  /*
-  val supplier = new Supplier[SearchState2]() {
-    def get: SearchState2 = {
-      new SearchState2(null, null, 0.0, null)
-    }
-  }
-  val pool = new ObjectPool(supplier, size + 1, Array.empty[SearchState2])
-  */
-  
   val queue = new KbestQueue(size, Array.empty[SearchState[A]])
 
   override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
     val stateLogProb = stateCost(tag, choice, env) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
-      /*
-      val next = pool.alloc()
-      next.value = value
-      next.env = env
-      next.continuation = continuation
-      next.logProb = logProb
-      val dequeued = queue.offer(next, logProb)
-
-      if (dequeued != null) {
-        pool.dealloc(dequeued)
-      }
-      */
       queue.offer(SearchState(value, env, stateLogProb, tag, choice), logProb)
     }
   }
