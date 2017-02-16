@@ -171,7 +171,7 @@ class SemanticParserCli extends AbstractCli() {
 
     val annotations = Maps.newHashMap[String, Object](sent.getAnnotations)
     annotations.put("originalTokens", sent.getWords.asScala.toList)
-    annotations.put("tokenIds", entityAnonymizedTokenIds.toList)
+    annotations.put("tokenIds", entityAnonymizedTokenIds.toArray)
     annotations.put("entityLinking", entityLinking)
 
     val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
