@@ -25,6 +25,7 @@ import edu.cmu.dynet.SimpleSGDTrainer
 import org.allenai.pnp.semparse.ActionSpace
 import com.google.common.collect.HashMultimap
 import edu.cmu.dynet.ComputationGraph
+import edu.cmu.dynet.DynetParams
 
 class LabelingDqaCli extends AbstractCli {
   
@@ -37,7 +38,7 @@ class LabelingDqaCli extends AbstractCli {
   }
   
   override def run(options: OptionSet): Unit = {
-    myInitialize()
+    initialize(new DynetParams())
   
     // Initialize expression processing for logical forms. 
     val typeDeclaration = ExplicitTypeDeclaration.getDefault

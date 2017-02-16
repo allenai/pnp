@@ -51,7 +51,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   }
   
   override def run(options: OptionSet): Unit = {
-    myInitialize()
+    initialize(new DynetParams())
     
     // Initialize expression processing for Wikitables logical forms. 
     val typeDeclaration = new WikiTablesTypeDeclaration()

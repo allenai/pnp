@@ -22,7 +22,6 @@ import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.training.DefaultLogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
-import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
@@ -30,7 +29,6 @@ import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
-import com.jayantkrish.jklol.util.IoUtils
 
 /** Command line program for training a semantic parser.
   */
@@ -49,7 +47,7 @@ class SemanticParserCli extends AbstractCli() {
   }
   
   override def run(options: OptionSet): Unit = {
-    myInitialize()
+    initialize(new DynetParams())
     
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
