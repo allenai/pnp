@@ -11,5 +11,5 @@ LOG=$OUT_DIR/train_log.txt
 
 mkdir -p $OUT_DIR
 
-sbt "run-main org.allenai.pnp.semparse.SemanticParserCli --trainingData $TRAIN --entityData $NP_LIST --testData $TEST --modelOut $MODEL_OUT" 
+sbt "run-main org.allenai.pnp.semparse.SemanticParserCli --trainingData $TRAIN --entityData $NP_LIST --testData $TEST --modelOut $MODEL_OUT" > $LOG
 
