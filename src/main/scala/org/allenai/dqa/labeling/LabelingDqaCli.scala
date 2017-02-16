@@ -95,9 +95,9 @@ class LabelingDqaCli extends AbstractCli {
         println("  " + template)
       }
     }
-    
+
     val model = PpModel.init(true)
-    val parser = new SemanticParser(actionSpace, vocab, model)
+    val parser = SemanticParser.create(actionSpace, vocab, model)
     val answerSelector = new AnswerSelector()
     val p3 = new LabelingP3Model(parser, executor, answerSelector)
 
