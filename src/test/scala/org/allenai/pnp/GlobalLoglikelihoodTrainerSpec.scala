@@ -4,12 +4,12 @@ import scala.collection.JavaConverters._
 import org.scalatest._
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import org.allenai.pnp.examples.DynetScalaHelpers._
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.NullLogFunction
 
 class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   
+  import DynetScalaHelpers._
   initialize(new DynetParams())
 
   val TOLERANCE = 0.01
@@ -59,15 +59,10 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
       }
     }
     
-    val m = new Model
-    val paramNames = IndexedList.create[String]
-    val startParam = m.add_parameters(Seq(vocab.length))
-    paramNames.add("start")
-    val transitionParam = m.add_parameters(Seq(vocab.length * vocab.length))
-    paramNames.add("transition")
-    val model = new PpModel(paramNames, Array(startParam, transitionParam),
-        IndexedList.create[String], Array(), m, true)
-    
+    val model = PpModel.init(false)
+    val startParam = model.addParameter("start", Seq(vocab.length))
+    val transitionParam = model.addParameter("transition", Seq(vocab.length * vocab.length))
+
     val examples = List(
         PpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,0))),
         PpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,2)))

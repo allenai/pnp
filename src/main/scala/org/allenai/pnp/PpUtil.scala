@@ -138,6 +138,7 @@ object PpUtil {
     )
   }
   
+  // TODO: make this work for any seq type.
   def map[A,B](f: A => Pp[B], elts: List[A]): Pp[List[B]] = {
     elts.foldRight(Pp.value(List[B]()))(
       (elt, list) => for {

@@ -3,8 +3,6 @@ package org.allenai.pnp
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
-import org.allenai.pnp.examples.DynetScalaHelpers
-
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 
@@ -25,13 +23,12 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         val cg = new ComputationGraph
        
         val env = example.env
-        val graph = model.getInitialComputationGraph(cg)
-       
+        val graph = model.getComputationGraph(cg)
+
         // Compute the distribution over correct executions.
         log.startTimer("pp_loglikelihood/forward")
         val conditional = example.conditional.beamSearch(beamSize, -1, env,
             example.conditionalExecutionScore, graph, log)
-        val conditionalPartitionFunction = conditional.partitionFunction
         log.stopTimer("pp_loglikelihood/forward")
 
         log.startTimer("pp_loglikelihood/build_loss")
