@@ -11,7 +11,7 @@ import scala.collection.mutable.ListBuffer
 
 class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   
-  myInitialize()
+  initialize(new DynetParams())
 
   val TOLERANCE = 0.01
   

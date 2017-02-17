@@ -11,7 +11,7 @@ object DynetExample {
 
   def main(args: Array[String]) {
     println("Basic XOR example")
-    myInitialize()
+    initialize(new DynetParams())
     val m = new Model
     val sgd = new SimpleSGDTrainer(m)
     val cg = new ComputationGraph

@@ -10,7 +10,7 @@ import com.jayantkrish.jklol.training.NullLogFunction
 
 class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   
-  myInitialize()
+  initialize(new DynetParams())
 
   val TOLERANCE = 0.01
 

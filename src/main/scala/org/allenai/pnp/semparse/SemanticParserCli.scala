@@ -46,7 +46,7 @@ class SemanticParserCli extends AbstractCli() {
   }
   
   override def run(options: OptionSet): Unit = {
-    myInitialize()
+    initialize(new DynetParams())
     
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()

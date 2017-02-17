@@ -16,7 +16,7 @@ import edu.cmu.dynet.dynet_swig._
 
 class SemanticParserSpec extends FlatSpec with Matchers {
   
-  myInitialize()
+  initialize(new DynetParams())
  
   val dataStrings = List(
       ("state", "state:<e,t>"),

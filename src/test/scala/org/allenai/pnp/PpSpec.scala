@@ -22,7 +22,7 @@ import scala.collection.mutable.ListBuffer
   */
 class PpSpec extends FlatSpec with Matchers {
 
-  myInitialize()
+  initialize(new DynetParams())
 
   val TOLERANCE = 0.01
 
