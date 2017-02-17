@@ -10,9 +10,7 @@ import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.PpExample
 import org.allenai.pnp.PpModel
 import org.allenai.pnp.ExecutionScore
-import org.allenai.wikitables.WikiTablesTypeDeclaration
-import org.allenai.wikitables.WikiTablesDataProcessor
-import org.allenai.wikitables.WikiTablesExample
+import org.allenai.pnp.semparse.MaxExecutionScore
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
@@ -92,7 +90,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val trainPreprocessed = trainingData.map(x => preprocessExample(x, vocab, logicalFormParser)) 
     val testPreprocessed = testData.map(x => preprocessExample(x, vocab, logicalFormParser))
 
-    val actionSpace = SemanticParser.generateActionSpace(
+    val actionSpace = ActionSpace.fromExpressions(
         trainPreprocessed.map(_.getLogicalForms.asScala).flatten, typeDeclaration, false)
 
     // Remove specific numbers/rows/cells from the action space.
