@@ -36,7 +36,7 @@ class TestSemanticParserCli extends AbstractCli() {
   }
 
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
+    initialize(SemanticParserUtils.DYNET_PARAMS)
     
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
@@ -115,35 +115,36 @@ class TestSemanticParserCli extends AbstractCli() {
       }
       
       // Print the attentions of the best predicted derivation
-      val state = beam(0).value
-      val templates = state.getTemplates
-      val attentions = state.getAttentions
-      val tokens = e.getSentence.getWords.asScala.toArray
-      for (i <- 0 until templates.length) {
-        val floatVector = as_vector(cg.get_value(attentions(i)))
-        val values = for {
-          j <- 0 until floatVector.size().asInstanceOf[Int]
-        } yield {
-          floatVector.get(j)
-        }
-        
-        val maxIndex = values.zipWithIndex.max._2
-        
-        val tokenStrings = for {
-          j <- 0 until values.length
-        } yield {
-          val color = if (j == maxIndex) {
-            Console.RED
-          } else if (values(j) > 0.1) {
-            Console.YELLOW
-          } else {
-            Console.RESET
+      if (beam.length > 0) {
+        val state = beam(0).value
+        val templates = state.getTemplates
+        val attentions = state.getAttentions
+        val tokens = e.getSentence.getWords.asScala.toArray
+        for (i <- 0 until templates.length) {
+          val floatVector = as_vector(cg.get_value(attentions(i)))
+          val values = for {
+            j <- 0 until floatVector.size().asInstanceOf[Int]
+          } yield {
+            floatVector.get(j)
           }
+        
+          val maxIndex = values.zipWithIndex.max._2
+        
+          val tokenStrings = for {
+            j <- 0 until values.length
+          } yield {
+            val color = if (j == maxIndex) {
+              Console.RED
+            } else if (values(j) > 0.1) {
+              Console.YELLOW
+            } else {
+              Console.RESET
+            }
           
-          color + tokens(j) + Console.RESET
+            color + tokens(j) + Console.RESET
+          }
+          println("  " + tokenStrings.mkString(" ") + " " + templates(i))
         }
-
-        println("  " + tokenStrings.mkString(" ") + " " + templates(i))
       }
       
       cg.delete

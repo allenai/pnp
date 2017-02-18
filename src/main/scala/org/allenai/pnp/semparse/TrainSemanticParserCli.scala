@@ -5,6 +5,7 @@ import scala.collection.mutable.ListBuffer
 
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
+import org.allenai.pnp.GlobalLoglikelihoodTrainer
 import org.allenai.pnp.PpExample
 import org.allenai.pnp.PpModel
 
@@ -49,7 +50,7 @@ class TrainSemanticParserCli extends AbstractCli() {
   }
   
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
+    initialize(SemanticParserUtils.DYNET_PARAMS)
     
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
@@ -150,7 +151,17 @@ class TrainSemanticParserCli extends AbstractCli() {
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
+    println("Running locally-normalized training...")
     trainer.train(ppExamples.toList)
+    
+    // Globally normalized training
+    /*
+    model.locallyNormalized = false
+    val sgd2 = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    val gtrainer = new GlobalLoglikelihoodTrainer(2, 10, 50, model, sgd2, new DefaultLogFunction())
+    println("Running globally-normalized training...")
+    gtrainer.train(ppExamples.toList)
+    */
 
     parser.dropoutProb = -1
   }

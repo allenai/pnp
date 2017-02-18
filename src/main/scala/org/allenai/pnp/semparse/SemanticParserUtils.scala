@@ -17,6 +17,13 @@ import edu.cmu.dynet._
 
 object SemanticParserUtils {
   
+  val DYNET_PARAMS = { 
+    val d = new DynetParams()
+    d.setMem_descriptor("1024")
+    d
+  }
+  
+  
   /**
    * Count the number of occurrences of each word type
    * in a collection of examples. 

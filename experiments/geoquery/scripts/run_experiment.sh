@@ -4,7 +4,7 @@ TRAIN="data/geoquery/all_folds.ccg"
 NP_LIST="data/geoquery/np_list.ccg"
 TEST="data/geoquery/test.ccg"
 
-EXPERIMENT_NAME="73"
+EXPERIMENT_NAME="76"
 OUT_DIR="experiments/geoquery/output/$EXPERIMENT_NAME/"
 MODEL_OUT="experiments/geoquery/output/$EXPERIMENT_NAME/parser.ser"
 TRAIN_LOG=$OUT_DIR/train_log.txt

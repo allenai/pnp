@@ -12,7 +12,7 @@ import scala.collection.mutable.ListBuffer
   * graph of a program during inference.
   */
 class PpModel(var names: Map[String, Parameter], var lookupNames: Map[String, LookupParameter], 
-    val model: Model, val locallyNormalized: Boolean) {
+    val model: Model, var locallyNormalized: Boolean) {
 
   def addParameter(name: String, dim: Dim): Parameter = {
     val param = model.add_parameters(dim)
