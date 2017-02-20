@@ -12,6 +12,8 @@ import edu.cmu.dynet.dynet_swig._
 class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleExecutions: Boolean,
     val model: PpModel, val trainer: Trainer, val log: LogFunction) {
 
+  Preconditions.checkArgument(model.locallyNormalized == true)
+  
   import DynetScalaHelpers._
   
   def train[A](examples: List[PpExample[A]]): Unit = {

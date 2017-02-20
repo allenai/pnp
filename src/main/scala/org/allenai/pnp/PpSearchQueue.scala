@@ -3,7 +3,7 @@ package org.allenai.pnp
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.util.KbestQueue
 
-sealed trait PpSearchQueue[A] {
+trait PpSearchQueue[A] {
   val graph: CompGraph
   val stateCost: ExecutionScore
   val log: LogFunction
@@ -58,5 +58,6 @@ class ContinuationPpSearchQueue[A, B] (
   }
 }
 
-case class SearchState[A](value: Pp[A], env: Env, logProb: Double, tag: Any, choice: Any) {
+case class SearchState[A](val value: Pp[A], val env: Env, val logProb: Double,
+    val tag: Any, val choice: Any) {
 }

@@ -30,6 +30,7 @@ import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import org.allenai.pnp.BsoTrainer
 
 /** Command line program for training a semantic parser.
   */
@@ -155,13 +156,11 @@ class TrainSemanticParserCli extends AbstractCli() {
     trainer.train(ppExamples.toList)
     
     // Globally normalized training
-    /*
     model.locallyNormalized = false
     val sgd2 = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val gtrainer = new GlobalLoglikelihoodTrainer(2, 10, 50, model, sgd2, new DefaultLogFunction())
+    val gtrainer = new BsoTrainer(10, 10, 50, model, sgd2, new DefaultLogFunction())
     println("Running globally-normalized training...")
     gtrainer.train(ppExamples.toList)
-    */
 
     parser.dropoutProb = -1
   }
