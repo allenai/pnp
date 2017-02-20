@@ -52,6 +52,8 @@ public class WikiTablesDataProcessor {
         List<Pair<String, String>> pairedPaths = new ArrayList<Pair<String, String>>();
         pairedPaths.add(new Pair("train", path));
         List<CustomExample> dataset = CustomExample.getDataset(pairedPaths, null);
+        if (includeDerivations)
+            addDerivations(dataset, beamSize);
         return dataset;
     } else {
         List<CustomExample> dataset = new ArrayList<CustomExample>();
@@ -106,6 +108,7 @@ public class WikiTablesDataProcessor {
     // Setting all the options typically selected by Sempre
     // TODO: Make these actual command line arguments.
     Builder.opts.parser = "tables.dpd.DPDParser";
+    DPDParser.opts.cheat = true;
     Builder.opts.executor = "tables.lambdadcs.LambdaDCSExecutor";
     Builder.opts.valueEvaluator = "tables.TableValueEvaluator";
     Parser.opts.beamSize = beamSize;
@@ -163,7 +166,7 @@ public class WikiTablesDataProcessor {
   public static void main(String[] args) {
     String path = "data/WikiTableQuestions/data/training-before300.examples";
     //String path = "data/wikitables/wikitables_data.ldcs";
-    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, true, 1000);
+    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, true, 10);
     for (int i = 0; i < dataset.size(); i++) {
       CustomExample ex = dataset.get(i);
       System.out.println("Utterance: " + ex.utterance);

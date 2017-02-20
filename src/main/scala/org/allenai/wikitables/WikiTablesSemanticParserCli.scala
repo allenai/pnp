@@ -76,7 +76,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       }
     }
     
-    println(trainingData.size + " training examples")
+    println("Read " + trainingData.size + " training examples")
     val wordCounts = getWordCounts(trainingData)
     // Vocab consists of all words that appear more than once in
     // the training data.
@@ -84,14 +84,19 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     vocab.add(WikiTablesSemanticParserCli.UNK)
     vocab.add(WikiTablesSemanticParserCli.ENTITY)
     println(vocab.size + " words")
-    println(testData.size + " test examples")
+    println("Read " + testData.size + " test examples")
 
-    val logicalFormParser = ExpressionParser.expression2(); 
-    val trainPreprocessed = trainingData.map(x => preprocessExample(x, vocab, logicalFormParser)) 
-    val testPreprocessed = testData.map(x => preprocessExample(x, vocab, logicalFormParser))
+    val logicalFormParser = ExpressionParser.expression2();
+    // Eliminate those examples that Sempre did not find correct logical forms for.
+    val trainPreprocessed = trainingData.flatMap(x => if (x.alternativeFormulas.isEmpty) None else Some(preprocessExample(x, vocab, logicalFormParser)))
+    val testPreprocessed = testData.flatMap(x => if (x.alternativeFormulas.isEmpty) None else Some(preprocessExample(x, vocab, logicalFormParser)))
+    
+    println("Found correct logical forms for " + trainPreprocessed.size + " training examples")
+    println("Found correct logical forms for " + testPreprocessed.size + " test examples")
 
     val actionSpace = ActionSpace.fromExpressions(
         trainPreprocessed.map(_.getLogicalForms.asScala).flatten, typeDeclaration, false)
+
 
     // Remove specific numbers/rows/cells from the action space.
     // These need to be added back in on a per-table basis.
@@ -113,14 +118,12 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     // Print out the action space
-    /*
     for (t <- actionSpace.typeTemplateMap.keys) {
       println(t)
       for (template <- actionSpace.typeTemplateMap(t)) {
         println("  " + template)
       }
     }
-    */
 
     val model = PpModel.init(true)
     val parser = SemanticParser.create(actionSpace, vocab, model)
@@ -128,6 +131,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val trainSeparatedLfs = getCcgDataset(trainPreprocessed)
     val testSeparatedLfs = getCcgDataset(testPreprocessed)
     
+
     println("*** Validating types ***")
     SemanticParserUtils.validateTypes(trainSeparatedLfs, typeDeclaration)
     println("*** Validating train set action space ***")
@@ -141,7 +145,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     println("***************** TRAIN EVALUATION *****************")
     val trainResults = test(trainPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
     
-    println("")
     println("Test: ")
     println(testResults)
     println("Train: ")
@@ -256,6 +259,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser,
       model: PpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
       comparator: ExpressionComparator): SemanticParserLoss = {
+    // TODO: Change the errors to denotation errors.
     println("")
     var numCorrect = 0
     var numCorrectAt10 = 0
