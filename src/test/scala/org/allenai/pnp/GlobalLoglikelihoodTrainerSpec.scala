@@ -70,7 +70,8 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     )
 
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.1f)
-    val trainer = new GlobalLoglikelihoodTrainer(1000, 100, model, sgd, new NullLogFunction())
+    val trainer = new GlobalLoglikelihoodTrainer(1000, 100, -1, model, sgd, new NullLogFunction())
+    // val trainer = new BsoTrainer(100, 1, -1, model, sgd, new NullLogFunction())
     
     trainer.train(examples)
   }

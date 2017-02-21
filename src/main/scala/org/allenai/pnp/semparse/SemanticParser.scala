@@ -66,6 +66,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     
     val inputEmbeddings = tokens.map(x => lookup(cg, wordEmbeddings, x)).toArray
 
+    // TODO: should we add dropout to the builders using the .set_dropout methods?
     forwardBuilder.start_new_sequence()
     val fwOutputs = ListBuffer[Expression]()
     for (inputEmbedding <- inputEmbeddings) {

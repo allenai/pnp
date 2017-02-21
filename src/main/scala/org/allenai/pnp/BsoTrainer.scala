@@ -16,7 +16,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
 
   import DynetScalaHelpers._
 
-  def train[A](examples: List[PpExample[A]]): Unit = {
+  def train[A](examples: Seq[PpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
       var searchErrors = 0.0
