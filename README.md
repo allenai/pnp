@@ -60,11 +60,10 @@ define and train a model. The typical usage has four steps:
    inference on this object with trained parameters.
 
 These steps are illustrated in detail for a sequence-to-sequence
-translation model in 
+neural translation model in
+[Seq2Seq2.scala](tree/master/src/main/scala/org/allenai/pnp/examples/Seq2Seq.scala).
 
 TODO: finish docs
-
-
 First, import:
 
 ```scala

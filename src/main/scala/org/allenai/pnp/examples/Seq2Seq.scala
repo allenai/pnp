@@ -1,18 +1,24 @@
 package org.allenai.pnp.examples
 
-import com.jayantkrish.jklol.util.IndexedList
+import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
+
+import org.allenai.pnp.CompGraph
+import org.allenai.pnp.Env
+import org.allenai.pnp.ExecutionScore
+import org.allenai.pnp.Pnp
+import org.allenai.pnp.Pnp._
 import org.allenai.pnp.PnpModel
+
+import com.google.common.base.Preconditions
+import com.jayantkrish.jklol.util.IndexedList
+
 import edu.cmu.dynet._
 import edu.cmu.dynet.DynetScalaHelpers._
 import edu.cmu.dynet.dynet_swig._
-import scala.collection.mutable.ListBuffer
-import org.allenai.pnp.CompGraph
-import org.allenai.pnp.Pnp
-import org.allenai.pnp.Pnp._
-import org.allenai.pnp.ExecutionScore
-import com.google.common.base.Preconditions
-import org.allenai.pnp.Env
-
+import org.allenai.pnp.PnpExample
+import com.jayantkrish.jklol.training.NullLogFunction
+import org.allenai.pnp.BsoTrainer
 
 /**
  * Basic sequence-to-sequence model. This model encodes
@@ -20,7 +26,7 @@ import org.allenai.pnp.Env
  * the target token sequence from an LSTM that is initialized
  * from the source LSTM. 
  */
-class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList[String],
+class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedList[T],
     val endTokenIndex: Int, forwardBuilder: LSTMBuilder, outputBuilder: LSTMBuilder,
     val model: PnpModel) {
 
@@ -29,6 +35,47 @@ class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList
   
   import Seq2Seq._
   
+  /**
+   * Apply this model to a sequence of source tokens (encoded as integers)
+   * to produce a probabilistic neural program over target token sequences. 
+   * The (distribution over) target sequences can be approximated
+   * by running inference on the returned program.
+   */
+  def applyEncoded(sourceTokens: Seq[Int]): Pnp[List[Int]] = {
+    for {
+      cg <- computationGraph()
+      // Initialize the source and target LSTMs on this computation
+      // graph and encode the source tokens.
+      _ = initializeRnns(cg)
+      inputEncoding = rnnEncode(cg, sourceTokens)
+      
+      // Initialize the output LSTM
+      _ = outputBuilder.start_new_sequence(inputEncoding)
+      startRnnState = outputBuilder.state()
+      startInput <- param(TARGET_START_INPUT)
+
+      // Generate target sequence. output represents a single
+      // possible target sequence.
+      output <- generateTargetTokens(0, startRnnState, startInput)
+    } yield {
+      output
+    }
+  }
+
+  /**
+   * Same as apply above, but automatically maps the source and
+   * targets to their indexes. 
+   */
+  def apply(sourceTokens: Seq[S]): Pnp[List[T]] = {
+    val sourceInts = sourceTokens.map(x => sourceVocab.getIndex(x))
+    
+    for {
+      targetInts <- applyEncoded(sourceInts)
+    } yield {
+      targetInts.map(x => targetVocab.get(x))
+    }
+  }
+
   private def initializeRnns(computationGraph: CompGraph): Unit = {
     val cg = computationGraph.cg
     forwardBuilder.new_graph(cg)
@@ -60,67 +107,71 @@ class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList
     
     return forwardBuilder.final_s
   }
-  
+
   /**
-   * Apply this model to a sequence of source tokens to produce a
-   * probabilistic neural program over target token sequences. 
-   * The (distribution over) target sequences can be approximated
-   * by running inference on the returned program.
+   * Generate a probabilistic neural program over target tokens,
+   * given the current token's index and an LSTM state and input. 
    */
-  def apply(sourceTokens: Seq[Int]): Pnp[List[Int]] = {
-    for {
-      cg <- computationGraph()
-      _ = initializeRnns(cg)
-      inputEncoding = rnnEncode(cg, sourceTokens)
-      _ = outputBuilder.start_new_sequence(inputEncoding)
-      startRnnState = outputBuilder.state()
-      startInput <- param(TARGET_START_INPUT)
-      output <- generateTargetTokens(0, startRnnState, startInput)
-    } yield {
-      output
-    }
-  }
-  
-  def generateTargetTokens(tokenNum: Int, state: Int, curInput: Expression): Pnp[List[Int]] = {
-    val output = outputBuilder.add_input(state, curInput)
+  private def generateTargetTokens(tokenIndex: Int, state: Int, curInput: Expression): Pnp[List[Int]] = {
+    // Run one step of the LSTM to get the next state and output. 
+    val lstmOutput = outputBuilder.add_input(state, curInput)
     val nextState = outputBuilder.state
     
     for {
-      outputWeights <- param(TARGET_WEIGHTS)
-      outputTokenScores = outputWeights * output
-      outputTokenIndex <- choose(targetVocabInds, outputTokenScores, tokenNum)
+      // Select an action as a linear function on top of the LSTM's
+      // output. outputWeights has one row per word in the target vocab.
+      targetWeights <- param(TARGET_WEIGHTS)
+      targetTokenScores = targetWeights * lstmOutput
       
+      // Make a discrete choice of the target token. targetTokenIndex
+      // represents a single possible token, but the final probabilistic
+      // neural program will represent the space of all possible tokens.
+      targetTokenIndex <- choose(targetVocabInds, targetTokenScores, tokenIndex)
+      
+      // Get the LSTM input associated with the chosen target token, which
+      // is necessary to generate the next target.
       cg <- computationGraph()
       outputTokenLookups = cg.getLookupParameter(TARGET_EMBEDDINGS)
-      outputTokenEmbedding = lookup(cg.cg, outputTokenLookups, outputTokenIndex)
+      outputTokenEmbedding = lookup(cg.cg, outputTokenLookups, targetTokenIndex)
       
-      v <- if (outputTokenIndex == endTokenIndex) {
+      v <- if (targetTokenIndex == endTokenIndex) {
+        // If we chose the end of sequence token, we're done.
         value(List(endTokenIndex))
       } else {
+        // Otherwise, recursively generate the rest of the sequence,
+        // add the chosen token to the front, and return that.
         for {
-          rest <- generateTargetTokens(tokenNum + 1, nextState, outputTokenEmbedding)
+          rest <- generateTargetTokens(tokenIndex + 1, nextState, outputTokenEmbedding)
         } yield {
-          outputTokenIndex :: rest
+          targetTokenIndex :: rest
         }
       }
     } yield {
       v
     }
   }
-  
-  def generateExecutionOracle(targetTokens: Seq[Int]): Seq2SeqExecutionScore = {
+
+  def generateLabelCost(targetTokens: Seq[T]): Seq2SeqExecutionScore = {
+    new Seq2SeqExecutionScore(targetTokens.map(x => targetVocab.getIndex(x)).toArray)
+  }
+
+  def generateLabelCostEncoded(targetTokens: Seq[Int]): Seq2SeqExecutionScore = {
     new Seq2SeqExecutionScore(targetTokens.toArray)
   }
 }
 
-class Seq2SeqExecutionScore(val targetTokens: Array[Int]) extends ExecutionScore {
+class Seq2SeqExecutionScore(val targetTokensLabel: Array[Int]) extends ExecutionScore {
   def apply(tag: Any, choice: Any, env: Env): Double = {
     if (tag != null && tag.isInstanceOf[Int]) {
+      // The tag is the index of the choice in the target
+      // sequence, and choice is the chosen token.
+      // Cost is 0 if the choice agrees with the label
+      // and -infinity otherwise.
       val tokenIndex = tag.asInstanceOf[Int]
       
       Preconditions.checkArgument(choice.isInstanceOf[Int])
       val chosen = choice.asInstanceOf[Int]
-      if (tokenIndex < targetTokens.length && targetTokens(tokenIndex) == chosen) {
+      if (tokenIndex < targetTokensLabel.length && targetTokensLabel(tokenIndex) == chosen) {
         0.0
       } else {
         Double.NegativeInfinity
@@ -137,8 +188,13 @@ object Seq2Seq {
   val TARGET_START_INPUT = "targetStartInput"
   val TARGET_WEIGHTS = "targetWeights"
   
-  def create(sourceVocab: IndexedList[String], targetVocab: IndexedList[String],
-    endTokenIndex: Int, model: PnpModel): Seq2Seq = {
+  /**
+   * Creates a new sequence-to-sequence model given the 
+   * source and target vocabularies and a model within which
+   * to initialize parameters. 
+   */
+  def create[S,T](sourceVocab: IndexedList[S], targetVocab: IndexedList[T],
+    endTokenIndex: Int, model: PnpModel): Seq2Seq[S,T] = {
 
     val sourceDim = 100
     val hiddenDim = 100
@@ -154,5 +210,91 @@ object Seq2Seq {
     val targetBuilder = new LSTMBuilder(1, targetDim, hiddenDim, model.model)
     
     new Seq2Seq(sourceVocab, targetVocab, endTokenIndex, sourceBuilder, targetBuilder, model) 
+  }
+  
+  def main(args: Array[String]): Unit = {
+    // Simple example showing training and testing of
+    // sequence-to-sequence
+    
+    // Initialize dynet
+    initialize(new DynetParams())
+    
+    // Random parameters here
+    val beamSize = 5
+    val maxBeamSteps = 10
+
+    // 0. Read data and preprocess it.
+    val trainingData = Array(("hola", "hi <eos>"),
+        ("como estas", "how are you <eos>"))
+        
+    val testData = Array(("hola como estas", "hi how are you <eos>"))
+
+    // Tokenize input
+    val trainingDataTokenized = trainingData.map(x => (x._1.split(" ").toList,
+        x._2.split(" ").toList))
+    val testDataTokenized = testData.map(x => (x._1.split(" ").toList,
+        x._2.split(" ").toList))
+  
+    val sourceVocab = IndexedList.create(trainingDataTokenized.flatMap(_._1).toSet.asJava)
+    val targetVocab = IndexedList.create(trainingDataTokenized.flatMap(_._2).toSet.asJava)
+    val endTokenIndex = targetVocab.getIndex("<eos>")
+    
+    // 1. Initialize neural network model. This initializes the parameters
+    // of our neural network. 
+    val model = PnpModel.init(false)
+    val seq2seq = Seq2Seq.create(sourceVocab, targetVocab, endTokenIndex, model)
+
+    // 2. Generate training examples.
+    val trainingExamples = for {
+      d <- trainingDataTokenized
+    } yield {
+      // Generate a probabilistic neural program over all possible target
+      // sequences given the input sequence. The parameters of the neural
+      // network will be trained such that the unconditionalPnp's
+      // distribution is close to the label, defined below.
+      val unconditionalPnp = seq2seq.apply(d._1)
+      
+      // Labels can be represented either as a conditional distribution
+      // over correct program executions, or a cost function that assigns 
+      // a cost to each program execution. In this case we're using a cost
+      // function. 
+      val conditionalPnp = unconditionalPnp
+      val oracle = seq2seq.generateLabelCost(d._2)
+      PnpExample(unconditionalPnp, conditionalPnp, Env.init, oracle)
+    }
+    
+    // 3. Train the model. We can select both an optimization algorithm and
+    // an objective function.
+    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    
+    // Train using beam search optimization, similar to LaSO.
+    // This optimizes the neural network parameters such that the
+    // correct target sequence stays on the beam.
+    val trainer = new BsoTrainer(50, beamSize, maxBeamSteps, model, sgd, new NullLogFunction())
+    
+    // Train with maximum likelihood (i.e., the usual way
+    // seq2seq models are trained).
+    // model.locallyNormalized = true
+    // val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
+    
+    trainer.train(trainingExamples)
+    
+    // 4. Apply the trained model to new data.
+    for (d <- testDataTokenized) {
+      val cg = ComputationGraph.getNew
+      val graph = seq2seq.model.getComputationGraph(cg)
+
+      // Generate the probabilistic neural program over target
+      // sequences, then run inference with the trained parameters
+      // to get an approximate distribution over target sequences.
+      val sourcePnp = seq2seq.apply(d._1)
+      val marginals = sourcePnp.beamSearch(beamSize, maxBeamSteps, Env.init, null, graph,
+          new NullLogFunction)
+          
+      println("Source: " + d._1)
+      for (ex <- marginals.executions) {
+        println("  " + ex.logProb + " " + ex.value)
+      }
+    }
   }
 }
