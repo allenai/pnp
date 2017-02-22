@@ -22,7 +22,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
       var searchErrors = 0
       log.notifyIterationStart(i)
       for (example <- examples) {
-        val cg = new ComputationGraph
+        val cg = ComputationGraph.getNew
        
         val env = example.env
         val graph = model.getComputationGraph(cg)
@@ -84,8 +84,6 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         } else {
           searchErrors += 1
         }
-
-        cg.delete()
       }
 
       trainer.update_epoch()

@@ -39,7 +39,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
   }
   
   private def doExampleUpdate[A](example: PpExample[A]): Double = {
-    val cg = new ComputationGraph
+    val cg = ComputationGraph.getNew
     var loss = 0.0
 
     val env = example.env
@@ -175,8 +175,6 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       trainer.update(1.0f)
       log.stopTimer("bso/backward")
     }
-
-    cg.delete()
 
     loss
   }

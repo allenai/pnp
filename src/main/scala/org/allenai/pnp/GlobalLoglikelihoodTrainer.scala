@@ -18,7 +18,7 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
       var searchErrors = 0
       logFn.notifyIterationStart(i)
       for (example <- examples) {
-        val cg = new ComputationGraph
+        val cg = ComputationGraph.getNew
        
         val env = example.env
         val graph = model.getComputationGraph(cg)
@@ -29,7 +29,7 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
             example.conditionalExecutionScore, graph, logFn)
         val conditionalPartitionFunction = conditional.partitionFunction
         logFn.stopTimer("pp_loglikelihood/conditional")
-        
+
         // TODO: handle search errors
         
         // Compute the unconditional distribution over 
@@ -52,8 +52,6 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
         } else {
           searchErrors += 1
         }
-
-        cg.delete()
       }
       logFn.logStatistic(i, "search errors", searchErrors) 
       // println(i + "  loss: " + loss)
