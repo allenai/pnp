@@ -18,11 +18,11 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   "GlobalLoglikelihoodTrainer" should "train" in {
     val vocab = Array(0,1,2)
     
-    def lm(k: Int): Pp[Array[Int]] = {
+    def lm(k: Int): Pnp[Array[Int]] = {
       if (k == 1) {
         for {
-          params <- Pp.param("start")
-          choice <- Pp.choose(vocab, params, k - 1)
+          params <- Pnp.param("start")
+          choice <- Pnp.choose(vocab, params, k - 1)
         } yield {
           Array(choice)
         }
@@ -30,9 +30,9 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
         for {
           rest <- lm(k - 1)
           previous = rest.last
-          transition <- Pp.param("transition")
+          transition <- Pnp.param("transition")
           params = pickrange(transition, previous * vocab.length, (previous + 1) * vocab.length)
-          choice <- Pp.choose(vocab, params, k - 1)
+          choice <- Pnp.choose(vocab, params, k - 1)
         } yield {
           rest ++ Array(choice)
         }
@@ -60,13 +60,13 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
       }
     }
     
-    val model = PpModel.init(false)
+    val model = PnpModel.init(false)
     val startParam = model.addParameter("start", Seq(vocab.length))
     val transitionParam = model.addParameter("transition", Seq(vocab.length * vocab.length))
 
     val examples = List(
-        PpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,0))),
-        PpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,2)))
+        PnpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,0))),
+        PnpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,2)))
     )
 
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.1f)

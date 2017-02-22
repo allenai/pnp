@@ -3,20 +3,20 @@ package org.allenai.pnp
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.util.KbestQueue
 
-trait PpSearchQueue[A] {
+trait PnpSearchQueue[A] {
   val graph: CompGraph
   val stateCost: ExecutionScore
   val log: LogFunction
 
-  def offer(value: Pp[A], env: Env, logProb: Double, tag: Any, choice: Any, myEnv: Env): Unit
+  def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any, choice: Any, myEnv: Env): Unit
 }
 
-class BeamPpSearchQueue[A](size: Int, val stateCost: ExecutionScore,
-    val graph: CompGraph, val log: LogFunction) extends PpSearchQueue[A] {
+class BeamPnpSearchQueue[A](size: Int, val stateCost: ExecutionScore,
+    val graph: CompGraph, val log: LogFunction) extends PnpSearchQueue[A] {
 
   val queue = new KbestQueue(size, Array.empty[SearchState[A]])
 
-  override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
+  override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
     val stateLogProb = stateCost(tag, choice, env) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
@@ -25,12 +25,12 @@ class BeamPpSearchQueue[A](size: Int, val stateCost: ExecutionScore,
   }
 }
 
-class EnumeratePpSearchQueue[A] (
+class EnumeratePnpSearchQueue[A] (
     val stateCost: ExecutionScore,
     val graph: CompGraph, val log: LogFunction,
-    val finished: PpSearchQueue[A]
-) extends PpSearchQueue[A] {
-  override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
+    val finished: PnpSearchQueue[A]
+) extends PnpSearchQueue[A] {
+  override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
     myEnv.pauseTimers()
     val stateLogProb = stateCost(tag, choice, env) + logProb
@@ -43,21 +43,21 @@ class EnumeratePpSearchQueue[A] (
   }
 }
 
-class ContinuationPpSearchQueue[A, B] (
-    val queue: PpSearchQueue[B],
-    val cont: PpContinuation[A,B]
-) extends PpSearchQueue[A] {
+class ContinuationPnpSearchQueue[A, B] (
+    val queue: PnpSearchQueue[B],
+    val cont: PnpContinuation[A,B]
+) extends PnpSearchQueue[A] {
   
   val graph = queue.graph
   val stateCost = queue.stateCost
   val log = queue.log
   
-  override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
+  override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
-    queue.offer(BindPp(value, cont), env, logProb, tag, choice, myEnv)
+    queue.offer(BindPnp(value, cont), env, logProb, tag, choice, myEnv)
   }
 }
 
-case class SearchState[A](val value: Pp[A], val env: Env, val logProb: Double,
+case class SearchState[A](val value: Pnp[A], val env: Env, val logProb: Double,
     val tag: Any, val choice: Any) {
 }

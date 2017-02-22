@@ -4,7 +4,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
 import org.allenai.pnp.Env
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.PnpModel
 
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.cli.TrainSemanticParser
@@ -57,7 +57,7 @@ class TestSemanticParserCli extends AbstractCli() {
     println(testData.size + " test examples")
 
     val loader = new ModelLoader(options.valueOf(modelOpt))
-    val model = PpModel.load(loader)
+    val model = PnpModel.load(loader)
     val parser = SemanticParser.load(loader, model)
     loader.done()
 

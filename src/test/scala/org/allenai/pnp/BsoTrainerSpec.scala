@@ -37,7 +37,7 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
   }
 
   def getSeq2Seq(): Seq2Seq = {
-    val model = PpModel.init(false)
+    val model = PnpModel.init(false)
     Seq2Seq.create(sourceVocab, targetVocab, endTokenIndex, model)
   }
   
@@ -70,7 +70,7 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     } yield {
       val unconditional = seq2seq.apply(d._1)
       val oracle = seq2seq.generateExecutionOracle(d._2)
-      PpExample(unconditional, unconditional, Env.init, oracle)
+      PnpExample(unconditional, unconditional, Env.init, oracle)
     }
     
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)

@@ -7,30 +7,30 @@ import org.scalatest.Matchers
 
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 
-class PpUtilSpec extends FlatSpec with Matchers {
+class PnpUtilSpec extends FlatSpec with Matchers {
 
   val TOLERANCE = 0.0001
   val parser = ExpressionParser.expression2
 
-  def flip(p: Double): Pp[Boolean] = {
-    Pp.chooseMap(Seq((true, p), (false, 1.0 - p)))
+  def flip(p: Double): Pnp[Boolean] = {
+    Pnp.chooseMap(Seq((true, p), (false, 1.0 - p)))
   }
 
   val bindings = Map[String, AnyRef](
     "true" -> true.asInstanceOf[AnyRef],
     "false" -> false.asInstanceOf[AnyRef],
-    "coin" -> Pp.chooseMap(Seq((true, 0.6), (false, 0.4))),
+    "coin" -> Pnp.chooseMap(Seq((true, 0.6), (false, 0.4))),
     "flipProb" -> 0.6.asInstanceOf[AnyRef],
     "flipProb2" -> 0.55.asInstanceOf[AnyRef],
-    "flip" -> PpUtil.wrap(flip _),
-    "filter" -> PpUtil.wrap(PpUtil.filter _),
-    "list" -> { x: Vector[AnyRef] => Pp.value(x.toList) },
-    "concat" -> PpUtil.wrap2({ (x: String, y: String) => x ++ y })
+    "flip" -> PnpUtil.wrap(flip _),
+    "filter" -> PnpUtil.wrap(PnpUtil.filter _),
+    "list" -> { x: Vector[AnyRef] => Pnp.value(x.toList) },
+    "concat" -> PnpUtil.wrap2({ (x: String, y: String) => x ++ y })
   )
 
   def runTest[A](exprString: String, expected: Seq[(A, Double)]): Unit = {
     val expr = parser.parse(exprString)
-    val pp = PpUtil.lfToPp(expr, bindings)
+    val pp = PnpUtil.lfToPnp(expr, bindings)
 
     val values = pp.beamSearch(100)
 

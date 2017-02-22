@@ -1,14 +1,14 @@
 package org.allenai.pnp.examples
 
 import com.jayantkrish.jklol.util.IndexedList
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.PnpModel
 import edu.cmu.dynet._
 import edu.cmu.dynet.DynetScalaHelpers._
 import edu.cmu.dynet.dynet_swig._
 import scala.collection.mutable.ListBuffer
 import org.allenai.pnp.CompGraph
-import org.allenai.pnp.Pp
-import org.allenai.pnp.Pp._
+import org.allenai.pnp.Pnp
+import org.allenai.pnp.Pnp._
 import org.allenai.pnp.ExecutionScore
 import com.google.common.base.Preconditions
 import org.allenai.pnp.Env
@@ -22,7 +22,7 @@ import org.allenai.pnp.Env
  */
 class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList[String],
     val endTokenIndex: Int, forwardBuilder: LSTMBuilder, outputBuilder: LSTMBuilder,
-    val model: PpModel) {
+    val model: PnpModel) {
 
   var dropoutProb = -1.0
   val targetVocabInds = (0 until targetVocab.size()).toArray
@@ -67,7 +67,7 @@ class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList
    * The (distribution over) target sequences can be approximated
    * by running inference on the returned program.
    */
-  def apply(sourceTokens: Seq[Int]): Pp[List[Int]] = {
+  def apply(sourceTokens: Seq[Int]): Pnp[List[Int]] = {
     for {
       cg <- computationGraph()
       _ = initializeRnns(cg)
@@ -81,7 +81,7 @@ class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList
     }
   }
   
-  def generateTargetTokens(tokenNum: Int, state: Int, curInput: Expression): Pp[List[Int]] = {
+  def generateTargetTokens(tokenNum: Int, state: Int, curInput: Expression): Pnp[List[Int]] = {
     val output = outputBuilder.add_input(state, curInput)
     val nextState = outputBuilder.state
     
@@ -138,7 +138,7 @@ object Seq2Seq {
   val TARGET_WEIGHTS = "targetWeights"
   
   def create(sourceVocab: IndexedList[String], targetVocab: IndexedList[String],
-    endTokenIndex: Int, model: PpModel): Seq2Seq = {
+    endTokenIndex: Int, model: PnpModel): Seq2Seq = {
 
     val sourceDim = 100
     val hiddenDim = 100
