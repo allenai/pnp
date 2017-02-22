@@ -17,13 +17,13 @@ import edu.cmu.dynet.dynet_swig._
  * every time all correct executions fall off the beam.
  */
 class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
-    val model: PpModel, val trainer: Trainer, val log: LogFunction) {
+    val model: PnpModel, val trainer: Trainer, val log: LogFunction) {
 
   Preconditions.checkArgument(model.locallyNormalized == false)
 
   import DynetScalaHelpers._
 
-  def train[A](examples: Seq[PpExample[A]]): Unit = {
+  def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
       log.notifyIterationStart(i)
@@ -37,8 +37,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       log.notifyIterationEnd(i)
     }
   }
-  
-  private def doExampleUpdate[A](example: PpExample[A]): Double = {
+
+  private def doExampleUpdate[A](example: PnpExample[A]): Double = {
     val cg = ComputationGraph.getNew
     var loss = 0.0
 
@@ -50,8 +50,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     }
     val graph = model.getComputationGraph(cg)
 
-    val queue = new BsoPpQueue[A](beamSize, stateCost, graph, log)
-    val finished = new BsoPpQueue[A](beamSize, stateCost, graph, log)
+    val queue = new BsoPnpQueue[A](beamSize, stateCost, graph, log)
+    val finished = new BsoPnpQueue[A](beamSize, stateCost, graph, log)
 
     val startEnv = env.setLog(log)
     queue.offer(example.unconditional, env, 0.0, null, null, env)
@@ -180,8 +180,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
   }
 }
 
-class BsoPpQueue[A](size: Int, val stateCost: ExecutionScore,
-    val graph: CompGraph, val log: LogFunction) extends PpSearchQueue[A] {
+class BsoPnpQueue[A](size: Int, val stateCost: ExecutionScore,
+    val graph: CompGraph, val log: LogFunction) extends PnpSearchQueue[A] {
 
   val queue = new KbestQueue(size, Array.empty[(SearchState[A], Double)])
   val correctQueue = new KbestQueue(size, Array.empty[SearchState[A]])
@@ -189,7 +189,7 @@ class BsoPpQueue[A](size: Int, val stateCost: ExecutionScore,
   
   val EXECUTION_INCORRECT_VAR_NAME = "**bso_execution_incorrect**"
 
-  override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
+  override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
     if (logProb > Double.NegativeInfinity) {
       log.startTimer("bso/beam_search/search_step/eval_cost")

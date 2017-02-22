@@ -6,8 +6,8 @@ import scala.collection.mutable.ListBuffer
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.GlobalLoglikelihoodTrainer
-import org.allenai.pnp.PpExample
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.PnpExample
+import org.allenai.pnp.PnpModel
 
 import com.google.common.collect.Maps
 import com.jayantkrish.jklol.ccg.CcgExample
@@ -101,7 +101,7 @@ class TrainSemanticParserCli extends AbstractCli() {
     // println(actionSpace.rootTypes)
     // println(actionSpace.typeTemplateMap)
     
-    val model = PpModel.init(true)
+    val model = PnpModel.init(true)
     val parser = SemanticParser.create(actionSpace, vocab, model)
     
     println("*** Validating types ***")
@@ -135,7 +135,7 @@ class TrainSemanticParserCli extends AbstractCli() {
       unconditional = parser.generateExpression(tokenIds, entityLinking)
       oracle <- parser.generateExecutionOracle(x.getLogicalForm, entityLinking, typeDeclaration)
     } yield {
-      PpExample(unconditional, unconditional, Env.init, oracle)
+      PnpExample(unconditional, unconditional, Env.init, oracle)
     }
 
     // Train model

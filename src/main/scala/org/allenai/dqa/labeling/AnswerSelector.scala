@@ -1,22 +1,21 @@
 package org.allenai.dqa.labeling
 
-import org.allenai.pnp.Pp
+import org.allenai.pnp.Pnp
 
 class AnswerSelector {
   
-  def selectAnswer(denotation: AnyRef, answerOptions: AnswerOptions): Pp[Int] = {
+  def selectAnswer(denotation: AnyRef, answerOptions: AnswerOptions): Pnp[Int] = {
     if (denotation.isInstanceOf[Part]) {
       val part = denotation.asInstanceOf[Part]
       val index = answerOptions.matchTokens(part.id)
       if (index >= 0) {
-        Pp.value(index)
+        Pnp.value(index)
       } else {
-        Pp.fail
+        Pnp.fail
       }
     } else {
       // TODO
-      Pp.fail
-      // Pp.choose((0 until answerOptions.length).toArray)
+      Pnp.fail
     }
   }
 }

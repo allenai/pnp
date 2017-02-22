@@ -11,9 +11,9 @@ import scala.collection.mutable.SetBuilder
 import org.allenai.pnp.CompGraph
 import org.allenai.pnp.Env
 import org.allenai.pnp.ExecutionScore
-import org.allenai.pnp.Pp
-import org.allenai.pnp.Pp._
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.Pnp
+import org.allenai.pnp.Pnp._
+import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -31,7 +31,7 @@ import edu.cmu.dynet.dynet_swig._
   */
 class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String], inputDim: Int,
     hiddenDim: Int, maxVars: Int, forwardBuilder: LSTMBuilder, backwardBuilder: LSTMBuilder,
-    actionBuilder: LSTMBuilder, val model: PpModel) {
+    actionBuilder: LSTMBuilder, val model: PnpModel) {
 
   var dropoutProb = -1.0
   
@@ -46,7 +46,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
   /** Compute the input encoding of a list of tokens
     */
-  def encode(tokens: Array[Int], entityLinking: EntityLinking): Pp[InputEncoding] = {
+  def encode(tokens: Array[Int], entityLinking: EntityLinking): Pnp[InputEncoding] = {
     for {
       compGraph <- computationGraph()
       _ = initializeRnns(compGraph)
@@ -141,7 +141,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     SemanticParser.seqToMultimap(output)
   }
   
-  def generateExpression(tokens: Array[Int], entityLinking: EntityLinking): Pp[Expression2] = {
+  def generateExpression(tokens: Array[Int], entityLinking: EntityLinking): Pnp[Expression2] = {
     for {
       state <- parse(tokens, entityLinking)
     } yield {
@@ -152,7 +152,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   /** Generate a distribution over logical forms given 
     * tokens.
     */
-  def parse(tokens: Array[Int], entityLinking: EntityLinking): Pp[SemanticParserState] = {
+  def parse(tokens: Array[Int], entityLinking: EntityLinking): Pnp[SemanticParserState] = {
     for {
       // Encode input tokens using an LSTM.
       input <- encode(tokens, entityLinking)
@@ -177,7 +177,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   }
 
   private def parse(input: InputEncoding, builder: RNNBuilder,
-      cg: ComputationGraph, startState: SemanticParserState): Pp[SemanticParserState] = {
+      cg: ComputationGraph, startState: SemanticParserState): Pnp[SemanticParserState] = {
     // Initialize the output LSTM before generating the logical form.
     builder.start_new_sequence(input.rnnState)
     val startRnnState = builder.state()
@@ -199,10 +199,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     * apply. 
     */
   private def parse(input: InputEncoding, builder: RNNBuilder, prevInput: Expression,
-      rnnState: Int, state: SemanticParserState): Pp[SemanticParserState] = {
+      rnnState: Int, state: SemanticParserState): Pnp[SemanticParserState] = {
     if (state.unfilledHoleIds.length == 0) {
       // If there are no holes, return the completed logical form.
-      Pp.value(state)
+      Pnp.value(state)
     } else {
       // Select the first unfilled hole and select the
       // applicable templates given the hole's type.
@@ -478,7 +478,7 @@ object SemanticParser {
   val ENTITY_WEIGHTS_PARAM = "entityWeights:"
   val ENTITY_LOOKUP_PARAM = "entityLookup:"
   
-  def create(actionSpace: ActionSpace, vocab: IndexedList[String], model: PpModel): SemanticParser = {
+  def create(actionSpace: ActionSpace, vocab: IndexedList[String], model: PnpModel): SemanticParser = {
     val inputDim = 200
     val hiddenDim = 100
     val actionDim = 100
@@ -525,7 +525,7 @@ object SemanticParser {
         backwardBuilder, actionBuilder, model)
   }
 
-  def load(loader: ModelLoader, model: PpModel): SemanticParser = {
+  def load(loader: ModelLoader, model: PnpModel): SemanticParser = {
     val actionSpace = loader.load_object(classOf[ActionSpace])
     val vocab = loader.load_object(classOf[IndexedList[String]])
     val inputDim = loader.load_int()

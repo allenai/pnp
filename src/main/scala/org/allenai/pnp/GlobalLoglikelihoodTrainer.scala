@@ -7,12 +7,12 @@ import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
 
 class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
-    val maxSearchSteps: Int, val model: PpModel, val trainer: Trainer,
+    val maxSearchSteps: Int, val model: PnpModel, val trainer: Trainer,
     val logFn: LogFunction) {
 
   import DynetScalaHelpers._
   
-  def train[A](examples: Seq[PpExample[A]]): Unit = {
+  def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
       var searchErrors = 0
@@ -59,10 +59,10 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
     }
   }
   
-  private def marginalsToLogProbExpression[A](marginals: PpBeamMarginals[A],
+  private def marginalsToLogProbExpression[A](marginals: PnpBeamMarginals[A],
       cg: ComputationGraph): Option[Expression] = {
     val exScores = marginals.executions.map(_.env.getScore(false, cg))
-    
+
     if (exScores.length == 0) {
       None 
     } else if (exScores.length == 1) {

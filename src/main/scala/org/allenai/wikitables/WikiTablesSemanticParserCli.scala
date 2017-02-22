@@ -5,8 +5,8 @@ import scala.collection.mutable.ListBuffer
 
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
-import org.allenai.pnp.PpExample
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.PnpExample
+import org.allenai.pnp.PnpModel
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
@@ -118,7 +118,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
     */
 
-    val model = PpModel.init(true)
+    val model = PnpModel.init(true)
     val parser = SemanticParser.create(actionSpace, vocab, model)
     
     println("*** Validating types ***")
@@ -199,10 +199,10 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     * Returns a model with the trained parameters. 
     */
   def train(examples: Seq[CcgExample], parser: SemanticParser,
-      typeDeclaration: TypeDeclaration): PpModel = {
+      typeDeclaration: TypeDeclaration): PnpModel = {
     
     parser.dropoutProb = 0.5
-    val ppExamples = for {
+    val pnpExamples = for {
       x <- examples
       sent = x.getSentence
       tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
@@ -210,14 +210,14 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       unconditional = parser.generateExpression(tokenIds, entityLinking)
       oracle <- parser.generateExecutionOracle(x.getLogicalForm, entityLinking, typeDeclaration)
     } yield {
-      PpExample(unconditional, unconditional, Env.init, oracle)
+      PnpExample(unconditional, unconditional, Env.init, oracle)
     }
 
     // Train model
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(50, 100, true, model, sgd, new DefaultLogFunction())
-    trainer.train(ppExamples.toList)
+    trainer.train(pnpExamples.toList)
 
     parser.dropoutProb = -1
     model
@@ -227,7 +227,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     * forms are compared for equality using comparator.  
     */
   def test(examples: Seq[CcgExample], parser: SemanticParser,
-      model: PpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
+      model: PnpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
       comparator: ExpressionComparator): SemanticParserLoss = {
     println("")
     var numCorrect = 0
