@@ -64,13 +64,6 @@ These steps are illustrated in detail for a sequence-to-sequence
 neural translation model in
 [Seq2Seq2.scala](src/main/scala/org/allenai/pnp/examples/Seq2Seq.scala).
 
-TODO: finish docs
-First, import:
-
-```scala
-
-```
-
 
 
 
