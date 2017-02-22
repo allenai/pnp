@@ -215,8 +215,7 @@ class PpSpec extends FlatSpec with Matchers {
       }
     }
 
-    val computationGraph = new ComputationGraph
-    
+    val computationGraph = ComputationGraph.getNew    
 
     val model = PpModel.init(false)
     val flipParam = model.addParameter("flip", Seq(2))
@@ -239,7 +238,5 @@ class PpSpec extends FlatSpec with Matchers {
     labels2.length should be(2)
     labels2(0) should be(1)
     labels2(1) should be(0)
-    
-    computationGraph.delete()
   }
 }

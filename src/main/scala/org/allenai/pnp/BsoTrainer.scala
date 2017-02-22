@@ -97,8 +97,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         // Add to the loss.
         log.startTimer("bso/beam_search/margin_violation")
         
-        val beamScoreExpr = worstIncorrectEx.env.getScore(false)
-        val correctScoreExpr = bestCorrectEx.env.getScore(false)
+        val beamScoreExpr = worstIncorrectEx.env.getScore(false, cg)
+        val correctScoreExpr = bestCorrectEx.env.getScore(false, cg)
 
         // XXX: allow different costs.
         losses += ((beamScoreExpr + 1) - correctScoreExpr)
@@ -156,9 +156,9 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       // println("m: end " + finalBestIncorrect.logProb + " " + finalBestCorrect.logProb)
 
       // Add to the loss.
-      val beamScoreExpr = finalBestIncorrect.env.getScore(false)
-      val correctScoreExpr = finalBestCorrect.env.getScore(false)
-      
+      val beamScoreExpr = finalBestIncorrect.env.getScore(false, cg)
+      val correctScoreExpr = finalBestCorrect.env.getScore(false, cg)
+
       // XXX: allow different costs.
       losses += ((beamScoreExpr + 1) - correctScoreExpr)
     }

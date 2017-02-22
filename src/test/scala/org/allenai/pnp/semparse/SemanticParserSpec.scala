@@ -57,15 +57,13 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val oracle = parser.generateExecutionOracle(label, entityLinking, typeDeclaration).get
     val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)), entityLinking)
 
-    val cg = new ComputationGraph
+    val cg = ComputationGraph.getNew
     val compGraph = parser.model.getComputationGraph(cg)
     
     val results = exprs.beamSearch(1, -1, Env.init, oracle, compGraph, new NullLogFunction()).executions
     for (result <- results) {
       println("  " + result)
     }
-
-    cg.delete()
 
     results.length should be(1)
     results(0).value should equal(label)

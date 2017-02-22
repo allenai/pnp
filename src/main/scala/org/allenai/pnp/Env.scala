@@ -76,22 +76,17 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     * normalize is false, this score is computed by summing
     * the scores associated with choice. If normalize is true,
     * the score is computed by summing the negative log-softmax
-    * scores of each choice.  
+    * scores of each choice.
     */
-  def getScore(normalize: Boolean): Expression = {
-    var exScore: Expression = null
+  def getScore(normalize: Boolean, cg: ComputationGraph): Expression = {
+    var exScore = input(cg, 0)
     for ((expr, labelInd) <- labelNodeIds.zip(labels)) {
       val decisionScore = if (normalize) {
         pickneglogsoftmax(expr, labelInd)
       } else {
         pick(expr, labelInd)
       }
-
-      if (exScore == null) {
-        exScore = decisionScore
-      } else {
-        exScore = exScore + decisionScore
-      }
+      exScore = exScore + decisionScore
     }
     exScore
   }

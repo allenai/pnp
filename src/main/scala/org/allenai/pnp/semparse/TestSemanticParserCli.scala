@@ -91,7 +91,7 @@ class TestSemanticParserCli extends AbstractCli() {
       val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
       val results = dist.beamSearch(5, 75, Env.init, null,
           parser.model.getComputationGraph(cg), new NullLogFunction())
           
@@ -146,8 +146,6 @@ class TestSemanticParserCli extends AbstractCli() {
           println("  " + tokenStrings.mkString(" ") + " " + templates(i))
         }
       }
-      
-      cg.delete
     }
     
     val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)

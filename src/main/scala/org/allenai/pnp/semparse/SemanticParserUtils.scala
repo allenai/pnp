@@ -105,7 +105,7 @@ object SemanticParserUtils {
 
       if (oracleOpt.isDefined) {
         val oracle = oracleOpt.get
-        val cg = new ComputationGraph
+        val cg = ComputationGraph.getNew
         val results = dist.beamSearch(1, 50, Env.init, oracle,
             parser.model.getComputationGraph(cg), new NullLogFunction())
         if (results.executions.size != 1) {
@@ -127,7 +127,6 @@ object SemanticParserUtils {
             // println("OK   : " + numParts + " " + " "
           }
         }
-        cg.delete
         
         // Accumulate the rules used in each example
         usedRules ++= oracle.holeTypes.zip(oracle.templates)
