@@ -67,7 +67,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
               "Found %s conditional executions (expected exactly 1) for example: %s",
               conditional.executions.size.asInstanceOf[AnyRef], example)
 
-          logsumexp_VE(new ExpressionVector(exLosses.toList.asJava))
+          logsumexp(new ExpressionVector(exLosses.toList.asJava))
         }
         log.stopTimer("pp_loglikelihood/build_loss")
         

@@ -94,11 +94,11 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
     
     val outputEmbeddings = fwOutputs.toArray.zip(bwOutputs.toList.reverse).map(
-        x => concatenate(Array(x._1, x._2)))
+        x => concatenateArray(Array(x._1, x._2)))
  
-    val sentEmbedding = concatenate(Array(fwOutputs.last, bwOutputs.last)) 
-    val inputMatrix = concatenate(inputEmbeddings.map(reshape(_, Seq(1, inputDim))).toArray)
-    val outputMatrix = concatenate(outputEmbeddings.map(reshape(_, Seq(1, 2 * hiddenDim))).toArray)
+    val sentEmbedding = concatenateArray(Array(fwOutputs.last, bwOutputs.last)) 
+    val inputMatrix = concatenateArray(inputEmbeddings.map(reshape(_, Seq(1, inputDim))).toArray)
+    val outputMatrix = concatenateArray(outputEmbeddings.map(reshape(_, Seq(1, 2 * hiddenDim))).toArray)
     
     // TODO: figure out how to initialize the decoder from both the
     // forward and backward LSTMs
@@ -253,7 +253,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
         actionHiddenWeights <- param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
         actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
-        attentionAndRnn = concatenate(Array(attentionVector, rnnOutputDropout))
+        attentionAndRnn = concatenateArray(Array(attentionVector, rnnOutputDropout))
         actionHidden = tanh(actionHiddenWeights * attentionAndRnn)
         actionHiddenDropout = if (dropoutProb > 0.0) {
           dropout(actionHidden, dropoutProb.asInstanceOf[Float]) 
@@ -276,8 +276,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
                 + entityChoiceScore))
            */
           
-          val entityScores = concatenate(entities.map(x => wordAttentions * x.spanVector))
-          concatenate(Array(actionScores, entityScores))
+          val entityScores = concatenateArray(entities.map(x => wordAttentions * x.spanVector))
+          concatenateArray(Array(actionScores, entityScores))
         } else {
           actionScores
         }
@@ -302,7 +302,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         }
 
         // Recursively fill in any remaining holes.
-        returnState <- parse(input, builder, concatenate(Array(actionInput, attentionVector)),
+        returnState <- parse(input, builder, concatenateArray(Array(actionInput, attentionVector)),
             nextRnnState, nextState)
       } yield {
         returnState
@@ -310,12 +310,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
   }
 
-  private def concatenate(exprs: Array[Expression]): Expression = {
+  private def concatenateArray(exprs: Array[Expression]): Expression = {
     val expressionVector = new ExpressionVector(exprs.length)
     for (i <- 0 until exprs.length) {
       expressionVector.set(i, exprs(i))
     }
-    concatenate_VE(expressionVector)
+    concatenate(expressionVector)
   }
 
   /** Generate the sequence of parser actions that produces exp.
