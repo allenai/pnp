@@ -32,7 +32,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         val conditional = example.conditional.beamSearch(beamSize, -1, env,
             example.conditionalExecutionScore, graph, log)
         log.stopTimer("pp_loglikelihood/forward")
-
+        
         log.startTimer("pp_loglikelihood/build_loss")
         var exLosses = ListBuffer[Expression]()
         for (conditionalEx <- conditional.executions) {

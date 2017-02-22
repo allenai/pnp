@@ -149,7 +149,7 @@ class TrainSemanticParserCli extends AbstractCli() {
     /*
     model.locallyNormalized = false
     val sgd2 = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val gtrainer = new BsoTrainer(50, 11, 50, model, sgd2, new DefaultLogFunction())
+    val gtrainer = new BsoTrainer(50, 5, 50, model, sgd2, new DefaultLogFunction())
     println("Running globally-normalized training...")
     gtrainer.train(ppExamples.toList)
     */

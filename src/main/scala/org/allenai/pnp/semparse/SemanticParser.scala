@@ -235,19 +235,21 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       for {
         // Compute an attention vector
         attentionWeights <- param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
-        wordAttentions = reshape(softmax(input.encodedTokenMatrix * attentionWeights * rnnOutputDropout), 
-            Seq(1, input.tokens.length))
+        wordAttentions = transpose(softmax(input.encodedTokenMatrix * attentionWeights * rnnOutputDropout)) 
+
         // Attention vector using the input token vectors 
-        // attentionVector = reshape(wordAttentions * input.tokenMatrix, Seq(inputDim))
+        // attentionVector = transpose(wordAttentions * input.tokenMatrix)
         // Attention vector using the encoded tokens 
-        attentionVector = reshape(wordAttentions * input.encodedTokenMatrix, Seq(inputDim))
+        attentionVector = transpose(wordAttentions * input.encodedTokenMatrix)
         
+        /*
         attentionActionWeights <- param(SemanticParser.ATTENTION_ACTION_WEIGHTS_PARAM + hole.t)
         attentionActionScores = attentionActionWeights * attentionVector
 
         actionWeights <- param(SemanticParser.ACTION_WEIGHTS_PARAM + hole.t)
         actionBias <- param(SemanticParser.ACTION_BIAS_PARAM + hole.t)
         rnnActionScores = actionWeights * rnnOutputDropout
+        */
 
         actionHiddenWeights <- param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
         actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
@@ -264,24 +266,20 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         actionScores = pickrange(actionHiddenScores, 0, baseTemplates.length)
 
         // Score the entity templates
-        allScores <- if (entities.size > 0) {
-          for {
-            entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
-            entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
+        entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
+        entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
+        allScores = if (entities.size > 0) {
+          // TODO: How should we score these entities using attentions?
+          /*
             entityChoiceScore = dot_product(entityWeights, rnnOutputDropout) + entityBias 
-            // TODO: How should we score these entities using attentions?
-            /*
             entityScores = concatenate(entityVectors.map(v => dot_product(v, attentionVector)
                 + entityChoiceScore))
-            */
-
-            entityScores = concatenate(entities.map(x => wordAttentions * x.spanVector))
-                
-          } yield {
-            concatenate(Array(actionScores, entityScores))
-          }
+           */
+          
+          val entityScores = concatenate(entities.map(x => wordAttentions * x.spanVector))
+          concatenate(Array(actionScores, entityScores))
         } else {
-          value(actionScores)
+          actionScores
         }
 
         // Nondeterministically select which template to update
