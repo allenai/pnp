@@ -29,7 +29,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     trainer.train(examples)
 
     val env = Env.init
-    val computationGraph = new ComputationGraph
+    val computationGraph = ComputationGraph.getNew
     val marginals = foo(1, null).beamSearch(100, env, model.getComputationGraph(computationGraph))
     val values = marginals.executions
     val partitionFunction = marginals.partitionFunction
@@ -38,8 +38,6 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     (values(0).prob / partitionFunction) should be(0.8 +- TOLERANCE)
     values(1).value should be(List(0))
     (values(1).prob / partitionFunction) should be(0.2 +- TOLERANCE)
-    
-    computationGraph.delete()
   }
 
   it should "learn xor" in {
@@ -71,14 +69,13 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     // Check that training error is zero.
     for (ex <- data) {
       val env = Env.init
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
       val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph(cg))
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
       values(0).value should be(ex._3)
       (values(0).prob / partitionFunction) should be(1.0 +- 0.1)
-      cg.delete()
     }
   }
   
@@ -121,7 +118,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     // Check that training error is zero.
     for (ex <- data) {
       val env = Env.init
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
       val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph(cg))
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
@@ -134,7 +131,6 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
         val execution = executions(0)
         (execution.prob / partitionFunction) should be(expectedProb +- 0.1)
       }
-      cg.delete()
     }
   }
 }

@@ -28,7 +28,7 @@ import com.jayantkrish.jklol.util.CountAccumulator
   * using for/yield comprehensions and the functions in the
   * Pp object.
   */
-sealed trait Pp[A] {
+trait Pp[A] {
 
   /** flatMap is the monad's bind operator. It chains two
     * probabilistic computations together in the natural way
@@ -80,7 +80,6 @@ sealed trait Pp[A] {
     queue.offer(this, env, 0.0, null, null, env)
 
     val beam = new Array[SearchState[A]](beamSize)
-    val beamScores = new Array[Double](beamSize)
     var numIters = 0
     while (queue.queue.size > 0 && (maxIters < 0 || numIters < maxIters)) {
       numIters += 1
@@ -88,7 +87,6 @@ sealed trait Pp[A] {
 
       val beamSize = queue.queue.size
       Array.copy(queue.queue.getItems, 0, beam, 0, beamSize)
-      Array.copy(queue.queue.getScores, 0, beamScores, 0, beamSize)
       queue.queue.clear
 
       for (i <- 0 until beamSize) {

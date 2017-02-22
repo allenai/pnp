@@ -143,7 +143,7 @@ class LabelingDqaCli extends AbstractCli {
       model: PpModel): Unit = {
     var numCorrect = 0 
     for (ex <- examples) {
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
 
       val pp = p3.exampleToPpExample(ex).unconditional
       val dist = pp.beamSearch(100, 100, Env.init, null, model.getComputationGraph(cg), null)
@@ -161,8 +161,6 @@ class LabelingDqaCli extends AbstractCli {
           numCorrect += 1
         }
       }
-
-      cg.delete
     }
     
     val accuracy = numCorrect.asInstanceOf[Double] / examples.length
