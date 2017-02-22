@@ -102,7 +102,6 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
         fwOutput
       }
       fwOutputs += fwOutputDropout
-      // fwOutputs += fwOutput
     }
     
     return forwardBuilder.final_s
