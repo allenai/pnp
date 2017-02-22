@@ -43,26 +43,26 @@ in the root directory.
 This section describes how to use probabilistic neural programs to
 define and train a model. The typical usage has four steps:
 
-1. **Define the model** Models are implemented by writing a function
+1. **Define the model.** Models are implemented by writing a function
    that takes your problem input and outputs `Pnp[X]` objects. The
    probabilistic neural program type `Pnp[X]` represents a function
    from neural network parameters to probability distributions over
    values of type `X`. Each program describes a (possibly infinite)
-   space of executions, each of which returns some value of type `X`.
-2. **Generate labels** Labels are implemented as functions that assign
+   space of executions, each of which returns a value of type `X`.
+2. **Generate labels.** Labels are implemented as functions that assign
    costs to program executions or as conditional distributions over
    correct executions.
-3. **Train** Training is performed by passing a list of examples to a
+3. **Train.** Training is performed by passing a list of examples to a
    `Trainer`, where each example consists of a `Pnp[X]` object and a
    label. Many training algorithms can be used, from loglikelihood to
    learning-to-search algorithms.
-4. **Run the model** A model can be runned on a new input by
+4. **Run the model.** A model can be runned on a new input by
    constructing the appropriate `Pnp[X]` object, then running
    inference on this object with trained parameters.
 
 These steps are illustrated in detail for a sequence-to-sequence
 neural translation model in
-[Seq2Seq2.scala](tree/master/src/main/scala/org/allenai/pnp/examples/Seq2Seq.scala).
+[Seq2Seq2.scala](src/main/scala/org/allenai/pnp/examples/Seq2Seq.scala).
 
 TODO: finish docs
 First, import:
