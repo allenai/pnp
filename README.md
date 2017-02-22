@@ -73,6 +73,7 @@ represent discrete choices. Roughly, we can write:
 ```scala
 val pnp = for {
   scores1 <- ... some neural net operations ...
+  // Make a discrete choice
   x1 <- choose(values, scores1)
   scores2 <- ... more neural net operations, may depend on x1 ...
   ...
@@ -83,10 +84,10 @@ val pnp = for {
 ```
 
 `pnp` then represents a function that takes some neural network
-parameters and returns a distribution over the possible values of `xn`
-(which depends on the values of intermediate choices). We can evaluate
-`pnp` by running inference, which simulatenously runs the forward pass
-of the network and performs probabilistic inference.
+parameters and returns a distribution over possible values of `xn`
+(which in turn depends on the values of intermediate choices). We can
+evaluate `pnp` by running inference, which simulatenously runs the
+forward pass of the network and performs probabilistic inference.
 
 The `choose` operator defines a distribution over a list of values:
 
@@ -94,15 +95,15 @@ The `choose` operator defines a distribution over a list of values:
 val flip: Pnp[Boolean] = choose(Seq(true, false), Seq(0.5, 0.5))
 ```
 
-This code creates a probability distribution that returns either true
-or false with 50% probability. `flip` has type `Pnp[Boolean]`, which
-represents a function from neural network parameters to probability
-distributions over values of type `Boolean`. (In this case it's just a
-probability distribution since we haven't referenced any parameters.)
-Note that `flip` is not a draw from the distribution, rather, *it is
-the distribution itself*. The probability of each choice can be given
-to `choose` either in an explicit list (as above) or via an
-`Expression` in a neural network.
+This snippet creates a probability distribution that returns either
+true or false with 50% probability. `flip` has type `Pnp[Boolean]`,
+which represents a function from neural network parameters to
+probability distributions over values of type `Boolean`. (In this case
+it's just a probability distribution since we haven't referenced any
+parameters.)  Note that `flip` is not a draw from the distribution,
+rather, *it is the distribution itself*. The probability of each
+choice can be given to `choose` either in an explicit list (as above)
+or via an `Expression` in a neural network.
 
 We can compose distributions using `for {...} yield {...}`:
 
