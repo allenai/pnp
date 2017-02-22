@@ -43,8 +43,8 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
         val conditionalLogSumProb = marginalsToLogProbExpression(conditional, cg)
         val unconditionalLogSumProb = marginalsToLogProbExpression(unconditional, cg)
         
-        if (conditionalLogSumProb != null && unconditionalLogSumProb != null) {
-          val lossExpr = unconditionalLogSumProb - conditionalLogSumProb
+        if (conditionalLogSumProb.isDefined && unconditionalLogSumProb.isDefined) {
+          val lossExpr = unconditionalLogSumProb.get - conditionalLogSumProb.get
 
           loss += as_scalar(cg.incremental_forward(lossExpr))
           cg.backward(lossExpr)
@@ -60,15 +60,15 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
   }
   
   private def marginalsToLogProbExpression[A](marginals: PpBeamMarginals[A],
-      cg: ComputationGraph): Expression = {
+      cg: ComputationGraph): Option[Expression] = {
     val exScores = marginals.executions.map(_.env.getScore(false, cg))
     
     if (exScores.length == 0) {
-      null 
+      None 
     } else if (exScores.length == 1) {
-      exScores(0)
+      Some(exScores(0))
     } else {
-      logsumexp(new ExpressionVector(exScores))
+      Some(logsumexp(new ExpressionVector(exScores)))
     }
   }
 }
