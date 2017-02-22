@@ -110,18 +110,8 @@ class TrainSemanticParserCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     println("*** Training ***")
     train(trainPreprocessed, parser, typeDeclaration)
-
-    // println("***************** TEST EVALUATION *****************")
-    // val testResults = test(testPreprocessed, parser, typeDeclaration, simplifier, comparator)
-    // println("***************** TRAIN EVALUATION *****************")
-    // val trainResults = test(trainPreprocessed, parser, typeDeclaration, simplifier, comparator)
-
-    // println("")
-    // println("Test: ")
-    // println(testResults)
-    // println("Train: ")
-    // println(trainResults)
     
+    // Serialize model to disk.
     val saver = new ModelSaver(options.valueOf(modelOutOpt))
     model.save(saver)
     parser.save(saver)
@@ -156,11 +146,13 @@ class TrainSemanticParserCli extends AbstractCli() {
     trainer.train(ppExamples.toList)
     
     // Globally normalized training
+    /*
     model.locallyNormalized = false
     val sgd2 = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val gtrainer = new BsoTrainer(10, 10, 50, model, sgd2, new DefaultLogFunction())
+    val gtrainer = new BsoTrainer(50, 11, 50, model, sgd2, new DefaultLogFunction())
     println("Running globally-normalized training...")
     gtrainer.train(ppExamples.toList)
+    */
 
     parser.dropoutProb = -1
   }

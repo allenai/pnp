@@ -56,6 +56,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     val startEnv = env.setLog(log)
     queue.offer(example.unconditional, env, 0.0, null, null, env)
 
+    log.startTimer("bso/beam_search")
     val beam = new Array[SearchState[A]](beamSize)
     var numIters = 0
     val losses = ListBuffer[Expression]()
@@ -72,18 +73,20 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
 
       // Note that beam(0) is the lowest-scoring element   
       // val (beamEx, beamCost) = queue.queue.getItems()(0)
+      log.startTimer("bso/beam_search/get_executions")
       val worstIncorrectEx = if (queue.incorrectQueue.size > 0) {
         queue.incorrectQueue.getItems()(0) 
       } else {
         null
       }
-      
+
       val bestCorrectEx = if (queue.correctQueue.size > 0) {
         queue.correctQueue.getItems.slice(
             0, queue.correctQueue.size).maxBy(x => x.logProb)
       } else {
         null
       }
+      log.stopTimer("bso/beam_search/get_executions")
 
       var nextBeamSize = -1
       if (numIters != 0 && bestCorrectEx != null && worstIncorrectEx != null &&
@@ -92,6 +95,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         // println("m: " + numIters + " " + worstIncorrectEx.logProb + " " + bestCorrectEx.logProb)
 
         // Add to the loss.
+        log.startTimer("bso/beam_search/margin_violation")
+        
         val beamScoreExpr = worstIncorrectEx.env.getScore(false)
         val correctScoreExpr = bestCorrectEx.env.getScore(false)
 
@@ -101,6 +106,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         // Continue the search with the best correct execution.
         beam(0) = bestCorrectEx
         nextBeamSize = 1
+        
+        log.stopTimer("bso/beam_search/margin_violation")
       } else {
         // No margin violation. Queue up all beam executions for 
         // the next search step.
@@ -123,6 +130,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
 
       numIters += 1
     }
+    log.stopTimer("bso/beam_search")
               
     // Compute margin loss for final highest-scoring incorrect entry
     // vs. correct.
@@ -156,14 +164,14 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     if (losses.size > 0) {
       val lossExpr = sum(new ExpressionVector(losses))
       
-      log.startTimer("pp_bso/eval_loss")
+      log.startTimer("bso/eval_loss")
       loss += as_scalar(cg.incremental_forward(lossExpr)) 
-      log.stopTimer("pp_bso/eval_loss")
+      log.stopTimer("bso/eval_loss")
       
-      log.startTimer("pp_bso/backward")
+      log.startTimer("bso/backward")
       cg.backward(lossExpr)
       trainer.update(1.0f)
-      log.stopTimer("pp_bso/backward")
+      log.stopTimer("bso/backward")
     }
 
     cg.delete()
