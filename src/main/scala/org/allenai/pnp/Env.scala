@@ -71,6 +71,13 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     new Env(index :: labels, param :: labelNodeIds, varnames, vars, activeTimers, log)
   }
   
+  /** Get a scalar-valued expression that evaluates to the
+    * score of the execution that this env is part of. If   
+    * normalize is false, this score is computed by summing
+    * the scores associated with choice. If normalize is true,
+    * the score is computed by summing the negative log-softmax
+    * scores of each choice.  
+    */
   def getScore(normalize: Boolean): Expression = {
     var exScore: Expression = null
     for ((expr, labelInd) <- labelNodeIds.zip(labels)) {
