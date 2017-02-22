@@ -3,7 +3,8 @@ package org.allenai.pnp
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
-import edu.cmu.dynet.Expression
+import edu.cmu.dynet._
+import edu.cmu.dynet.dynet_swig._
 
 /** Mutable global state of a neural probabilistic program
   * execution. Env also tracks the chosen values for any
@@ -18,6 +19,8 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     varnames: IndexedList[String], vars: Array[AnyRef],
     val activeTimers: Set[String], val log: LogFunction) {
 
+  import DynetScalaHelpers._
+  
   /** Get the value of the named variable as an instance
     * of type A.
     */
@@ -66,6 +69,24 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     */
   def addLabel(param: Expression, index: Int): Env = {
     new Env(index :: labels, param :: labelNodeIds, varnames, vars, activeTimers, log)
+  }
+  
+  def getScore(normalize: Boolean): Expression = {
+    var exScore: Expression = null
+    for ((expr, labelInd) <- labelNodeIds.zip(labels)) {
+      val decisionScore = if (normalize) {
+        pickneglogsoftmax(expr, labelInd)
+      } else {
+        pick(expr, labelInd)
+      }
+
+      if (exScore == null) {
+        exScore = decisionScore
+      } else {
+        exScore = exScore + decisionScore
+      }
+    }
+    exScore
   }
 
   def setLog(newLog: LogFunction): Env = {

@@ -62,22 +62,7 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
   }
   
   private def marginalsToLogProbExpression[A](marginals: PpBeamMarginals[A]): Expression = {
-    val exScores = for {
-      ex <- marginals.executions
-    } yield {
-      val labeledExpressions = ex.env.labelNodeIds
-      val labelIndexes = ex.env.labels
-      var exScore: Expression = null
-      for ((expr, labelInd) <- labeledExpressions.zip(labelIndexes)) {
-        val decisionScore = pick(expr, labelInd)
-        if (exScore == null) {
-          exScore = decisionScore
-        } else {
-          exScore = exScore + decisionScore
-        }
-      }
-      exScore
-    }
+    val exScores = marginals.executions.map(_.env.getScore(false))
     
     if (exScores.length == 0) {
       null 

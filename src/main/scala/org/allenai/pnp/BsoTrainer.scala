@@ -1,14 +1,21 @@
 package org.allenai.pnp
 
+import scala.collection.mutable.ListBuffer
+
+import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.util.KbestQueue
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
 
-import scala.collection.mutable.ListBuffer
-import com.google.common.base.Preconditions
-
+/**
+ * Beam search trainer implementing a LaSO-like algorithm.
+ * This trainer implements a margin loss between the
+ * lowest-scoring item on the beam and the highest-scoring
+ * correct execution. Thus, a gradient update is performed
+ * every time all correct executions fall off the beam.
+ */
 class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     val model: PpModel, val trainer: Trainer, val log: LogFunction) {
 
@@ -19,27 +26,19 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
   def train[A](examples: Seq[PpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
-      var searchErrors = 0.0
       log.notifyIterationStart(i)
       for (example <- examples) {
-        val (l, s) = doExampleUpdate(example)
-        
-        if (s) {
-          loss += l
-        } else {
-          searchErrors += 1
-        }
+        loss +=  doExampleUpdate(example)
       }
       
       trainer.update_epoch()
 
       log.logStatistic(i, "loss", loss)
-      log.logStatistic(i, "search errors", searchErrors)
       log.notifyIterationEnd(i)
     }
   }
   
-  private def doExampleUpdate[A](example: PpExample[A]): (Double, Boolean) = {
+  private def doExampleUpdate[A](example: PpExample[A]): Double = {
     val cg = new ComputationGraph
     var loss = 0.0
 
@@ -60,9 +59,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     val beam = new Array[SearchState[A]](beamSize)
     var numIters = 0
     val losses = ListBuffer[Expression]()
-    while (queue.queue.size > 0 && queue.correctQueue.size > 0 &&
+    while (queue.queue.size > 0 &&
         (maxIters < 0 || numIters < maxIters)) {
-      numIters += 1
       // println(numIters + " " + queue.queue.size)
 
       // TODO: check this
@@ -73,22 +71,32 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       // that of the lowest-scoring execution on beam by a margin of 1.
 
       // Note that beam(0) is the lowest-scoring element   
-      val (beamEx, beamCost) = queue.queue.getItems()(0)
-      val bestCorrectEx = queue.correctQueue.getItems.slice(
-          0, queue.correctQueue.size).maxBy(x => x.logProb)
+      // val (beamEx, beamCost) = queue.queue.getItems()(0)
+      val worstIncorrectEx = if (queue.incorrectQueue.size > 0) {
+        queue.incorrectQueue.getItems()(0) 
+      } else {
+        null
+      }
       
+      val bestCorrectEx = if (queue.correctQueue.size > 0) {
+        queue.correctQueue.getItems.slice(
+            0, queue.correctQueue.size).maxBy(x => x.logProb)
+      } else {
+        null
+      }
+
       var nextBeamSize = -1
-      if (beamEx.logProb > bestCorrectEx.logProb + 1) {
+      if (numIters != 0 && bestCorrectEx != null && worstIncorrectEx != null &&
+          worstIncorrectEx.logProb + 1 > bestCorrectEx.logProb) {
         // Margin violation
-        
+        // println("m: " + numIters + " " + worstIncorrectEx.logProb + " " + bestCorrectEx.logProb)
+
         // Add to the loss.
-        val beamScoreExpr = sum(new ExpressionVector(
-            beamEx.env.labelNodeIds.zip(beamEx.env.labels).map(x => pick(x._1, x._2))))
-        val correctScoreExpr = sum(new ExpressionVector(
-            bestCorrectEx.env.labelNodeIds.zip(bestCorrectEx.env.labels).map(x => pick(x._1, x._2))))
-            
+        val beamScoreExpr = worstIncorrectEx.env.getScore(false)
+        val correctScoreExpr = bestCorrectEx.env.getScore(false)
+
         // XXX: allow different costs.
-        losses += (beamScoreExpr - correctScoreExpr)
+        losses += ((beamScoreExpr + 1) - correctScoreExpr)
 
         // Continue the search with the best correct execution.
         beam(0) = bestCorrectEx
@@ -105,15 +113,45 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
 
       queue.queue.clear
       queue.correctQueue.clear
+      queue.incorrectQueue.clear
 
       // Continue beam search.
       for (i <- 0 until nextBeamSize) {
         val state = beam(i)
         state.value.lastSearchStep(state.env, state.logProb, queue, finished)
       }
+
+      numIters += 1
     }
-    
-    // TODO: loss for final beam top vs. correct.
+              
+    // Compute margin loss for final highest-scoring incorrect entry
+    // vs. correct.
+    val finalBestIncorrect = if (finished.incorrectQueue.size > 0) {
+      finished.incorrectQueue.getItems.slice(
+          0, finished.incorrectQueue.size).maxBy(_.logProb)
+    } else {
+      null
+    }
+        
+    val finalBestCorrect = if (finished.correctQueue.size > 0) {
+      finished.correctQueue.getItems.slice(
+          0, finished.correctQueue.size).maxBy(_.logProb)
+    } else {
+      null
+    }
+
+    if (finalBestIncorrect != null && finalBestCorrect != null &&
+        finalBestIncorrect.logProb + 1 > finalBestCorrect.logProb) {
+        // Margin violation
+      // println("m: end " + finalBestIncorrect.logProb + " " + finalBestCorrect.logProb)
+
+      // Add to the loss.
+      val beamScoreExpr = finalBestIncorrect.env.getScore(false)
+      val correctScoreExpr = finalBestCorrect.env.getScore(false)
+      
+      // XXX: allow different costs.
+      losses += ((beamScoreExpr + 1) - correctScoreExpr)
+    }
 
     if (losses.size > 0) {
       val lossExpr = sum(new ExpressionVector(losses))
@@ -130,7 +168,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
 
     cg.delete()
 
-    (loss, true)
+    loss
   }
 }
 
@@ -139,16 +177,27 @@ class BsoPpQueue[A](size: Int, val stateCost: ExecutionScore,
 
   val queue = new KbestQueue(size, Array.empty[(SearchState[A], Double)])
   val correctQueue = new KbestQueue(size, Array.empty[SearchState[A]])
+  val incorrectQueue = new KbestQueue(size, Array.empty[SearchState[A]])
+  
+  val EXECUTION_INCORRECT_VAR_NAME = "**bso_execution_incorrect**"
 
   override def offer(value: Pp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
     if (logProb > Double.NegativeInfinity) {
       val cost = stateCost(tag, choice, env)
 
-      val state = SearchState(value, env, logProb, tag, choice)
+      val nextEnv = if (cost != 0.0) {
+        env.setVar(EXECUTION_INCORRECT_VAR_NAME, null)
+      } else {
+        env
+      }
+      
+      val state = SearchState(value, nextEnv, logProb, tag, choice)
       queue.offer((state, cost), logProb)
 
-      if (cost == 0.0) {
+      if (nextEnv.isVarBound(EXECUTION_INCORRECT_VAR_NAME)) {
+        incorrectQueue.offer(state, logProb)
+      } else {
         correctQueue.offer(state, logProb)
       }
     }

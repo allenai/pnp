@@ -14,8 +14,15 @@ import com.google.common.base.Preconditions
 import org.allenai.pnp.Env
 
 
+/**
+ * Basic sequence-to-sequence model. This model encodes
+ * a source token sequence with an LSTM, then generates
+ * the target token sequence from an LSTM that is initialized
+ * from the source LSTM. 
+ */
 class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList[String],
-    val endTokenIndex: Int, forwardBuilder: LSTMBuilder, outputBuilder: LSTMBuilder, val model: PpModel) {
+    val endTokenIndex: Int, forwardBuilder: LSTMBuilder, outputBuilder: LSTMBuilder,
+    val model: PpModel) {
 
   var dropoutProb = -1.0
   val targetVocabInds = (0 until targetVocab.size()).toArray
@@ -27,7 +34,11 @@ class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList
     forwardBuilder.new_graph(cg)
     outputBuilder.new_graph(cg)
   }
-  
+
+  /**
+   * Encode the source tokens with the source LSTM, returning
+   * the LSTM's state.  
+   */
   private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int]): ExpressionVector = {
     val cg = computationGraph.cg
     
@@ -50,6 +61,12 @@ class Seq2Seq(val sourceVocab: IndexedList[String], val targetVocab: IndexedList
     return forwardBuilder.final_s
   }
   
+  /**
+   * Apply this model to a sequence of source tokens to produce a
+   * probabilistic neural program over target token sequences. 
+   * The (distribution over) target sequences can be approximated
+   * by running inference on the returned program.
+   */
   def apply(sourceTokens: Seq[Int]): Pp[List[Int]] = {
     for {
       cg <- computationGraph()

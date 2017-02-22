@@ -1,15 +1,17 @@
 package org.allenai.pnp
 
 import scala.collection.JavaConverters._
-import org.scalatest.Matchers
+
 import org.allenai.pnp.examples.Seq2Seq
-import edu.cmu.dynet.DynetParams
 import org.scalatest.FlatSpec
+import org.scalatest.Matchers
+
+import com.jayantkrish.jklol.training.NullLogFunction
+import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import com.jayantkrish.jklol.util.IndexedList
-import com.jayantkrish.jklol.training.NullLogFunction
+import com.jayantkrish.jklol.training.DefaultLogFunction
 
 class BsoTrainerSpec extends FlatSpec with Matchers {
   
@@ -47,9 +49,15 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     val cg = ComputationGraph.getNew
     val graph = seq2seq.model.getComputationGraph(cg)
 
-    val marginals = unconditional.beamSearch(10, 20, Env.init, null, graph, new NullLogFunction)
+    val marginals = unconditional.beamSearch(10, 10, Env.init, null, graph, new NullLogFunction)
     
     marginals.executions.size should be > 0
+    /*
+    for (x <- marginals.executions) {
+      println(x.logProb + " " + x.value.map(i => targetVocab.get(i)).mkString(" "))
+    }
+    */
+    
     marginals.executions(0).value.toList should be (expectedIndexes.toList)
   }
 
@@ -66,8 +74,7 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     }
     
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    // val trainer = new LoglikelihoodTrainer(1000, 100, false, model, sgd, new NullLogFunction())
-    val trainer = new BsoTrainer(1, 10, 10, model, sgd, new NullLogFunction())
+    val trainer = new BsoTrainer(50, 2, 10, model, sgd, new NullLogFunction())
     trainer.train(examples)
     
     for (d <- rawData) {
