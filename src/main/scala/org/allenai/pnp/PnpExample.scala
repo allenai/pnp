@@ -6,12 +6,12 @@ package org.allenai.pnp
   * filter on environments may be provided to further restrict the set
   * of conditional executions during inference.
   */
-case class PpExample[A](unconditional: Pp[A], conditional: Pp[A],
+case class PnpExample[A](unconditional: Pnp[A], conditional: Pnp[A],
     env: Env, conditionalExecutionScore: ExecutionScore) {
 }
 
-object PpExample {
-  def fromDistributions[A](unconditional: Pp[A], conditional: Pp[A]) = {
-    PpExample[A](unconditional, conditional, Env.init, ExecutionScore.zero)
+object PnpExample {
+  def fromDistributions[A](unconditional: Pnp[A], conditional: Pnp[A]) = {
+    PnpExample[A](unconditional, conditional, Env.init, ExecutionScore.zero)
   }
 }
