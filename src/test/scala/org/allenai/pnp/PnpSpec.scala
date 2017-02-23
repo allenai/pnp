@@ -19,7 +19,7 @@ import scala.collection.mutable.ListBuffer
 
 /** Test cases for the probabilistic programming monad.
   */
-class PpSpec extends FlatSpec with Matchers {
+class PnpSpec extends FlatSpec with Matchers {
 
   import DynetScalaHelpers._
   initialize(new DynetParams())
@@ -27,7 +27,7 @@ class PpSpec extends FlatSpec with Matchers {
   val TOLERANCE = 0.01
 
   "Pp" should "perform inference on choices" in {
-    val foo = Pp.chooseMap(Seq((1, 1.0), (2, 2.0)))
+    val foo = Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)))
 
     val values = foo.beamSearch(2)
     values.length should be(2)
@@ -37,7 +37,7 @@ class PpSpec extends FlatSpec with Matchers {
 
   it should "perform inference with successive operations" in {
     val foo = for (
-      x <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
+      x <- Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)));
       y = x + 1;
       z = x + 1
     ) yield (y)
@@ -50,9 +50,9 @@ class PpSpec extends FlatSpec with Matchers {
 
   it should "perform inference on multiple choices" in {
     val foo = for (
-      x <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
-      y <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)));
-      z <- Pp.chooseMap(Seq((1, 1.0), (2, 2.0)))
+      x <- Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)));
+      y <- Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)));
+      z <- Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)))
     ) yield (x + y + z)
 
     val values = foo.beamSearch(10)
@@ -62,12 +62,12 @@ class PpSpec extends FlatSpec with Matchers {
   }
 
   it should "perform inference on recursive functions" in {
-    def foo(k: Int): Pp[List[Boolean]] = {
+    def foo(k: Int): Pnp[List[Boolean]] = {
       if (k == 0) {
-        Pp.value(List.empty[Boolean])
+        Pnp.value(List.empty[Boolean])
       } else {
         for (
-          x <- Pp.chooseMap(Seq((true, 2.0), (false, 1.0)));
+          x <- Pnp.chooseMap(Seq((true, 2.0), (false, 1.0)));
           y <- foo(k - 1)
         ) yield (x :: y)
       }
@@ -82,12 +82,12 @@ class PpSpec extends FlatSpec with Matchers {
   }
 
   it should "truncate the beam during beam search" in {
-    def foo(k: Int): Pp[List[Int]] = {
+    def foo(k: Int): Pnp[List[Int]] = {
       if (k == 0) {
-        Pp.value(List.empty[Int])
+        Pnp.value(List.empty[Int])
       } else {
         for (
-          x <- Pp.chooseMap(Seq((k, 1.0), (k + 1, 2.0)));
+          x <- Pnp.chooseMap(Seq((k, 1.0), (k + 1, 2.0)));
           y <- foo(k - 1)
         ) yield (x :: y)
       }
@@ -98,12 +98,12 @@ class PpSpec extends FlatSpec with Matchers {
   }
 
   it should "collapse inference" in {
-    def foo(k: Int): Pp[List[Int]] = {
+    def foo(k: Int): Pnp[List[Int]] = {
       if (k == 0) {
-        Pp.value(List.empty[Int])
+        Pnp.value(List.empty[Int])
       } else {
         for (
-          x <- Pp.chooseMap(Seq((k, 1.0), (k + 1, 2.0)));
+          x <- Pnp.chooseMap(Seq((k, 1.0), (k + 1, 2.0)));
           y <- foo(k - 1)
         ) yield (x :: y)
       }
@@ -117,10 +117,10 @@ class PpSpec extends FlatSpec with Matchers {
   }
 
   it should "collapse inference (2)" in {
-    def twoFlips(): Pp[Int] = {
+    def twoFlips(): Pnp[Int] = {
       val pp = for {
-        x <- Pp.chooseMap(Seq((0, 1.0), (1, 2.0)))
-        y <- Pp.chooseMap(Seq((0, 1.0), (1, 2.0)))
+        x <- Pnp.chooseMap(Seq((0, 1.0), (1, 2.0)))
+        y <- Pnp.chooseMap(Seq((0, 1.0), (1, 2.0)))
       } yield {
         x + y
       }
@@ -128,9 +128,9 @@ class PpSpec extends FlatSpec with Matchers {
       pp.inOneStep()
     }
 
-    def foo(k: Int): Pp[List[Int]] = {
+    def foo(k: Int): Pnp[List[Int]] = {
       if (k == 0) {
-        Pp.value(List.empty[Int])
+        Pnp.value(List.empty[Int])
       } else {
         for (
           x <- twoFlips();
@@ -144,19 +144,19 @@ class PpSpec extends FlatSpec with Matchers {
   }
 
   it should "work for infinite lists" in {
-    def lm(label: List[String]): Pp[List[String]] = {
+    def lm(label: List[String]): Pnp[List[String]] = {
       val vocab = Seq(("the", 0.5), ("man", 0.25), ("jumped", 0.125), ("<end>", 0.125))
       for (
-        x <- Pp.chooseMap(vocab);
+        x <- Pnp.chooseMap(vocab);
         // TODO: scoring model here.
         rest <- if (label == null || x.equals(label.head)) {
           if (!x.equals("<end>")) {
             lm(label.tail)
           } else {
-            Pp.value(List.empty[String])
+            Pnp.value(List.empty[String])
           }
         } else {
-          Pp.fail
+          Pnp.fail
         };
 
         result = x :: rest
@@ -170,20 +170,20 @@ class PpSpec extends FlatSpec with Matchers {
   }
 
   it should "work with mutable state" in {
-    def foo(k: Int): Pp[Int] = {
+    def foo(k: Int): Pnp[Int] = {
       if (k <= 0) {
-        Pp.value(0)
+        Pnp.value(0)
       } else {
         for {
-          draw <- Pp.chooseMap(Seq((true, 2.0), (false, 1.0)));
+          draw <- Pnp.chooseMap(Seq((true, 2.0), (false, 1.0)));
           _ <- if (draw) {
-            Pp.setVar("foo", k.asInstanceOf[AnyRef])
+            Pnp.setVar("foo", k.asInstanceOf[AnyRef])
           } else {
-            Pp.value(())
+            Pnp.value(())
           };
 
           recurse <- foo(k - 1);
-          v <- Pp.getVar[Int]("foo")
+          v <- Pnp.getVar[Int]("foo")
         } yield {
           v
         }
@@ -202,14 +202,14 @@ class PpSpec extends FlatSpec with Matchers {
   }
 
   it should "use parameters and track choices" in {
-    def foo(k: Int): Pp[List[Int]] = {
+    def foo(k: Int): Pnp[List[Int]] = {
       if (k == 0) {
-        Pp.value(List.empty[Int])
+        Pnp.value(List.empty[Int])
       } else {
         for {
-          flip <- Pp.param("flip")
-          x <- Pp.choose(Array(k, k + 1), flip)
-          _ <- if (x == 2) { Pp.score(2.0) } else { Pp.score(1.0) }
+          flip <- Pnp.param("flip")
+          x <- Pnp.choose(Array(k, k + 1), flip)
+          _ <- if (x == 2) { Pnp.score(2.0) } else { Pnp.score(1.0) }
           y <- foo(k - 1)
         } yield (x :: y)
       }
@@ -217,7 +217,7 @@ class PpSpec extends FlatSpec with Matchers {
 
     val computationGraph = ComputationGraph.getNew    
 
-    val model = PpModel.init(false)
+    val model = PnpModel.init(false)
     val flipParam = model.addParameter("flip", Seq(2))
     flipParam.zero()
     

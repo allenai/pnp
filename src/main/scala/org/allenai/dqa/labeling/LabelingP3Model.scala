@@ -1,15 +1,15 @@
 package org.allenai.dqa.labeling
 
 import org.allenai.pnp.semparse.SemanticParser
-import org.allenai.pnp.PpExample
-import org.allenai.pnp.Pp
+import org.allenai.pnp.PnpExample
+import org.allenai.pnp.Pnp
 import org.allenai.pnp.Env
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.PnpModel
 
 class LabelingP3Model(val parser: SemanticParser,
     val executor: LabelingExecutor, val answerSelector: AnswerSelector) {
   
-  def exampleToPpExample(ex: PreprocessedLabelingExample): PpExample[Int] = {
+  def exampleToPnpExample(ex: PreprocessedLabelingExample): PnpExample[Int] = {
     val denotationDist = for {
       // TODO: stage beam search?
       lf <- parser.generateExpression(ex.tokenIds, ex.entityLinking)
@@ -31,7 +31,7 @@ class LabelingP3Model(val parser: SemanticParser,
       // in a single search step to reduce the possibility of search errors.
       correctAnswer <- (for {
         answer <- answerSelector.selectAnswer(denotation, ex.ex.answerOptions)
-        _ <- Pp.require(answer.equals(ex.ex.correctAnswer))
+        _ <- Pnp.require(answer.equals(ex.ex.correctAnswer))
       } yield {
         answer
       }).inOneStep()
@@ -40,10 +40,10 @@ class LabelingP3Model(val parser: SemanticParser,
     }
     
     val score = executor.labelToExecutionScore(ex.ex.diagramLabel)
-    PpExample(unconditional, conditional, Env.init, score)
+    PnpExample(unconditional, conditional, Env.init, score)
   }
   
-  def getModel: PpModel = {
+  def getModel: PnpModel = {
     // TODO: need to be able to append parameters from each model.
     parser.model
   }

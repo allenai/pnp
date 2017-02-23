@@ -2,8 +2,8 @@ package org.allenai.dqa.labeling
 
 import scala.collection.JavaConverters._
 
-import org.allenai.pnp.Pp
-import org.allenai.pnp.PpUtil
+import org.allenai.pnp.Pnp
+import org.allenai.pnp.PnpUtil
 
 import com.google.common.collect.Multimap
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
@@ -23,31 +23,31 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
 
   val bindings: Map[String, AnyRef] = Map(
       // Function bindings
-      ("tokensToPartLabel:<s,l>" -> PpUtil.wrap(tokensToPartLabel _)),
-      ("partLabelToPart:<l,p>" -> PpUtil.wrap(partLabelToPart _)),
+      ("tokensToPartLabel:<s,l>" -> PnpUtil.wrap(tokensToPartLabel _)),
+      ("partLabelToPart:<l,p>" -> PnpUtil.wrap(partLabelToPart _)),
 
       // TODO
       ("question:s" -> "TODO: put in the question text.")
       )
 
-  def tokensToPartLabel(tokens: String): Pp[String] = {
+  def tokensToPartLabel(tokens: String): Pnp[String] = {
     for {
-      labeledDiagram <- Pp.getVar[DiagramLabel](DIAGRAM_LABEL_VAR)
+      labeledDiagram <- Pnp.getVar[DiagramLabel](DIAGRAM_LABEL_VAR)
       // TODO: use text co-occurrence or something.
-      label <- Pp.choose(labeledDiagram.partLabels)
+      label <- Pnp.choose(labeledDiagram.partLabels)
     } yield {
       label
     }
   }
 
-  def partLabelToPart(partLabel: String): Pp[Part] = {
+  def partLabelToPart(partLabel: String): Pnp[Part] = {
     for {
-      labeledDiagram <- Pp.getVar[DiagramLabel](DIAGRAM_LABEL_VAR)
-      diagram <- Pp.getVar[Diagram](DIAGRAM_VAR)
+      labeledDiagram <- Pnp.getVar[DiagramLabel](DIAGRAM_LABEL_VAR)
+      diagram <- Pnp.getVar[Diagram](DIAGRAM_VAR)
       index = labeledDiagram.partLabels.indexOf(partLabel)
 
       // Fail if we haven't labeled any part with this label.
-      _ <- Pp.require(index >= 0)
+      _ <- Pnp.require(index >= 0)
     } yield {
       diagram.parts(index)
     }
@@ -55,15 +55,15 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
   
   /** Label a diagram with its type and a label for each part.
     */
-  def labelDiagram(diagram: Diagram): Pp[DiagramLabel] = {
+  def labelDiagram(diagram: Diagram): Pnp[DiagramLabel] = {
     for {
       // TODO: parameters
-      diagramType <- Pp.chooseTag(diagramTypes.items().asScala, diagram)
+      diagramType <- Pnp.chooseTag(diagramTypes.items().asScala, diagram)
       // TODO: don't treat parts as independent.
       permittedLabels = typePartMap.get(diagramTypes.getIndex(diagramType))
         .asScala.map(parts.get(_)).toList
       
-      partLabels <- PpUtil.map((x: Part) => labelPart(x, permittedLabels), diagram.parts.toList) 
+      partLabels <- PnpUtil.map((x: Part) => labelPart(x, permittedLabels), diagram.parts.toList) 
     } yield {
       DiagramLabel(diagramType, partLabels.toVector) 
     }
@@ -71,10 +71,10 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
 
   /** Label a single diagram part with one of the permitted labels. 
     */
-  def labelPart(part: Part, permittedLabels: List[String]): Pp[String] = {
+  def labelPart(part: Part, permittedLabels: List[String]): Pnp[String] = {
     for {
       // TODO: parameters
-      partLabel <- Pp.chooseTag(permittedLabels, part)
+      partLabel <- Pnp.chooseTag(permittedLabels, part)
     } yield {
       partLabel
     }
@@ -83,16 +83,16 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
   /**
    * Execute {@code lf} against {@code diagram}.
    */
-  def execute(lf: Expression2, diagram: Diagram): Pp[AnyRef] = {
+  def execute(lf: Expression2, diagram: Diagram): Pnp[AnyRef] = {
     println("executing: " + lf)
 
     for {
       // Generate a distribution over labeled diagrams.
-      _ <- Pp.setVar(DIAGRAM_VAR, diagram)
+      _ <- Pnp.setVar(DIAGRAM_VAR, diagram)
       labeledDiagram <- labelDiagram(diagram)
-      _ <- Pp.setVar(DIAGRAM_LABEL_VAR, labeledDiagram)
+      _ <- Pnp.setVar(DIAGRAM_LABEL_VAR, labeledDiagram)
       // Execute the logical form against the labeled diagrams.
-      value <- PpUtil.lfToPp(lf, bindings)
+      value <- PnpUtil.lfToPnp(lf, bindings)
     } yield {
       value
     }

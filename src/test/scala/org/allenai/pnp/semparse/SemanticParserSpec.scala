@@ -13,7 +13,7 @@ import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.PnpModel
 
 class SemanticParserSpec extends FlatSpec with Matchers {
   
@@ -37,7 +37,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   for (d <- data) {
     vocab.addAll(d._1.toList.asJava)
   }
-  val model = PpModel.init(true)
+  val model = PnpModel.init(true)
   val parser = SemanticParser.create(lexicon, vocab, model)
 
   "SemanticParser" should "generate application templates" in {

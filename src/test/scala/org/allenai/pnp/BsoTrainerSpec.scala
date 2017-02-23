@@ -36,15 +36,15 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     (sourceIndexes, targetIndexes)
   }
 
-  def getSeq2Seq(): Seq2Seq = {
-    val model = PpModel.init(false)
+  def getSeq2Seq(): Seq2Seq[String, String] = {
+    val model = PnpModel.init(false)
     Seq2Seq.create(sourceVocab, targetVocab, endTokenIndex, model)
   }
   
-  def runTest(seq2seq: Seq2Seq, input: String, expected: String): Unit = {    
+  def runTest(seq2seq: Seq2Seq[String, String], input: String, expected: String): Unit = {    
     val inputIndexes = input.split(" ").map(x => sourceVocab.getIndex(x)).toArray
     val expectedIndexes = expected.split(" ").map(x => targetVocab.getIndex(x)).toArray
-    val unconditional = seq2seq.apply(inputIndexes)
+    val unconditional = seq2seq.applyEncoded(inputIndexes)
       
     val cg = ComputationGraph.getNew
     val graph = seq2seq.model.getComputationGraph(cg)
@@ -68,9 +68,9 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     val examples = for {
       d <- indexedData
     } yield {
-      val unconditional = seq2seq.apply(d._1)
-      val oracle = seq2seq.generateExecutionOracle(d._2)
-      PpExample(unconditional, unconditional, Env.init, oracle)
+      val unconditional = seq2seq.applyEncoded(d._1)
+      val oracle = seq2seq.generateLabelCostEncoded(d._2)
+      PnpExample(unconditional, unconditional, Env.init, oracle)
     }
     
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
