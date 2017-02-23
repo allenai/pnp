@@ -450,7 +450,7 @@ extends ExecutionScore {
   }
 }
 
-class MaxExecutionScore(val scores: Seq[ExecutionScore]) {
+class MaxExecutionScore(val scores: Seq[ExecutionScore]) extends ExecutionScore {
   def apply(tag: Any, choice: Any, env: Env): Double = {
     return scores.map(s => s.apply(tag, choice, env)).max
   }
