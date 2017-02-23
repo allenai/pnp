@@ -43,7 +43,8 @@ import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.ActionSpace
 
-/** Command line program for training a semantic parser.
+/** Command line program for training a semantic parser 
+  * on the WikiTables data set.  
   */
 class WikiTablesSemanticParserCli extends AbstractCli() {
   
@@ -62,6 +63,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val typeDeclaration = new WikiTablesTypeDeclaration()
     val simplifier = ExpressionSimplifier.lambdaCalculus()
     val comparator = new SimplificationComparator(simplifier)
+    val logicalFormParser = ExpressionParser.expression2();
     
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
@@ -86,17 +88,17 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     println(vocab.size + " words")
     println("Read " + testData.size + " test examples")
 
-    val logicalFormParser = ExpressionParser.expression2();
     // Eliminate those examples that Sempre did not find correct logical forms for.
-    val trainPreprocessed = trainingData.flatMap(x => if (x.alternativeFormulas.isEmpty) None else Some(preprocessExample(x, vocab, logicalFormParser)))
-    val testPreprocessed = testData.flatMap(x => if (x.alternativeFormulas.isEmpty) None else Some(preprocessExample(x, vocab, logicalFormParser)))
-    
+    val trainPreprocessed = trainingData.filter(!_.alternativeFormulas.isEmpty).map(
+        x => preprocessExample(x, vocab, logicalFormParser))
+    val testPreprocessed = testData.filter(!_.alternativeFormulas.isEmpty).map(
+        x => preprocessExample(x, vocab, logicalFormParser))
+
     println("Found correct logical forms for " + trainPreprocessed.size + " training examples")
     println("Found correct logical forms for " + testPreprocessed.size + " test examples")
 
     val actionSpace = ActionSpace.fromExpressions(
         trainPreprocessed.map(_.getLogicalForms.asScala).flatten, typeDeclaration, false)
-
 
     // Remove specific numbers/rows/cells from the action space.
     // These need to be added back in on a per-table basis.
@@ -130,7 +132,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     
     val trainSeparatedLfs = getCcgDataset(trainPreprocessed)
     val testSeparatedLfs = getCcgDataset(testPreprocessed)
-    
 
     println("*** Validating types ***")
     SemanticParserUtils.validateTypes(trainSeparatedLfs, typeDeclaration)
@@ -159,10 +160,12 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
     acc
   }
-  
+
+  /**
+   * Converts a {@code CustomExample} into a {@code WikiTablesExample}. 
+   */
   def preprocessExample(ex: CustomExample, vocab: IndexedList[String],
                         lfParser: ExpressionParser[Expression2]): WikiTablesExample = {
-    // Takes a CustomExample and returns a WikiTablesExample
     val sent = new AnnotatedSentence(ex.getTokens(), ex.languageInfo.posTags)
     val unkedWords = sent.getWords.asScala.map(
         x => if (vocab.contains(x)) { x } else { WikiTablesSemanticParserCli.UNK })

@@ -40,7 +40,7 @@ public class WikiTablesDataProcessor {
   public static List<CustomExample> getDataset(String path, boolean inSempreFormat,
                                                boolean includeDerivations, int beamSize) {
     CustomExample.opts.allowNoAnnotation = true;
-    TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions";
+    TableKnowledgeGraph.opts.baseCSVDir = "data/wikitables/WikiTableQuestions";
     LanguageAnalyzer.opts.languageAnalyzer = "corenlp.CoreNLPAnalyzer";
     CoreNLPAnalyzer.opts.annotators = Arrays.asList(new String[] {"tokenize", "ssplit", "pos", "lemma", "ner"});
     EditDistanceFuzzyMatcher.opts.expandAbbreviations = true;

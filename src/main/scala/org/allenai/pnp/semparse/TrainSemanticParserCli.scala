@@ -212,7 +212,6 @@ object TrainSemanticParserCli {
     annotations.put("originalTokens", sent.getWords.asScala.toList)
     annotations.put("tokenIds", entityAnonymizedTokenIds.toArray)
     annotations.put("entityLinking", entityLinking)
-
     val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
         sent.getPosTags, annotations)
     
