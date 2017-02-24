@@ -13,6 +13,8 @@ sealed trait PnpContinuation[A, B] {
 }
 
 case class PnpContinuationFunction[A, B](val f: A => Pnp[B]) extends PnpContinuation[A, B] {
+  val endContinuation = new PnpEndContinuation[B]
+  
   override def prepend[D](g: D => Pnp[A]): PnpContinuation[D, B] = {
     PnpContinuationChain(g, this)
   }
@@ -23,7 +25,7 @@ case class PnpContinuationFunction[A, B](val f: A => Pnp[B]) extends PnpContinua
   
   override def searchStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[B],
       finished: PnpSearchQueue[B]): Unit = {
-    f(arg).lastSearchStep(env, logProb, queue, finished)
+    f(arg).searchStep(env, logProb, endContinuation, queue, finished)
   }
 }
 
@@ -41,5 +43,24 @@ case class PnpContinuationChain[A, B, C](val f: A => Pnp[B], val cont: PnpContin
   override def searchStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[C],
       finished: PnpSearchQueue[C]): Unit = {
     f(arg).searchStep(env, logProb, cont, queue, finished)
+  }
+}
+
+case class PnpEndContinuation[A]() extends PnpContinuation[A, A] {
+  override def prepend[D](g: D => Pnp[A]): PnpContinuation[D, A] = {
+    PnpContinuationChain(g, this)
+  }
+
+  override def append[D](g: PnpContinuation[A, D]): PnpContinuation[A, D] = {
+    if (g.isInstanceOf[PnpEndContinuation[A]]) {
+      return this.asInstanceOf[PnpContinuation[A,D]]
+    } else {
+      throw new UnsupportedOperationException("Cannot append to the end continuation")
+    }
+  }
+  
+  override def searchStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[A],
+      finished: PnpSearchQueue[A]): Unit = {
+    finished.offer(Pnp.value(arg), env, logProb, null, null, env)
   }
 }

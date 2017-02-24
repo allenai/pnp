@@ -46,12 +46,6 @@ trait Pnp[A] {
     continuation.searchStep(v._1, v._2, v._3, queue, finished)
   }
 
-  def lastSearchStep(env: Env, logProb: Double, queue: PnpSearchQueue[A],
-      finished: PnpSearchQueue[A]): Unit = {
-    val v = step(env, logProb, queue.graph, queue.log)
-    finished.offer(ValuePnp(v._1), v._2, v._3, null, null, v._2)
-  }
-
   def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double)
 
   // Methods that do not need to be overriden
@@ -75,6 +69,8 @@ trait Pnp[A] {
 
     val queue = new BeamPnpSearchQueue[A](beamSize, stateCost, graph, log)
     val finished = new BeamPnpSearchQueue[A](beamSize, stateCost, graph, log)
+    
+    val endContinuation = new PnpEndContinuation[A]()
 
     val startEnv = env.setLog(log)
     queue.offer(this, env, 0.0, null, null, env)
@@ -91,7 +87,10 @@ trait Pnp[A] {
 
       for (i <- 0 until beamSize) {
         val state = beam(i)
-        state.value.lastSearchStep(state.env, state.logProb, queue, finished)
+        // println(state.value)
+        state.value.searchStep(state.env, state.logProb, endContinuation, queue, finished)
+        
+        // state.value.lastSearchStep(state.env, state.logProb, queue, finished)
       }
     }
 
@@ -142,6 +141,11 @@ trait Pnp[A] {
   def inOneStep(): Pnp[A] = {
     CollapsedSearch(this)
   }
+  
+  def sample(k: Int, env: Env, stateCostArg: ExecutionScore,
+    graph: CompGraph, log: LogFunction) = {
+    
+  }
 }
 
 case class BindPnp[A, C](b: Pnp[C], f: PnpContinuation[C, A]) extends Pnp[A] {
@@ -150,11 +154,6 @@ case class BindPnp[A, C](b: Pnp[C], f: PnpContinuation[C, A]) extends Pnp[A] {
   override def searchStep[D](env: Env, logProb: Double, continuation: PnpContinuation[A,D],
     queue: PnpSearchQueue[D], finished: PnpSearchQueue[D]): Unit = {
     b.searchStep(env, logProb, f.append(continuation), queue, finished)
-  }
-
-  override def lastSearchStep(env: Env, logProb: Double, queue: PnpSearchQueue[A],
-      finished: PnpSearchQueue[A]): Unit = {
-    b.searchStep(env, logProb, f, queue, finished)
   }
 
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
@@ -172,11 +171,6 @@ case class CategoricalPnp[A](dist: Seq[(A, Double)], tag: Any) extends Pnp[A] {
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
     dist.foreach(x => queue.offer(BindPnp(ValuePnp(x._1), continuation), env, logProb + x._2,
         tag, x._1, env))
-  }
-
-  override def lastSearchStep(env: Env, logProb: Double, queue: PnpSearchQueue[A],
-      finished: PnpSearchQueue[A]): Unit = {
-    dist.foreach(x => finished.offer(ValuePnp(x._1), env, logProb + x._2, tag, x._1, env))
   }
 
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
@@ -228,16 +222,11 @@ case class CollapsedSearch[A](dist: Pnp[A]) extends Pnp[A] {
     queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     val wrappedQueue = new ContinuationPnpSearchQueue(queue, continuation)
     val nextQueue = new EnumeratePnpSearchQueue[A](queue.stateCost, queue.graph, queue.log, wrappedQueue)
+    val endContinuation = new PnpEndContinuation[A]()
+
+    dist.searchStep(env, logProb, endContinuation, nextQueue, wrappedQueue)
+  }
     
-    dist.lastSearchStep(env, logProb, nextQueue, wrappedQueue)
-  }
-  
-  override def lastSearchStep(env: Env, logProb: Double,
-      queue: PnpSearchQueue[A], finished: PnpSearchQueue[A]) = {
-    val nextQueue = new EnumeratePnpSearchQueue[A](queue.stateCost, queue.graph, queue.log, finished)
-    dist.lastSearchStep(env, logProb, nextQueue, finished)
-  }
-  
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
     throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
@@ -316,17 +305,6 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
     }
   }
 
-  override def lastSearchStep(env: Env, logProb: Double,
-      queue: PnpSearchQueue[A], finished: PnpSearchQueue[A]) = {
-      
-    val (paramTensor, numTensorValues) = getTensor(queue.graph)
-    val v = as_vector(paramTensor)
-    for (i <- 0 until numTensorValues) {
-      val nextEnv = env.addLabel(parameter, i)
-      finished.offer(ValuePnp(items(i)), nextEnv, logProb + v.get(i), tag, items(i), env)
-    }
-  }
-
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
       throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
@@ -336,11 +314,6 @@ case class StartTimerPnp(timerName: String) extends Pnp[Unit] {
   override def searchStep[B](env: Env, logProb: Double,
       continuation: PnpContinuation[Unit, B], queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     queue.offer(BindPnp(ValuePnp(()), continuation), env.startTimer(timerName), logProb, null, null, env)
-  }
-  
-  override def lastSearchStep(env: Env, logProb: Double,
-      queue: PnpSearchQueue[Unit], finished: PnpSearchQueue[Unit]) = {
-    queue.offer(ValuePnp(()), env.startTimer(timerName), logProb, null, null, env)
   }
   
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
@@ -353,11 +326,6 @@ case class StopTimerPnp(timerName: String) extends Pnp[Unit] {
   override def searchStep[B](env: Env, logProb: Double,
       continuation: PnpContinuation[Unit, B], queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     queue.offer(BindPnp(ValuePnp(()), continuation), env.stopTimer(timerName), logProb, null, null, env)
-  }
-  
-  override def lastSearchStep(env: Env, logProb: Double,
-      queue: PnpSearchQueue[Unit], finished: PnpSearchQueue[Unit]) = {
-    queue.offer(ValuePnp(()), env.stopTimer(timerName), logProb, null, null, env)
   }
   
   override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
