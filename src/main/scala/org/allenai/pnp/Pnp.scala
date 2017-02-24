@@ -41,12 +41,7 @@ trait Pnp[A] {
   /** Implements a single search step of beam search.
    */
   def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
-    queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    val v = step(env, logProb, queue.graph, queue.log)
-    continuation.searchStep(v._1, v._2, v._3, queue, finished)
-  }
-
-  def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double)
+    queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit
 
   // Methods that do not need to be overriden
 
@@ -155,10 +150,6 @@ case class BindPnp[A, C](b: Pnp[C], f: PnpContinuation[C, A]) extends Pnp[A] {
     queue: PnpSearchQueue[D], finished: PnpSearchQueue[D]): Unit = {
     b.searchStep(env, logProb, f.append(continuation), queue, finished)
   }
-
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
-    throw new UnsupportedOperationException("This method shouldn't ever get called.")
-  }
 }
 
 /** Categorical distribution representing a nondeterministic
@@ -172,47 +163,33 @@ case class CategoricalPnp[A](dist: Seq[(A, Double)], tag: Any) extends Pnp[A] {
     dist.foreach(x => queue.offer(BindPnp(ValuePnp(x._1), continuation), env, logProb + x._2,
         tag, x._1, env))
   }
-
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
-    throw new UnsupportedOperationException("This method shouldn't ever get called.")
-  }
 }
 
 case class ValuePnp[A](value: A) extends Pnp[A] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
-    (value, env, logProb)
+  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
+    queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
+    continuation.searchStep(value, env, logProb, queue, finished)
   }
 }
 
 case class ScorePnp(score: Double) extends Pnp[Unit] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
-    ((), env, logProb + Math.log(score))
+  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Unit,C],
+    queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
+    continuation.searchStep((), env, logProb + Math.log(score), queue, finished)
   }
 }
 
 case class GetEnv() extends Pnp[Env] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Env, Env, Double) = {
-    (env, env, logProb)
+  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Env,C],
+    queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
+    continuation.searchStep(env, env, logProb, queue, finished)
   }
 }
 
 case class SetEnv(nextEnv: Env) extends Pnp[Unit] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
-    ((), nextEnv, logProb)
-  }
-}
-
-case class SetVar(name: String, value: AnyRef) extends Pnp[Unit] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
-    val nextEnv = env.setVar(name, value)
-    ((), nextEnv, logProb)
-  }
-}
-
-case class SetVarInt(nameInt: Int, value: AnyRef) extends Pnp[Unit] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
-    val nextEnv = env.setVar(nameInt, value)
-    ((), nextEnv, logProb)
+  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Unit,C],
+    queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
+    continuation.searchStep((), nextEnv, logProb, queue, finished)
   }
 }
 
@@ -226,34 +203,14 @@ case class CollapsedSearch[A](dist: Pnp[A]) extends Pnp[A] {
 
     dist.searchStep(env, logProb, endContinuation, nextQueue, wrappedQueue)
   }
-    
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
-    throw new UnsupportedOperationException("This method shouldn't ever get called.")
-  }
 }
 
 // Classes for representing computation graph elements.
 
-case class ParameterPnp(name: String) extends Pnp[Expression] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction
-      ): (Expression, Env, Double) = {
-    val expression = parameter(graph.cg, graph.getParameter(name))
-    (expression, env, logProb)
-  }
-}
-
 case class ComputationGraphPnp() extends Pnp[CompGraph] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction
-      ): (CompGraph, Env, Double) = {
-    (graph, env, logProb)
-  }
-}
-
-case class FloatVectorPnp(dims: Dim, vector: FloatVector) extends Pnp[Expression] {
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction
-      ): (Expression, Env, Double) = {
-    val constNode = input(graph.cg, dims, vector)
-    (constNode, env, logProb)
+  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[CompGraph,C],
+    queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
+    continuation.searchStep(queue.graph, env, logProb, queue, finished)
   }
 }
 
@@ -304,10 +261,6 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
           tag, items(i), env)
     }
   }
-
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (A, Env, Double) = {
-      throw new UnsupportedOperationException("This method shouldn't ever get called.")
-  }
 }
 
 case class StartTimerPnp(timerName: String) extends Pnp[Unit] {
@@ -315,21 +268,12 @@ case class StartTimerPnp(timerName: String) extends Pnp[Unit] {
       continuation: PnpContinuation[Unit, B], queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     queue.offer(BindPnp(ValuePnp(()), continuation), env.startTimer(timerName), logProb, null, null, env)
   }
-  
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
-    throw new UnsupportedOperationException("This method shouldn't ever get called.")
-  }
 }
 
 case class StopTimerPnp(timerName: String) extends Pnp[Unit] {
-
   override def searchStep[B](env: Env, logProb: Double,
       continuation: PnpContinuation[Unit, B], queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     queue.offer(BindPnp(ValuePnp(()), continuation), env.stopTimer(timerName), logProb, null, null, env)
-  }
-  
-  override def step(env: Env, logProb: Double, graph: CompGraph, log: LogFunction): (Unit, Env, Double) = {
-    throw new UnsupportedOperationException("This method shouldn't ever get called.")
   }
 }
 
@@ -451,11 +395,23 @@ object Pnp {
     * {@code value} in the program's environment.
     */
   def setVar[A <: AnyRef](name: String, value: A): Pnp[Unit] = {
-    SetVar(name, value)
+    for {
+      env <- getEnv()
+      nextEnv = env.setVar(name, value)
+      result <- setEnv(nextEnv)
+    } yield {
+      result
+    }
   }
 
   def setVar[A <: AnyRef](nameInt: Int, value: A): Pnp[Unit] = {
-    SetVarInt(nameInt, value)
+    for {
+      env <- getEnv()
+      nextEnv = env.setVar(nameInt, value)
+      result <- setEnv(nextEnv)
+    } yield {
+      result
+    }
   }
 
   def isVarBound(name: String): Pnp[Boolean] = {
@@ -471,11 +427,23 @@ object Pnp {
 
   /** Get a neural network parameter by name.
     */
-  def param(name: String): Pnp[Expression] = { ParameterPnp(name) }
+  def param(name: String): Pnp[Expression] = { 
+    for {
+      cg <- computationGraph()
+    } yield {
+      parameter(cg.cg, cg.getParameter(name))
+    }
+  }
 
   /** Add a FloatVector to the computation graph as a constant.
     */
-  def constant(dims: Dim, vector: FloatVector): Pnp[Expression] = { FloatVectorPnp(dims, vector) }
+  def constant(dims: Dim, vector: FloatVector): Pnp[Expression] = { 
+    for {
+      cg <- computationGraph()
+    } yield {
+      input(cg.cg, dims, vector)
+    }
+  }
 
   /** Chooses an item. The ith item's score is the
     * ith index in parameter.
