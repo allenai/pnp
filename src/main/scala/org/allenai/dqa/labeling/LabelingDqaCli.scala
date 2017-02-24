@@ -108,7 +108,7 @@ class LabelingDqaCli extends AbstractCli {
   
   def validateParser(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser): Unit = {
     for (ex <- examples) {
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
       
       val lfDist = parser.generateExpression(ex.tokenIds, ex.entityLinking)
       val dist = lfDist.beamSearch(100, 100, Env.init, null, parser.model.getComputationGraph(cg), null)
