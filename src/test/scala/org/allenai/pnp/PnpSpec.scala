@@ -25,14 +25,28 @@ class PnpSpec extends FlatSpec with Matchers {
   initialize(new DynetParams())
 
   val TOLERANCE = 0.01
-
-  "Pp" should "perform inference on choices" in {
+  
+  "Pnp" should "perform inference on choices" in {
     val foo = Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)))
 
     val values = foo.beamSearch(2)
     values.length should be(2)
     values(0) should be((2, 2.0))
     values(1) should be((1, 1.0))
+    
+    
+    val numExecutions = 10000
+    val executions = for {
+      i <- 0 until numExecutions
+    } yield {
+      foo.sample()
+    }
+    
+    val oneProb = executions.filter(_.value == 1).length.toDouble / numExecutions
+    val twoProb = executions.filter(_.value == 2).length.toDouble / numExecutions
+    
+    oneProb should be(1.0 / 3 +- TOLERANCE)
+    twoProb should be(2.0 / 3 +- TOLERANCE)
   }
 
   it should "perform inference with successive operations" in {
