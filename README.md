@@ -166,7 +166,8 @@ We can then evaluate the network on an example:
 
 ```scala
 val model = PnpModel.init(true)
-// Initialize the network parameters 
+// Initialize the network parameters. The values are
+// chosen randomly.
 model.addParameter("layer1Weights", Seq(HIDDEN_DIM, FEATURE_VECTOR_DIM))
 model.addParameter("layer1Bias", Seq(HIDDEN_DIM))
 model.addParameter("layer2Weights", Seq(2, HIDDEN_DIM))
@@ -181,12 +182,18 @@ for (x <- marginals.executions) {
 }
 ```
 
-This returns something like:
+This prints something like:
 
 ```
 [Execution true -0.4261836111545563]
 [Execution false -1.058420181274414]
 ```
+
+Each execution has a single value that is an output of our program and
+a score derived from the neural network computation. In this case, the
+scores are log probabilities, but the scores may have different
+semantics depending on the way the model is defined and its parameters
+are trained.
 
 #### Defining Richer Models
 
@@ -216,6 +223,26 @@ def sequenceTag(xs: Seq[FloatVector]): Pnp[List[Boolean]] = {
 }
 ```
 
+We can now run this model on a sequence of feature vectors in the
+same way as the multilayer perceptron:
 
+```scala
+val featureVectors = Seq(new FloatVector(...), new FloatVector(...), new FloatVector(...))
+val dist = sequenceTag(featureVectors)
+val marginals = dist.beamSearch(5, model)
+for (x <- marginals.executions) {
+  println(x)
+}
+```
+
+This prints something like:
+
+```
+[Execution List(false, false, false) -0.5849744081497192]
+[Execution List(false, false, true) -2.120694875717163]
+[Execution List(true, false, false) -2.120694875717163]
+[Execution List(false, true, false) -2.120694875717163]
+[Execution List(true, false, true) -3.656415343284607]
+```
 
 TODO: finish docs

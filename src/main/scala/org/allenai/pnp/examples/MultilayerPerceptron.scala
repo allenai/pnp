@@ -47,7 +47,7 @@ object MultilayerPerceptron {
     }
   }
   
-  def pairwiseScore(left: Boolean, right: Boolean, cg: ComputationGraph): Expression = {
+  def labelNn(left: Boolean, right: Boolean, cg: ComputationGraph): Expression = {
     input(cg, 0.0f)
   }
   
@@ -58,8 +58,7 @@ object MultilayerPerceptron {
   
       cg <- computationGraph()
       _ <- if (rest.length > 0) {
-        val labelScore = pairwiseScore(cur, rest.head, cg.cg)
-        score(labelScore)
+        score(labelNn(cur, rest.head, cg.cg))
       } else {
         value(())
       }
