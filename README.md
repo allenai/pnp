@@ -2,7 +2,7 @@
 
 Probabilistic Neural Programming (PNP) is a Scala library for
 expressing, training and running inference in neural network models
-that **include discrete choices**. The enhanced expressivity of PNP
+that **include discrete choices**. The enhanced expressivity of PNP is
 useful for structured prediction, reinforcement learning, and latent
 variable models.
 
