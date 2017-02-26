@@ -132,7 +132,7 @@ distribution.
 #### Neural Networks
 
 Probabilistic neural programs have access to an underlying computation
-graph that is used to define neural networks.
+graph that is used to define neural networks:
 
 ```scala
 def mlp(x: FloatVector): Pnp[Boolean] = {
@@ -145,7 +145,7 @@ def mlp(x: FloatVector): Pnp[Boolean] = {
     // defined in a PnpModel that is passed to inference.
     weights1 <- param("layer1Weights")
     bias1 <- param("layer1Bias")
-    weights2 <- param("layer1Weights")
+    weights2 <- param("layer2Weights")
 
     // Input the feature vector to the computation graph and
     // run the multilayer perceptron to produce scores.
@@ -161,6 +161,61 @@ def mlp(x: FloatVector): Pnp[Boolean] = {
   }
 }
 ```
+
+We can then evaluate the network on an example:
+
+```scala
+val model = PnpModel.init(true)
+// Initialize the network parameters 
+model.addParameter("layer1Weights", Seq(HIDDEN_DIM, FEATURE_VECTOR_DIM))
+model.addParameter("layer1Bias", Seq(HIDDEN_DIM))
+model.addParameter("layer2Weights", Seq(2, HIDDEN_DIM))
+
+// Run the multilayer perceptron on featureVector
+val featureVector = new FloatVector(Seq(1.0f, 2, 3))
+val dist = mlp(featureVector)
+val marginals = dist.beamSearch(2, model)
+ 
+for (x <- marginals.executions) {
+  println(x)
+}
+```
+
+This returns something like:
+
+```
+[Execution true -0.4261836111545563]
+[Execution false -1.058420181274414]
+```
+
+#### Defining Richer Models
+
+Probabilistic neural programs can be easily composed to construct
+richer models. For example, we can define a CRF sequence tagger using
+the multilayer perceptron above:
+
+```scala
+def sequenceTag(xs: Seq[FloatVector]): Pnp[List[Boolean]] = {
+  xs.foldLeft(Pnp.value(List[Boolean]()))((x, y) => for {
+    cur <- mlp(y)
+    rest <- x
+  
+    cg <- computationGraph()
+    _ <- if (rest.length > 0) {
+      // Add a factor to the model that scores adjacent labels
+      // in the sequence. Here, labelScore runs a neural network
+      // whose inputs are cur and the next label, and whose output
+      // is a 1-element vector containing the score.
+      score(labelNn(cur, rest.head, cg.cg))
+    } else {
+      value(())
+    }
+  } yield {
+    cur :: rest
+  })
+}
+```
+
 
 
 TODO: finish docs

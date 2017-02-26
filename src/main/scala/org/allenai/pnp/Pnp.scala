@@ -120,6 +120,12 @@ trait Pnp[A] {
   def beamSearch(k: Int): Seq[(A, Double)] = {
     beamSearch(k, Env.init).executions.map(x => (x.value, x.prob))
   }
+  
+  def beamSearch(k: Int, model: PnpModel): PnpBeamMarginals[A] = {
+    val dynetCg = ComputationGraph.getNew()
+    val cg = model.getComputationGraph(dynetCg)
+    beamSearch(k, Env.init, cg)
+  }
 
   def beamSearch(k: Int, env: Env): PnpBeamMarginals[A] = {
     beamSearchWithFilter(k, env, (x: Env) => true)
