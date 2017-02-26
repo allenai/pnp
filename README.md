@@ -112,21 +112,32 @@ distribution.
 #### Neural Networks
 
 Probabilistic neural programs have access to an underlying computation
-graph that is used to define neural networks:
+graph that is used to define neural networks.
 
 ```scala
-def mlp(input: FloatVector): Pnp[Boolean] = {
+def mlp(x: FloatVector): Pnp[Boolean] = {
   for {
+    // Get the computation graph
     cg <- computationGraph()
-    weights1 <- param('layer1Weights')
-    weights2 <- param('layer1Weights')
 
-    inputExpression = input(cg, input)
-    scores = weights2 * tanh(weights1 * inputExpression)
+    // Get the parameters of a multilayer perceptron by name.
+    // The dimensionalities and values of these parameters are 
+    // defined in a PnpModel that is passed to inference.
+    weights1 <- param("layer1Weights")
+    bias1 <- param("layer1Bias")
+    weights2 <- param("layer1Weights")
 
-    label = choose(Seq(true, false), scores)
+    // Input the feature vector to the computation graph and
+    // run the multilayer perceptron to produce scores.
+    inputExpression = input(cg.cg, Seq(FEATURE_VECTOR_DIM), x)
+    scores = weights2 * tanh((weights1 * inputExpression) + bias1)
+
+     // Choose a label given the scores. Scores is expected to
+     // be a 2-element vector, where the first element is the score
+     // of true, etc.
+     y <- choose(Array(true, false), scores)
   } yield {
-    label
+    y
   }
 }
 ```
