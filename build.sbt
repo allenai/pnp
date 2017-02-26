@@ -17,8 +17,6 @@ libraryDependencies ++= Seq(
   "org.scalatest" %% "scalatest" % "3.0.0" % "test"
 )
 
-// For linked dynet library
-javaOptions += s"-Djava.library.path=lib"
 licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0"))
 
 bintrayOrganization := Some("allenai")
