@@ -15,7 +15,7 @@ import edu.cmu.dynet.Expression
   * expression have yet to be generated.
   */
 case class SemanticParserState(val parts: Map[Int, ExpressionPart],
-    val unfilledHoleIds: List[(Int, Type, Scope)], val nextId: Int,
+    val unfilledHoleIds: List[Hole], val nextId: Int,
     val numActions: Int, val templates: List[Template], val attentions: List[Expression]) {
 
   def decodeExpression(partId: Int): Expression2 = {
@@ -48,16 +48,53 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
   def getAttentions: Array[Expression] = {
     attentions.reverse.toArray
   }
+  
+  def nextHole(): Option[Hole] = {
+    if (unfilledHoleIds.size > 0) {
+      Some(unfilledHoleIds(0))
+    } else {
+      None
+    }
+  }
+
+  def fill(hole: Hole, part: ExpressionPart, newHoles: List[Hole], template: Template): SemanticParserState = {
+    Preconditions.checkArgument(unfilledHoleIds(0).id == hole.id)
+    val partTuple = (hole.id, part)
+    
+    val unfilledHoles = if (hole.repeated) {
+      unfilledHoleIds
+    } else {
+      unfilledHoleIds.drop(1)
+    }
+    val nextHoles = newHoles ++ unfilledHoles
+    
+    SemanticParserState(parts + partTuple, nextHoles, nextId + newHoles.length,
+        numActions + 1, template :: templates, attentions)
+  }
+
+  def drop(hole: Hole, template: Template): SemanticParserState = {
+    Preconditions.checkArgument(unfilledHoleIds(0).id == hole.id)
+    SemanticParserState(parts, unfilledHoleIds.drop(1), nextId,
+        numActions + 1, template :: templates, attentions)
+  }
+  
+  def addRootType(rootType: Type): SemanticParserState = {
+    Preconditions.checkState(unfilledHoleIds.length == 0 && numActions == 0,
+        "The root type can only be added at the beginning of parsing".asInstanceOf[AnyRef])
+    
+    val scope = Scope(List.empty)
+    SemanticParserState(parts, List(Hole(0, rootType, scope, false)), 1, 0, List(), List())
+  }
 }
 
 object SemanticParserState {
 
-  /** The start state of a semantic parser for generating
-    * an expression of type t.
+  /** The start state of a semantic parser. The expected
+    * use of this state is to call addRootType, followed by
+    * applying a sequence of templates.  
     */
-  def start(t: Type): SemanticParserState = {
-    val scope = Scope(List.empty)    
-    SemanticParserState(Map.empty, List((0, t, scope)), 1, 0, List(), List()) 
+  def start(): SemanticParserState = {
+    SemanticParserState(Map.empty, List(), 1, 0, List(), List()) 
   }
 }
 
@@ -70,3 +107,4 @@ case class ExpressionPart(val expr: Expression2,
   }
 }
 
+case class Hole(id: Int, t: Type, scope: Scope, repeated: Boolean)

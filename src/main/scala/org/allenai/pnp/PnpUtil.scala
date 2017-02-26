@@ -9,7 +9,7 @@ import com.google.common.base.Preconditions
 /** Utilities for converting logical forms represented using
   * {@code Expression2} to neural probabilistic programs.
   */
-object PpUtil {
+object PnpUtil {
 
   /** Convert {@code lf} to a neural probabilistic program.
     * {@code bindings} represents the environment in which
@@ -19,26 +19,26 @@ object PpUtil {
     * in {@code bindings}.
     *
     * Non-function values in bindings can be of any type.
-    * Functions must have type Vector[AnyRef] => Pp[AnyRef].
+    * Functions must have type Vector[AnyRef] => Pnp[AnyRef].
     * The wrap functions below can be used to conveniently
     * convert existing functions to this type.
     */
-  def lfToPp(lf: Expression2, bindings: Map[String, AnyRef]): Pp[AnyRef] = {
+  def lfToPnp(lf: Expression2, bindings: Map[String, AnyRef]): Pnp[AnyRef] = {
     if (lf.isConstant()) {
       if (lf.isStringValue()) {
-        Pp.value(lf.getStringValue)
+        Pnp.value(lf.getStringValue)
       } else {
         // Look up the constant's value in bindings.
         val valueOption = bindings.get(lf.getConstant)
         Preconditions.checkState(valueOption.isDefined, "Unbound variable: %s", lf.getConstant)
 
         val value = valueOption.get
-        if (value.isInstanceOf[Pp[_]]) {
-          value.asInstanceOf[Pp[AnyRef]]
+        if (value.isInstanceOf[Pnp[_]]) {
+          value.asInstanceOf[Pnp[AnyRef]]
         } else {
-          // Wrap non-Pp values to guarantee that every
-          // expression evaluates to a Pp[AnyRef].
-          Pp.value(value)
+          // Wrap non-Pnp values to guarantee that every
+          // expression evaluates to a Pnp[AnyRef].
+          Pnp.value(value)
         }
       }
     } else if (StaticAnalysis.isLambda(lf)) {
@@ -46,20 +46,20 @@ object PpUtil {
       val args = StaticAnalysis.getLambdaArguments(lf).asScala
       val body = StaticAnalysis.getLambdaBody(lf)
 
-      def lambdaValue(argList: Vector[AnyRef]): Pp[AnyRef] = {
+      def lambdaValue(argList: Vector[AnyRef]): Pnp[AnyRef] = {
         val newBindings = bindings ++ args.zip(argList)
-        lfToPp(body, newBindings)
+        lfToPnp(body, newBindings)
       }
-      Pp.value(lambdaValue _)
+      Pnp.value(lambdaValue _)
     } else {
       // Function application.
       // Generate the distributions over values for the function
       // and each of its arguments. 
-      val subexpressionValues = lf.getSubexpressions.asScala.map(x => lfToPp(x, bindings))
-      val subexpressionListPp = subexpressionValues.foldLeft(Pp.value(Vector[AnyRef]()))(
-        (vecPp, valPp) => for {
-          x <- vecPp
-          y <- valPp
+      val subexpressionValues = lf.getSubexpressions.asScala.map(x => lfToPnp(x, bindings))
+      val subexpressionListPnp = subexpressionValues.foldLeft(Pnp.value(Vector[AnyRef]()))(
+        (vecPnp, valPnp) => for {
+          x <- vecPnp
+          y <- valPnp
         } yield {
           x :+ y
         }
@@ -67,19 +67,19 @@ object PpUtil {
 
       // Apply each possible function to its arguments. 
       for {
-        valueList <- subexpressionListPp
+        valueList <- subexpressionListPnp
         args = valueList.slice(1, valueList.size)
         numArgs = args.size
         func = valueList(0)
 
-        value <- func.asInstanceOf[AnyRef => Pp[AnyRef]].apply(args)
+        value <- func.asInstanceOf[AnyRef => Pnp[AnyRef]].apply(args)
       } yield {
         value
       }
     }
   }
 
-  def wrap[A, P](f: A => Pp[P]): (Vector[AnyRef] => Pp[P]) = {
+  def wrap[A, P](f: A => Pnp[P]): (Vector[AnyRef] => Pnp[P]) = {
     x: Vector[AnyRef] =>
       {
         Preconditions.checkArgument(
@@ -90,7 +90,7 @@ object PpUtil {
       }
   }
 
-  def wrap[A, B, P](f: (A, B) => Pp[P]): (Vector[AnyRef] => Pp[P]) = {
+  def wrap[A, B, P](f: (A, B) => Pnp[P]): (Vector[AnyRef] => Pnp[P]) = {
     x: Vector[AnyRef] =>
       {
         Preconditions.checkArgument(
@@ -101,30 +101,30 @@ object PpUtil {
       }
   }
 
-  def wrap2[A, P](f: A => P): (Vector[AnyRef] => Pp[P]) = {
+  def wrap2[A, P](f: A => P): (Vector[AnyRef] => Pnp[P]) = {
     x: Vector[AnyRef] =>
       {
         Preconditions.checkArgument(
           x.size == 1,
           "Wrong number of arguments. Expected 1 got %s", x.size.asInstanceOf[AnyRef]
         )
-        Pp.value(f(x(0).asInstanceOf[A]))
+        Pnp.value(f(x(0).asInstanceOf[A]))
       }
   }
 
-  def wrap2[A, B, P](f: (A, B) => P): (Vector[AnyRef] => Pp[P]) = {
+  def wrap2[A, B, P](f: (A, B) => P): (Vector[AnyRef] => Pnp[P]) = {
     x: Vector[AnyRef] =>
       {
         Preconditions.checkArgument(
           x.size == 2,
           "Wrong number of arguments. Expected 2 got %s", x.size.asInstanceOf[AnyRef]
         )
-        Pp.value(f(x(0).asInstanceOf[A], x(1).asInstanceOf[B]))
+        Pnp.value(f(x(0).asInstanceOf[A], x(1).asInstanceOf[B]))
       }
   }
 
-  def filter[A](f: AnyRef => Pp[Boolean], elts: List[A]): Pp[List[A]] = {
-    elts.foldRight(Pp.value(List[A]()))(
+  def filter[A](f: AnyRef => Pnp[Boolean], elts: List[A]): Pnp[List[A]] = {
+    elts.foldRight(Pnp.value(List[A]()))(
       (elt, list) => for {
         t <- f(Vector(elt))
         l <- list
@@ -138,8 +138,9 @@ object PpUtil {
     )
   }
   
-  def map[A,B](f: A => Pp[B], elts: List[A]): Pp[List[B]] = {
-    elts.foldRight(Pp.value(List[B]()))(
+  // TODO: make this work for any seq type.
+  def map[A,B](f: A => Pnp[B], elts: List[A]): Pnp[List[B]] = {
+    elts.foldRight(Pnp.value(List[B]()))(
       (elt, list) => for {
         mapped <- f(elt)
         l <- list

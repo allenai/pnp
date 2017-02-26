@@ -1,6 +1,26 @@
-# pnp
+# Probabilistic Neural Programs
 
-Scala library for probabilistic neural programming. 
+Probabilistic Neural Programming (PNP) is a Scala library for
+expressing, training and running inference in neural network models
+that **include discrete choices**. The enhanced expressivity of PNP
+useful for structured prediction, reinforcement learning, and latent
+variable models.
+
+Probabilistic neural programs have several advantages over computation
+graph libraries for neural networks, such as TensorFlow:
+
+* **Probabilistic inference** is implemented within the library. For
+  example, running a beam search to (approximately) generate the
+  highest-scoring output sequence of a sequence-to-sequence model
+  takes 1 line of code in PNP.
+* **Additional training algorithms** that require running inference
+  during training are part of the library. This includes
+  learning-to-search algorithms, such as LaSO, reinforcement learning,
+  and training latent variable models.
+* **Computation graphs** are a strict subset of probabilistic neural
+  programs. We use [DyNet](https://github.com/clab/dynet) to express
+  neural networks, which provides a rich set of operations and
+  efficient training.
 
 ## Installation
 
