@@ -206,10 +206,10 @@ semantics depending on the way the model is defined and its parameters
 are trained.
 
 Pnp uses Dynet as the underlying neural network library, which
-provides a rich set of primitives (e.g., LSTMs). See the documentation
-
-TODO: http://dynet.readthedocs.io/en/latest/install.html
-TODO: https://github.com/allenai/dynet/tree/master/swig
+provides a rich set of operations (e.g., LSTMs). See the [Dynet
+documentation](http://dynet.readthedocs.io/en/latest/operations.html)
+for details, along with the documentation for [Dynet in
+Scala](http://dynet.readthedocs.io/en/latest/operations.html).
 
 TODO: document usage of RNNBuilders, which are a bit tricky.
 
