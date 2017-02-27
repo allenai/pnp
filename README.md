@@ -208,8 +208,8 @@ are trained.
 Pnp uses Dynet as the underlying neural network library, which
 provides a rich set of operations (e.g., LSTMs). See the [Dynet
 documentation](http://dynet.readthedocs.io/en/latest/operations.html)
-for details, along with the documentation for [Dynet in
-Scala](http://dynet.readthedocs.io/en/latest/operations.html).
+for details, along with the documentation for [Dynet Scala
+bindings](https://github.com/allenai/dynet/tree/master/swig).
 
 TODO: document usage of RNNBuilders, which are a bit tricky.
 
