@@ -218,8 +218,8 @@ TODO: document usage of RNNBuilders, which have to be used statelessly.
 ### Defining Richer Models
 
 Probabilistic neural programs can be easily composed to construct
-richer models. For example, we can define a CRF sequence tagger using
-the multilayer perceptron above:
+richer models using `for {...} yield {...}`. For example, we can
+define a CRF sequence tagger using the multilayer perceptron above:
 
 ```scala
 def sequenceTag(xs: Seq[FloatVector]): Pnp[List[Boolean]] = {

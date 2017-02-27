@@ -544,6 +544,9 @@ object Pnp {
   }
 
   // Methods for interacting with the computation graph
+  
+  /** Get the computation graph
+    */
   def computationGraph(): Pnp[CompGraph] = { ComputationGraphPnp() }
 
   /** Get a neural network parameter by name.
