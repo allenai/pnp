@@ -116,9 +116,6 @@ trait Pnp[A] {
 
   // Version of beam search for programs that don't have trainable
   // parameters
-  def beamSearch(k: Int): PnpBeamMarginals[A] = {
-    beamSearch(k, Env.init)
-  }
   
   def beamSearch(k: Int, model: PnpModel): PnpBeamMarginals[A] = {
     val dynetCg = ComputationGraph.getNew()
