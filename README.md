@@ -59,9 +59,11 @@ define and train a model. The typical usage has three steps:
    constructing the appropriate `Pnp[X]` object, then running
    inference on this object with trained parameters.
 
-These steps are illustrated in detail for a sequence-to-sequence
-neural translation model in
-[Seq2Seq2.scala](src/main/scala/org/allenai/pnp/examples/Seq2Seq.scala).
+These steps are illustrated in detail for a sequence-to-sequence model
+in
+[Seq2Seq2.scala](src/main/scala/org/allenai/pnp/examples/Seq2Seq.scala). For
+a more complex example, run the [GeoQuery semantic parsing
+experiment](experiments/geoquery/scripts/example.sh).
 
 ## Defining Probabilistic Neural Programs
 
