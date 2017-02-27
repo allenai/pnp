@@ -63,7 +63,7 @@ These steps are illustrated in detail for a sequence-to-sequence
 neural translation model in
 [Seq2Seq2.scala](src/main/scala/org/allenai/pnp/examples/Seq2Seq.scala).
 
-### Defining Probabilistic Neural Programs
+## Defining Probabilistic Neural Programs
 
 Probabilistic neural programs are specified by writing the forward
 computation of a neural network, using the `choose` operation to
@@ -93,7 +93,7 @@ nnParams = ...
 val dist = pnp.beamSearch(10, nnParams)
 ```
 
-#### Choose
+### Choose
 
 The `choose` operator defines a distribution over a list of values:
 
@@ -139,7 +139,7 @@ This prints out the expected probabilities:
 {false=0.75, true=0.25}
 ```
 
-#### Neural Networks
+### Neural Networks
 
 Probabilistic neural programs have access to an underlying computation
 graph that is used to define neural networks:
@@ -211,9 +211,9 @@ documentation](http://dynet.readthedocs.io/en/latest/operations.html)
 for details, along with the documentation for [Dynet Scala
 bindings](https://github.com/allenai/dynet/tree/master/swig).
 
-TODO: document usage of RNNBuilders, which are a bit tricky.
+TODO: document usage of RNNBuilders, which have to be used statelessly.
 
-#### Defining Richer Models
+### Defining Richer Models
 
 Probabilistic neural programs can be easily composed to construct
 richer models. For example, we can define a CRF sequence tagger using
@@ -269,9 +269,10 @@ This prints something like:
 [Execution List(true, false, true) -0.42748916149139404]
 ```
 
-### Training
+## Training
 
 TODO
 
-### Inference
+## Inference
 
+TODO
