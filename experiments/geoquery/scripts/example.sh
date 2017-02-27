@@ -1,5 +1,9 @@
 #!/bin/bash -e
 
+# Run this script from the root directory to train and evaluate
+# a semantic parser on the GeoQuery data set:
+# ./experiments/geoquery/scripts/example.sh
+
 TRAIN="data/geoquery/all_folds.ccg"
 NP_LIST="data/geoquery/np_list.ccg"
 TEST="data/geoquery/test.ccg"
