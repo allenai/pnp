@@ -17,7 +17,7 @@ graph libraries for neural networks, such as TensorFlow:
   during training are part of the library. This includes
   learning-to-search algorithms, such as LaSO, reinforcement learning,
   and training latent variable models.
-* **Computation graphs** are a strict subset of probabilistic neural
+* **Computation graphs** are a subset of probabilistic neural
   programs. We use [DyNet](https://github.com/clab/dynet) to express
   neural networks, which provides a rich set of operations and
   efficient training.
