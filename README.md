@@ -32,7 +32,7 @@ the following commands from the `pnp` root directory:
 ```
 cd lib
 ln -s <PATH_TO_DYNET>/build/swig/dynet_swigJNI_scala.jar .
-ln -s <PATH_TO_DYNET>/build/swig/libdynet_swig.jnilib .
+ln -s <PATH_TO_DYNET>/build/swig/dynet_swigJNI_dylib.jar .
 ```
 
 That's it! Verify that your installation works by running `sbt test`
@@ -41,22 +41,21 @@ in the root directory.
 ## Usage
 
 This section describes how to use probabilistic neural programs to
-define and train a model. The typical usage has four steps:
+define and train a model. The typical usage has three steps:
 
-1. **Define the model.** Models are implemented by writing a function
+1. **Define a model.** Models are implemented by writing a function
    that takes your problem input and outputs `Pnp[X]` objects. The
    probabilistic neural program type `Pnp[X]` represents a function
    from neural network parameters to probability distributions over
    values of type `X`. Each program describes a (possibly infinite)
    space of executions, each of which returns a value of type `X`.
-2. **Generate labels.** Labels are implemented as functions that assign
-   costs to program executions or as conditional distributions over
-   correct executions.
-3. **Train.** Training is performed by passing a list of examples to a
-   `Trainer`, where each example consists of a `Pnp[X]` object and a
-   label. Many training algorithms can be used, from loglikelihood to
-   learning-to-search algorithms.
-4. **Run the model.** A model can be runned on a new input by
+2. **Train.** Training is performed by passing a list of examples
+   to a `Trainer`, where each example consists of a `Pnp[X]` object
+   and a label. Labels are implemented as functions that assign costs
+   to program executions or as conditional distributions over correct
+   executions. Many training algorithms can be used, from
+   loglikelihood to learning-to-search algorithms.
+3. **Run the model.** A model can be runned on a new input by
    constructing the appropriate `Pnp[X]` object, then running
    inference on this object with trained parameters.
 
@@ -99,7 +98,7 @@ val dist = pnp.beamSearch(10, nnParams)
 The `choose` operator defines a distribution over a list of values:
 
 ```scala
-val flip: Pnp[Boolean] = choose(Seq(true, false), Seq(0.5, 0.5))
+val flip: Pnp[Boolean] = choose(Array(true, false), Array(0.5, 0.5))
 ```
 
 This snippet creates a probability distribution that returns either
@@ -127,7 +126,18 @@ This program returns `true` if two independent draws from `flip` both
 return `true`. The notation `x <- flip` can be thought of as drawing a
 value from `flip` and assigning it to `x`. However, we can only use
 the value within the for/yield block to construct another probability
-distribution.
+distribution. We can now run inference on this object:
+
+```scala
+val marginals3 = twoFlips.beamSearch(5)
+println(marginals3.marginals().getProbabilityMap)
+```
+
+This prints out the expected probabilities:
+
+```
+{false=0.75, true=0.25}
+```
 
 #### Neural Networks
 
@@ -173,7 +183,7 @@ model.addParameter("layer1Bias", Seq(HIDDEN_DIM))
 model.addParameter("layer2Weights", Seq(2, HIDDEN_DIM))
 
 // Run the multilayer perceptron on featureVector
-val featureVector = new FloatVector(Seq(1.0f, 2, 3))
+val featureVector = new FloatVector(Seq(1.0f, 2.0f, 3.0f))
 val dist = mlp(featureVector)
 val marginals = dist.beamSearch(2, model)
  
@@ -195,6 +205,14 @@ scores are log probabilities, but the scores may have different
 semantics depending on the way the model is defined and its parameters
 are trained.
 
+Pnp uses Dynet as the underlying neural network library, which
+provides a rich set of primitives (e.g., LSTMs). See the documentation
+
+TODO: http://dynet.readthedocs.io/en/latest/install.html
+TODO: https://github.com/allenai/dynet/tree/master/swig
+
+TODO: document usage of RNNBuilders, which are a bit tricky.
+
 #### Defining Richer Models
 
 Probabilistic neural programs can be easily composed to construct
@@ -206,11 +224,11 @@ def sequenceTag(xs: Seq[FloatVector]): Pnp[List[Boolean]] = {
   xs.foldLeft(Pnp.value(List[Boolean]()))((x, y) => for {
     cur <- mlp(y)
     rest <- x
-  
+
     cg <- computationGraph()
     _ <- if (rest.length > 0) {
       // Add a factor to the model that scores adjacent labels
-      // in the sequence. Here, labelScore runs a neural network
+      // in the sequence. Here, labelNn runs a neural network
       // whose inputs are cur and the next label, and whose output
       // is a 1-element vector containing the score.
       score(labelNn(cur, rest.head, cg.cg))
@@ -227,6 +245,12 @@ We can now run this model on a sequence of feature vectors in the
 same way as the multilayer perceptron:
 
 ```scala
+// Same model as before, but make it globally normalized 
+// and add some more parameters for labelNn
+model.locallyNormalized = false
+model.addLookupParameter("left", 2, Seq(LABEL_DIM))
+model.addLookupParameter("right", 2, Seq(LABEL_DIM))
+
 val featureVectors = Seq(new FloatVector(...), new FloatVector(...), new FloatVector(...))
 val dist = sequenceTag(featureVectors)
 val marginals = dist.beamSearch(5, model)
@@ -238,11 +262,16 @@ for (x <- marginals.executions) {
 This prints something like:
 
 ```
-[Execution List(false, false, false) -0.5849744081497192]
-[Execution List(false, false, true) -2.120694875717163]
-[Execution List(true, false, false) -2.120694875717163]
-[Execution List(false, true, false) -2.120694875717163]
-[Execution List(true, false, true) -3.656415343284607]
+[Execution List(true, true, true) 5.28779661655426]
+[Execution List(false, true, true) 1.7529568672180176]
+[Execution List(true, true, false) 1.4970757961273193]
+[Execution List(true, false, false) -0.007531404495239258]
+[Execution List(true, false, true) -0.42748916149139404]
 ```
 
-TODO: finish docs
+### Training
+
+TODO
+
+### Inference
+

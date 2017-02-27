@@ -1,13 +1,14 @@
 package org.allenai.pnp
 
+import scala.collection.JavaConverters._
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
-
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
 import edu.cmu.dynet.DynetScalaHelpers._
+import scala.collection.mutable.MapBuilder
 
 /** Probabilistic neural program monad. Pnp[X] represents a
   * function from neural network parameters to a probabilistic
@@ -115,8 +116,8 @@ trait Pnp[A] {
 
   // Version of beam search for programs that don't have trainable
   // parameters
-  def beamSearch(k: Int): Seq[(A, Double)] = {
-    beamSearch(k, Env.init).executions.map(x => (x.value, x.prob))
+  def beamSearch(k: Int): PnpBeamMarginals[A] = {
+    beamSearch(k, Env.init)
   }
   
   def beamSearch(k: Int, model: PnpModel): PnpBeamMarginals[A] = {
@@ -435,6 +436,7 @@ class PnpBeamMarginals[A](val executions: Seq[Execution[A]], val graph: CompGrap
     }
 
     counts
+    // .getCountMap.asScala.map(x => (x._1, x._2.doubleValue())).toMap
   }
 
   def condition(pred: (A, Env) => Boolean): PnpBeamMarginals[A] = {

@@ -29,7 +29,7 @@ class PnpSpec extends FlatSpec with Matchers {
   "Pnp" should "perform inference on choices" in {
     val foo = Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)))
 
-    val values = foo.beamSearch(2)
+    val values = foo.beamSearch(2).executions.map(x => (x.value, x.prob))
     values.length should be(2)
     values(0) should be((2, 2.0))
     values(1) should be((1, 1.0))
@@ -56,7 +56,7 @@ class PnpSpec extends FlatSpec with Matchers {
       z = x + 1
     ) yield (y)
 
-    val values = foo.beamSearch(2)
+    val values = foo.beamSearch(2).executions.map(x => (x.value, x.prob))
     values.length should be(2)
     values(0) should be((3, 2.0))
     values(1) should be((2, 1.0))
@@ -69,7 +69,7 @@ class PnpSpec extends FlatSpec with Matchers {
       z <- Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)))
     ) yield (x + y + z)
 
-    val values = foo.beamSearch(10)
+    val values = foo.beamSearch(10).executions.map(x => (x.value, x.prob))
     values.length should be(8)
     values(0)._1 should be(6)
     values(0)._2 should be(8.0 +- TOLERANCE)
@@ -87,7 +87,7 @@ class PnpSpec extends FlatSpec with Matchers {
       }
     }
 
-    val values = foo(2).beamSearch(100)
+    val values = foo(2).beamSearch(100).executions.map(x => (x.value, x.prob))
     values.length should be(4)
     values(0)._1 should be(List(true, true))
     values(0)._2 should be(4.0 +- TOLERANCE)
@@ -107,7 +107,7 @@ class PnpSpec extends FlatSpec with Matchers {
       }
     }
 
-    val values = foo(100).beamSearch(100)
+    val values = foo(100).beamSearch(100).executions.map(x => (x.value, x.prob))
     values.length should be(100)
   }
 
@@ -177,7 +177,7 @@ class PnpSpec extends FlatSpec with Matchers {
       ) yield (result)
     }
 
-    val values = lm(List("the", "man", "<end>")).beamSearch(10)
+    val values = lm(List("the", "man", "<end>")).beamSearch(10).executions.map(x => (x.value, x.prob))
     values.length should be(1)
     values(0)._1 should be(List("the", "man", "<end>"))
     values(0)._2 should be(0.5 * 0.25 * 0.125 +- TOLERANCE)
