@@ -34,22 +34,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         log.stopTimer("pp_loglikelihood/forward")
         
         log.startTimer("pp_loglikelihood/build_loss")
-        var exLosses = ListBuffer[Expression]()
-        for (conditionalEx <- conditional.executions) {
-          val labeledExpressions = conditionalEx.env.labelNodeIds
-          val labelIndexes = conditionalEx.env.labels
-        
-          var exLoss: Expression = null          
-          for ((expr, labelInd) <- labeledExpressions.zip(labelIndexes)) {
-            val loss = pickneglogsoftmax(expr, labelInd)
-            if (exLoss == null) {
-              exLoss = loss
-            } else {
-              exLoss = (exLoss + loss)
-            }
-          }
-          exLosses += exLoss
-        }
+        val exLosses = conditional.executions.map(_.env.getScore(true, cg))
         
         val lossExpr = if (exLosses.length == 0) {
           Preconditions.checkState(sumMultipleExecutions,

@@ -20,8 +20,6 @@ libraryDependencies ++= Seq(
   "io.spray" %%  "spray-json" % "1.3.3"
 )
 
-// For linked dynet library
-javaOptions += s"-Djava.library.path=lib"
 licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0"))
 
 bintrayOrganization := Some("allenai")

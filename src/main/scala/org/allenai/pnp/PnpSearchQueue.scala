@@ -30,13 +30,15 @@ class EnumeratePnpSearchQueue[A] (
     val graph: CompGraph, val log: LogFunction,
     val finished: PnpSearchQueue[A]
 ) extends PnpSearchQueue[A] {
+  val endContinuation = new PnpEndContinuation[A]
+  
   override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
     myEnv.pauseTimers()
     val stateLogProb = stateCost(tag, choice, env) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
       env.resumeTimers()
-      value.lastSearchStep(env, logProb, this, finished)
+      value.searchStep(env, logProb, endContinuation, this, finished)
       env.pauseTimers()
     }
     myEnv.resumeTimers()

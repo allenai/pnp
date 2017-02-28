@@ -52,6 +52,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
 
     val queue = new BsoPnpQueue[A](beamSize, stateCost, graph, log)
     val finished = new BsoPnpQueue[A](beamSize, stateCost, graph, log)
+    val endContinuation = new PnpEndContinuation[A]()
 
     val startEnv = env.setLog(log)
     queue.offer(example.unconditional, env, 0.0, null, null, env)
@@ -126,7 +127,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       log.startTimer("bso/beam_search/search_step")
       for (i <- 0 until nextBeamSize) {
         val state = beam(i)
-        state.value.lastSearchStep(state.env, state.logProb, queue, finished)
+        state.value.searchStep(state.env, state.logProb, endContinuation, queue, finished)
       }
       log.stopTimer("bso/beam_search/search_step")
 

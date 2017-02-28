@@ -32,7 +32,7 @@ class PnpUtilSpec extends FlatSpec with Matchers {
     val expr = parser.parse(exprString)
     val pp = PnpUtil.lfToPnp(expr, bindings)
 
-    val values = pp.beamSearch(100)
+    val values = pp.beamSearch(100).executions.map(x => (x.value, x.prob))
 
     for ((value, expected) <- values.zip(expected)) {
       value._1 should be(expected._1)
