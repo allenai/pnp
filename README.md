@@ -55,7 +55,7 @@ define and train a model. The typical usage has three steps:
    to program executions or as conditional distributions over correct
    executions. Many training algorithms can be used, from
    loglikelihood to learning-to-search algorithms.
-3. **Run the model.** A model can be runned on a new input by
+3. **Run the model.** A model can be run on a new input by
    constructing the appropriate `Pnp[X]` object, then running
    inference on this object with trained parameters.
 
@@ -87,7 +87,7 @@ val pnp = for {
 `pnp` then represents a function that takes some neural network
 parameters and returns a distribution over possible values of `xn`
 (which in turn depends on the values of intermediate choices). We 
-evaluate `pnp` by running inference, which simulatenously runs the
+evaluate `pnp` by running inference, which simultaneously runs the
 forward pass of the network and performs probabilistic inference:
 
 ```scala
