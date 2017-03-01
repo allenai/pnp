@@ -21,7 +21,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
 
   Preconditions.checkArgument(model.locallyNormalized == false)
 
-  import DynetScalaHelpers._
+  import DyNetScalaHelpers._
 
   def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {

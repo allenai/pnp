@@ -7,7 +7,7 @@ import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import edu.cmu.dynet.DynetScalaHelpers._
+import edu.cmu.dynet.DyNetScalaHelpers._
 import scala.collection.mutable.MapBuilder
 
 /** Probabilistic neural program monad. Pnp[X] represents a

@@ -14,7 +14,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
 
   Preconditions.checkArgument(model.locallyNormalized == true)
   
-  import DynetScalaHelpers._
+  import DyNetScalaHelpers._
   
   def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {

@@ -27,15 +27,15 @@ ENV CONFIG_ENV ${CONFIG_ENV:-dev}
 #   docker run -e JVM_ARGS="-Xms=1G -Xmx=1G" allenai-docker-private-docker.bintray.io/org.allenai/pnp
 #
 # sbt setting:
-#   javaOptions := Seq("-Dlogback.appname=pnp", "-Djava.library.path=lib")
-ENV JVM_ARGS ${JVM_ARGS:--Dlogback.appname=pnp -Djava.library.path=lib}
+#   javaOptions := Seq("-Dlogback.appname=pnp")
+ENV JVM_ARGS ${JVM_ARGS:--Dlogback.appname=pnp}
 
 # The main class to execute when using the ENTRYPOINT command. You can override this at runtime with
 # the -e flag:
 #   docker run -e JAVA_MAIN=org.allenai.HelloWorld allenai-docker-private-docker.bintray.io/org.allenai/pnp
 # sbt setting:
-#   mainClass := Some("org.allenai.pnp.semparse.SemanticParserCli")
-ENV JAVA_MAIN ${JAVA_MAIN:-org.allenai.pnp.semparse.SemanticParserCli}
+#  mainClass := None
+# (No mainClass set)
 
 # The default arguments to use for running the image.
 # See https://docs.docker.com/engine/reference/builder/#/understand-how-cmd-and-entrypoint-interact
@@ -52,11 +52,13 @@ ENTRYPOINT ["bin/run-docker.sh"]
 #   dockerCopyMappings := Seq(
 #     (file("src/main/resources"), "conf"),
 #     (file("lib"), "lib"),
-#     (file("data"), "data")
+#     (file("data"), "data"),
+#     (file("experiments"), "experiments")
 #   )
 COPY conf conf
 COPY lib lib
 COPY data data
+COPY experiments experiments
 
 # lib is always copied, since it has the built jars.
 COPY lib lib
