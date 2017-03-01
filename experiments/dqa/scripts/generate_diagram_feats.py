@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# Generate random feature vectors for each diagram part
 
 import sys
 import ujson as json
@@ -11,20 +12,22 @@ def label_to_feature_vector(label):
     DIMS = 50
     vec = [0.0] * DIMS
 
+    # Random with a high-scoring element in a label-specific index.
     h = label.__hash__() % (DIMS / 2)
     vec[h] = 3.0
     for i in xrange(len(vec)):
         vec[i] += random.gauss(0.0, 1.0)
     return vec
 
+    # One-hot at a label-specific index.
     '''
     h = label.__hash__() % DIMS
     vec[h] = 1.0
     return vec
     '''
 
+    # Random around a mean per label    
     '''
-    # Random around a mean per label
     for i in xrange(len(vec)):
         mean_random = random.Random()
         mean_random.seed(label.__hash__() * i)
