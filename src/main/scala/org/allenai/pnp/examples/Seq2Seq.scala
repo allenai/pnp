@@ -14,7 +14,7 @@ import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DynetScalaHelpers._
+import edu.cmu.dynet.DyNetScalaHelpers._
 import edu.cmu.dynet.dynet_swig._
 import org.allenai.pnp.PnpExample
 import com.jayantkrish.jklol.training.NullLogFunction

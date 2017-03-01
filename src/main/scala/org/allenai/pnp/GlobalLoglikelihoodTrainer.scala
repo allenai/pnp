@@ -10,7 +10,7 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
     val maxSearchSteps: Int, val model: PnpModel, val trainer: Trainer,
     val logFn: LogFunction) {
 
-  import DynetScalaHelpers._
+  import DyNetScalaHelpers._
   
   def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {

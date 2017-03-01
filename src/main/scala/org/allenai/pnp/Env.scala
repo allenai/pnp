@@ -19,7 +19,7 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     varnames: IndexedList[String], vars: Array[AnyRef],
     val activeTimers: Set[String], val log: LogFunction) {
 
-  import DynetScalaHelpers._
+  import DyNetScalaHelpers._
   
   /** Get the value of the named variable as an instance
     * of type A.
