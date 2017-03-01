@@ -7,6 +7,7 @@ import com.jayantkrish.jklol.cli.AbstractCli
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
+import edu.cmu.dynet.DyNetScalaHelpers._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
@@ -48,7 +49,7 @@ class TestMatchingCli extends AbstractCli {
   }
 
   def test(examples: Seq[MatchingExample], matchingModel: MatchingModel): Unit = {
-    
+    val beamSize = 5
     var numElementsCorrect = 0
     var numElements = 0
     var numDiagramsCorrect = 0
@@ -56,14 +57,32 @@ class TestMatchingCli extends AbstractCli {
       val pnp = matchingModel.apply(x.source, x.target)
       
       val cg = ComputationGraph.getNew
-      val dist = pnp.beamSearch(5, -1, Env.init, null, 
+      val dist = pnp.beamSearch(beamSize, -1, Env.init, null, 
           matchingModel.model.getComputationGraph(cg))
           
       val predicted = dist.executions(0).value
       println(x.source.id + " -> " + x.target.id)
-      println("  " + x.label)
-      println("  " + predicted)
+      println("expected: " + x.label)
       
+      for (ex <- dist.executions) {
+        println("   " + ex.logProb.formatted("%02.3f") + " " + ex.value) 
+      }
+      
+      /*
+      val preprocessing = matchingModel.preprocess(x.source, x.target, cg)
+      for (i <- 0 until preprocessing.matchScores.length) {
+        println(preprocessing.matchScores(i).map(x => as_scalar(cg.incremental_forward(x))).mkString(" "))
+      }
+      
+      for (i <- 0 until preprocessing.sourceFeatures.length) {
+        println(as_vector(cg.incremental_forward(preprocessing.sourceFeatures(i))).mkString(" "))
+      }
+
+      for (i <- 0 until preprocessing.targetFeatures.length) {
+        println(as_vector(cg.incremental_forward(preprocessing.targetFeatures(i))).mkString(" "))
+      }
+      */
+
       if (predicted.equals(x.label)) {
         numDiagramsCorrect += 1
       }

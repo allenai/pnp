@@ -19,7 +19,8 @@ import org.allenai.pnp.Env
  * distribution over matchings between the two sets of
  * parts. 
  */
-class MatchingModel(val featureDim: Int, val model: PnpModel) {
+class MatchingModel(val featureDim: Int, val sourceTargetParam: Parameter,
+    val model: PnpModel) {
   
   def apply(source: Diagram, target: Diagram): Pnp[MatchingLabel] = {
     val sourceParts = source.parts
@@ -34,11 +35,24 @@ class MatchingModel(val featureDim: Int, val model: PnpModel) {
     }
   }
 
-  private def preprocess(source: Diagram, target: Diagram, cg: ComputationGraph): MatchingPreprocessing = {
+  def preprocess(source: Diagram, target: Diagram, cg: ComputationGraph): MatchingPreprocessing = {
     val sourceFeatures = source.features.getFeatureMatrix(source.parts, cg)
     val targetFeatures = target.features.getFeatureMatrix(target.parts, cg)
 
-    new MatchingPreprocessing(sourceFeatures, targetFeatures)
+    val weights = parameter(cg, sourceTargetParam)
+    
+    val matchScores = for {
+      sourceFeature <- sourceFeatures
+    } yield {
+      for {
+        targetFeature <- targetFeatures
+      } yield {
+        // TODO: different scoring function
+        transpose(sourceFeature) * weights * targetFeature
+      }
+    }
+
+    new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores)
   }
 
   /**
@@ -63,7 +77,7 @@ class MatchingModel(val featureDim: Int, val model: PnpModel) {
       }
     }
   }
-  
+
   def getLabelOracle(label: MatchingLabel): MatchingExecutionScore = {
     MatchingExecutionScore(label)
   }
@@ -79,18 +93,8 @@ class MatchingModel(val featureDim: Int, val model: PnpModel) {
  * computations that can be shared across many choices.
  */
 class MatchingPreprocessing(val sourceFeatures: Array[Expression],
-    val targetFeatures: Array[Expression]) {
+    val targetFeatures: Array[Expression], val matchScores: Array[Array[Expression]]) {
   
-  val matchScores = for {
-    sourceFeature <- sourceFeatures
-  } yield {
-    for {
-      targetFeature <- targetFeatures
-    } yield {
-      // TODO: different scoring function
-      dot_product(sourceFeature, targetFeature)
-    }
-  }
   
   def getMatchScore(sourcePart: Part, targetPart: Part): Expression = {
     matchScores(sourcePart.ind)(targetPart.ind)
@@ -101,7 +105,7 @@ case class MatchingExecutionScore(label: MatchingLabel) extends ExecutionScore {
   def apply(tag: Any, choice: Any, env: Env): Double = {
     if (tag != null && tag.isInstanceOf[Part]) {
       val targetPart = tag.asInstanceOf[Part]
-
+      
       Preconditions.checkArgument(choice.isInstanceOf[Part])
       val sourcePart = choice.asInstanceOf[Part]
 
@@ -118,12 +122,15 @@ case class MatchingExecutionScore(label: MatchingLabel) extends ExecutionScore {
 
 object MatchingModel {
 
+  val SOURCE_TARGET_WEIGHTS = "sourceTargetWeights"
+  
   /**
    * Create a MatchingModel and populate {@code model} with the
    * necessary neural network parameters.
    */
   def create(featureDim: Int, model: PnpModel): MatchingModel = {
-    new MatchingModel(featureDim, model)
+    val sourceTargetWeights = model.addParameter(SOURCE_TARGET_WEIGHTS, Seq(featureDim, featureDim))
+    new MatchingModel(featureDim, sourceTargetWeights, model)
   }
 
   /**
@@ -131,6 +138,6 @@ object MatchingModel {
    */
   def load(loader: ModelLoader, model: PnpModel): MatchingModel = {
     val featureDim = loader.load_int()
-    new MatchingModel(featureDim, model)
+    new MatchingModel(featureDim, model.getParameter(SOURCE_TARGET_WEIGHTS), model)
   }
 }

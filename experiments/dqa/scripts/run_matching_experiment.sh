@@ -1,5 +1,7 @@
-DIAGRAMS="data/labeling/diagrams.json"
-DIAGRAM_FEATURES="data/labeling/diagram_features_synthetic.json"
+#!/bin/bash -e
+
+DIAGRAMS="data/dqa/diagrams.json"
+DIAGRAM_FEATURES="data/dqa/diagram_features_synthetic.json"
 MODEL="matching_model.ser"
 
 sbt "run-main org.allenai.dqa.matching.TrainMatchingCli --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --modelOut $MODEL"

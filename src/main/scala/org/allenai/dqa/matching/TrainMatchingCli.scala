@@ -43,13 +43,14 @@ class TrainMatchingCli extends AbstractCli {
     val diagramFeatures = DiagramFeatures.fromJsonFile(options.valueOf(diagramFeaturesOpt)).map(
         x => (x.imageId, x)).toMap
     val diagramsAndLabels = Diagram.fromJsonFile(options.valueOf(diagramsOpt), diagramFeatures)
+    val featureDim = diagramFeatures.head._2.pointFeatures.head._2.size.toInt
     
     // Sample diagram pairs of the same type to create
     // matching examples.
     val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 10)
     
     val model = PnpModel.init(true)
-    val matchingModel = MatchingModel.create(10, model) 
+    val matchingModel = MatchingModel.create(featureDim, model) 
 
     train(matchingExamples, matchingModel)
     
@@ -70,8 +71,8 @@ class TrainMatchingCli extends AbstractCli {
     }
 
     val model = matchingModel.model
-    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
+    val sgd = new SimpleSGDTrainer(model.model, 1.0f, 0.01f)
+    val trainer = new LoglikelihoodTrainer(100, 100, false, model, sgd, new DefaultLogFunction())
     trainer.train(pnpExamples.toList)
   }
 }

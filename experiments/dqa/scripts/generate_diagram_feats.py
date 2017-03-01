@@ -8,11 +8,38 @@ diagram_label_file = sys.argv[1]
 out_file = sys.argv[2]
 
 def label_to_feature_vector(label):
-    DIMS = 10
+    DIMS = 50
     vec = [0.0] * DIMS
+
+    h = label.__hash__() % (DIMS / 2)
+    vec[h] = 3.0
+    for i in xrange(len(vec)):
+        vec[i] += random.gauss(0.0, 1.0)
+    return vec
+
+    '''
     h = label.__hash__() % DIMS
     vec[h] = 1.0
     return vec
+    '''
+
+    '''
+    # Random around a mean per label
+    for i in xrange(len(vec)):
+        mean_random = random.Random()
+        mean_random.seed(label.__hash__() * i)
+        mean = mean_random.uniform(-1, 1)
+        
+        vec[i] = random.gauss(mean, 1.0)
+    return vec
+    '''
+
+    # Completely random
+    '''
+    for i in xrange(len(vec)):
+        vec[i] = random.gauss(0.0, 1.0)
+    return vec
+    '''
 
 image_points = {}
 with open(diagram_label_file, 'r') as f:
