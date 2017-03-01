@@ -23,7 +23,7 @@ import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DynetScalaHelpers._
+import edu.cmu.dynet.DyNetScalaHelpers._
 import edu.cmu.dynet.dynet_swig._
 
 /** A parser mapping token sequences to a distribution over
