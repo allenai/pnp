@@ -148,7 +148,7 @@ object LabelingExecutor {
    * part vocabulary is constructed from diagramLabels.
    */
   def fromLabels(diagramLabels: Array[DiagramLabel]): LabelingExecutor = {
-        val diagramTypes = IndexedList.create[String]
+    val diagramTypes = IndexedList.create[String]
     val diagramParts = IndexedList.create[String]
     val typePartMap = HashMultimap.create[Int, Int]
     for (label <- diagramLabels) {

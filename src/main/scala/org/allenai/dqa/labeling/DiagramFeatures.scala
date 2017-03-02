@@ -13,10 +13,10 @@ import spray.json.DefaultJsonProtocol._
  */
 case class DiagramFeatures(imageId: String, pointFeatures: Map[Point, FloatVector]) {
 
-  def getFeatures(part: Part) = {
+  def getFeatures(part: Part): FloatVector = {
     pointFeatures(part.coords)
   }
-  
+
   def getFeatureMatrix(parts: Seq[Part], cg: ComputationGraph): Array[Expression] = {
     val expressions = for {
       part <- parts
