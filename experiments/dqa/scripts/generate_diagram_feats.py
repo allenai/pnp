@@ -8,16 +8,23 @@ import random
 diagram_label_file = sys.argv[1]
 out_file = sys.argv[2]
 
-def label_to_feature_vector(label):
-    DIMS = 50
+def label_to_feature_vector(label, xy, width, height):
+    DIMS = 2
     vec = [0.0] * DIMS
 
+    # TODO: normalize
+    vec[0] = float(xy[0]) / width
+    vec[1] = float(xy[1]) / height
+    return vec
+
     # Random with a high-scoring element in a label-specific index.
+    '''
     h = label.__hash__() % (DIMS / 2)
     vec[h] = 3.0
     for i in xrange(len(vec)):
         vec[i] += random.gauss(0.0, 1.0)
     return vec
+    '''
 
     # One-hot at a label-specific index.
     '''
@@ -50,6 +57,8 @@ with open(diagram_label_file, 'r') as f:
         j = json.loads(line)
 
         image_id = j["imageId"]
+        width = j["width"]
+        height = j["height"]
 
         if not image_points.has_key(image_id):
             image_points[image_id] = {}
@@ -58,7 +67,7 @@ with open(diagram_label_file, 'r') as f:
         for p in j["points"]:
             xy = tuple(p["xy"])
             label = p["label"]
-            vec = label_to_feature_vector(label)
+            vec = label_to_feature_vector(label, xy, width, height)
             # print "  ", xy, label
             # print "  ", vec
             
