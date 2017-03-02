@@ -11,6 +11,8 @@ import com.jayantkrish.jklol.util.IndexedList
 import org.allenai.pnp.ExecutionScore
 import org.allenai.pnp.semparse.SemanticParserState
 import org.allenai.pnp.Env
+import edu.cmu.dynet.Expression
+import com.google.common.collect.HashMultimap
 
 /**
  * Executes logical forms against a diagram to produce a
@@ -79,7 +81,7 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
       partLabel
     }
   }
-
+  
   /**
    * Execute {@code lf} against {@code diagram}.
    */
@@ -140,4 +142,23 @@ object LabelingExecutor {
 
   val DIAGRAM_VAR = "diagram"
   val DIAGRAM_LABEL_VAR = "diagramLabel"
+  
+  /**
+   * Create a labeling executor whose diagram type and
+   * part vocabulary is constructed from diagramLabels.
+   */
+  def fromLabels(diagramLabels: Array[DiagramLabel]): LabelingExecutor = {
+    val diagramTypes = IndexedList.create[String]
+    val diagramParts = IndexedList.create[String]
+    val typePartMap = HashMultimap.create[Int, Int]
+    for (label <- diagramLabels) {
+      val diagramTypeId = diagramTypes.add(label.diagramType)
+      for (part <- label.partLabels) {
+        val diagramPartId = diagramParts.add(part)
+        typePartMap.put(diagramTypeId, diagramPartId)
+      }
+    }
+
+    new LabelingExecutor(diagramTypes, diagramParts, typePartMap)
+  }
 }

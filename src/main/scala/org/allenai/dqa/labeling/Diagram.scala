@@ -13,12 +13,17 @@ import spray.json.pimpString
  * A diagram marked with a collection of parts. Each
  * part has an x/y coordinate and a text label (e.g. "A") 
  */
-case class Diagram(id: String, parts: Vector[Part])
+case class Diagram(id: String, imageId: String, parts: Vector[Part], features: DiagramFeatures)
 
 /**
  * A part of a diagram.
  */
-case class Part(id: String, ind: Int, coords: (Int, Int))
+case class Part(id: String, ind: Int, coords: Point)
+
+/**
+ * An x/y point in a diagram. 
+ */
+case class Point(x: Int, y: Int)
 
 /**
  * A label for a diagram. The label includes a type for
@@ -30,12 +35,14 @@ case class DiagramLabel(diagramType: String, partLabels: Vector[String])
 
 object Diagram {
   
-  def fromJsonFile(filename: String): Array[(Diagram, DiagramLabel)] = {
+  def fromJsonFile(filename: String, features: Map[String, DiagramFeatures]
+    ): Array[(Diagram, DiagramLabel)] = {
     val lines = Source.fromFile(filename).getLines
-    lines.map(fromJsonLine(_)).toArray
+    lines.map(fromJsonLine(_, features)).toArray
   }
 
-  def fromJsonLine(line: String): (Diagram, DiagramLabel) = {
+  def fromJsonLine(line: String, features: Map[String, DiagramFeatures]
+    ): (Diagram, DiagramLabel) = {
     val js = line.parseJson.asJsObject
     val diagramLabel = js.fields("label").convertTo[String]
     val diagramId = js.fields("id").convertTo[String]
@@ -49,14 +56,16 @@ object Diagram {
       id = p.fields("textId").convertTo[String]
       label = p.fields("label").convertTo[String]
       xy = p.fields("xy") match {
-        case JsArray(Vector(JsNumber(x), JsNumber(y))) => (x.toInt, y.toInt)
+        case JsArray(Vector(JsNumber(x), JsNumber(y))) => Point(x.toInt, y.toInt)
         case _ => deserializationError("Array of x/y coordinates expected")
       }
     } yield {
       (Part(id, i, xy),  label)
     }
+
+    val f = features(imageId)
     
-    (Diagram(diagramId, labeledParts.map(_._1)),
+    (Diagram(diagramId, imageId, labeledParts.map(_._1), f),
         (DiagramLabel(diagramLabel, labeledParts.map(_._2)))) 
   }
 }

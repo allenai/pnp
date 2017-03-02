@@ -30,10 +30,12 @@ import edu.cmu.dynet.DynetParams
 class LabelingDqaCli extends AbstractCli {
   
   var diagramsOpt: OptionSpec[String] = null
+  var diagramFeaturesOpt: OptionSpec[String] = null
   var trainingDataOpt: OptionSpec[String] = null
   
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
+    diagramFeaturesOpt = parser.accepts("diagramFeatures").withRequiredArg().ofType(classOf[String]).required()
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
   }
   
@@ -46,7 +48,9 @@ class LabelingDqaCli extends AbstractCli {
     val comparator = new SimplificationComparator(simplifier)
     
     // Read and preprocess data
-    val diagramsAndLabels = Diagram.fromJsonFile(options.valueOf(diagramsOpt))
+    val diagramFeatures = DiagramFeatures.fromJsonFile(options.valueOf(diagramFeaturesOpt)).map(
+        x => (x.imageId, x)).toMap
+    val diagramsAndLabels = Diagram.fromJsonFile(options.valueOf(diagramsOpt), diagramFeatures)
     val diagrams = diagramsAndLabels.map(_._1)
     val diagramLabels = diagramsAndLabels.map(_._2)
     val diagramMap = diagramsAndLabels.map(x => (x._1.id, x)).toMap
@@ -67,22 +71,13 @@ class LabelingDqaCli extends AbstractCli {
     val trainPreprocessed = trainingData.map(_.preprocess(vocab))
 
     // Configure executor for the labeling question domain theory
-    val diagramTypes = IndexedList.create[String]
-    val diagramParts = IndexedList.create[String]
-    val typePartMap = HashMultimap.create[Int, Int]
-    for (label <- diagramLabels) {
-      val diagramTypeId = diagramTypes.add(label.diagramType)
-      for (part <- label.partLabels) {
-        val diagramPartId = diagramParts.add(part)
-        typePartMap.put(diagramTypeId, diagramPartId)
-      }
-    }
+
     /*
     println("diagramTypes: " + diagramTypes)
     println("diagramParts: " + diagramParts)
     println("typePartMap: " + typePartMap)
     */
-    val executor = new LabelingExecutor(diagramTypes, diagramParts, typePartMap)
+    val executor = LabelingExecutor.fromLabels(diagramLabels)
 
     // Configure semantic parser
     val actionSpace: ActionSpace = ActionSpace.fromLfConstants(executor.bindings.keySet,
@@ -116,8 +111,6 @@ class LabelingDqaCli extends AbstractCli {
       for (x <- dist.executions) {
         println("  "  + x)
       }
-
-      cg.delete
     }
   }
 
