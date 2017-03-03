@@ -8,9 +8,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Arrays;
 import java.util.ArrayList;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Iterator;
 
 import edu.stanford.nlp.sempre.Formula;
 import edu.stanford.nlp.sempre.Builder;
@@ -18,7 +15,6 @@ import edu.stanford.nlp.sempre.Derivation;
 import edu.stanford.nlp.sempre.Value;
 import edu.stanford.nlp.sempre.ListValue;
 import edu.stanford.nlp.sempre.ParserState;
-import edu.stanford.nlp.sempre.Parser;
 import edu.stanford.nlp.sempre.NumberFn;
 import edu.stanford.nlp.sempre.JoinFn;
 import edu.stanford.nlp.sempre.TypeInference;
@@ -91,11 +87,19 @@ public class WikiTablesDataProcessor {
     EditDistanceFuzzyMatcher.opts.fuzzyMatchMaxEditDistanceRatio = 0.3;
     
     FuzzyMatcher matcher = new EditDistanceFuzzyMatcher((TableKnowledgeGraph) ex.context.graph);
+    Collection<Formula> unlinkedFormulas = matcher.getAllFormulas(FuzzyMatchFnMode.ENTITY);
+    //unlinkedFormulas.addAll(matcher.getAllFormulas(FuzzyMatchFnMode.UNARY));
+    unlinkedFormulas.addAll(matcher.getAllFormulas(FuzzyMatchFnMode.BINARY));
+    // Adding unlinked entities with a null span
+    for (Formula formula: unlinkedFormulas)
+      entityLinking.add(new Pair(null, formula));
     for (int i=0; i <= exTokens.size()-2; i++) {
       for (int j=i+1; j <= exTokens.size()-1; j++) {
-        Collection<Formula> formulas = matcher.getFuzzyMatchedFormulas(ex.getTokens(), i, j,
+        Collection<Formula> linkedFormulas = matcher.getFuzzyMatchedFormulas(ex.getTokens(), i, j,
                                          FuzzyMatchFnMode.ENTITY);
-        for (Formula formula: formulas)
+        linkedFormulas.addAll(matcher.getFuzzyMatchedFormulas(ex.getTokens(), i, j,
+                FuzzyMatchFnMode.BINARY));
+        for (Formula formula: linkedFormulas)
           entityLinking.add(new Pair(new Pair(i, j), formula));
       }
     }
@@ -109,9 +113,9 @@ public class WikiTablesDataProcessor {
     // TODO: Make these actual command line arguments.
     Builder.opts.parser = "tables.dpd.DPDParser";
     DPDParser.opts.cheat = true;
+    DPDParser.opts.dpdParserBeamSize = beamSize;
     Builder.opts.executor = "tables.lambdadcs.LambdaDCSExecutor";
     Builder.opts.valueEvaluator = "tables.TableValueEvaluator";
-    Parser.opts.beamSize = beamSize;
     TargetValuePreprocessor.opts.targetValuePreprocessor = "tables.TableValuePreprocessor";
     StringNormalizationUtils.opts.numberCanStartAnywhere = true;
     StringNormalizationUtils.opts.num2CanStartAnywhere = true;
@@ -135,38 +139,51 @@ public class WikiTablesDataProcessor {
     Builder builder = new Builder();
     builder.build();
     int maxNumFormulas = 0;
-    int minNumFormulas = 100;
+    int minNumFormulas = (int) Double.POSITIVE_INFINITY;
     int totalNumFormulas = 0;
+    float sumAvgNumCorrect = 0;
+    int numOffBeam = 0;
+    int numZeroFormulas = 0;
     for (CustomExample ex: dataset) {
+      int numAllDerivations = 0;
       List<Formula> correctFormulas = new ArrayList<>();
       ParserState state = builder.parser.parse(builder.params, ex, false);
+      if (state.fallOffBeam)
+        numOffBeam += 1;
       for (Derivation deriv: state.predDerivations) {
+        numAllDerivations += 1;
         Value pred = builder.executor.execute(deriv.formula, ex.context).value;
         if (pred instanceof ListValue)
           pred = ((TableKnowledgeGraph) ex.context.graph).getListValueWithOriginalStrings((ListValue) pred);
         double result = builder.valueEvaluator.getCompatibility(ex.targetValue, pred);
         if (result == 1) {
           correctFormulas.add(deriv.formula);
-       }
+        }
       }
       ex.alternativeFormulas = correctFormulas;
       int numFormulas = correctFormulas.size();
+      sumAvgNumCorrect += numAllDerivations == 0 ? 0.0 : (float) numFormulas / numAllDerivations;
       if (numFormulas > maxNumFormulas)
         maxNumFormulas = numFormulas;
       if (numFormulas < minNumFormulas)
         minNumFormulas = numFormulas;
+      numZeroFormulas += numFormulas == 0 ? 1 : 0;
       totalNumFormulas += numFormulas;
     }
     System.out.println("Finished adding derivations to the dataset.");
     System.out.println("Max number of formulas per question: " + maxNumFormulas);
     System.out.println("Min number of formulas per question: " + minNumFormulas);
     System.out.println("Average number of formulas per question: " + (float) totalNumFormulas / dataset.size());
-  } 
+    System.out.println("Average proportion of correct formulas per question: " + sumAvgNumCorrect / dataset.size());
+    System.out.println(numOffBeam + " out of " + dataset.size() + " questions had derivations that fell off the beam.");
+    System.out.println(numZeroFormulas + " questions did not yield any logical forms.");
+  }
 
   public static void main(String[] args) {
-    String path = "data/WikiTableQuestions/data/training-before300.examples";
+    String path = "data/wikitables/wikitables_sample_small.examples";
+    //String path = "data/WikiTableQuestions/data/training-before300.examples";
     //String path = "data/wikitables/wikitables_data.ldcs";
-    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, true, 10);
+    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, false, 50);
     for (int i = 0; i < dataset.size(); i++) {
       CustomExample ex = dataset.get(i);
       System.out.println("Utterance: " + ex.utterance);
@@ -174,12 +191,15 @@ public class WikiTablesDataProcessor {
       System.out.println("Answer: " + ex.targetValue);
       List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = WikiTablesDataProcessor.getEntityLinking(ex);
       for (Pair<Pair<Integer, Integer>, Formula> p: entityLinking) {
-        System.out.println("Entity: " + p.getFirst().getFirst() + " " + p.getFirst().getSecond() + " " + p.getSecond());
+        if (p.getFirst() == null)
+          System.out.println("Unlinked entity: " + p.getSecond());
+        else
+          System.out.println("Linked entity: " + p.getFirst().getFirst() + " " + p.getFirst().getSecond() + " " + p.getSecond());
       }
-      int numFormulas = ex.alternativeFormulas.size();
-      for (Formula formula: ex.alternativeFormulas) {
-        System.out.println("Correct formula: " + formula);
-      }
+      //int numFormulas = ex.alternativeFormulas.size();
+      //for (Formula formula: ex.alternativeFormulas) {
+      //  System.out.println("Correct formula: " + formula);
+      //}
     }
   } 
 }

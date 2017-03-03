@@ -7,10 +7,14 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import scala.collection.mutable.ListBuffer
 
 case class EntityLinking(matches: List[(Span, Entity, List[Int], Double)]) {
-  val entities = matches.map(_._2).toSet.toList
-  
+  val entities: List[Entity] = matches.map(_._2)
+
+  // Some matches may have null span. They correspond to floating rules. The following are the rest.
+  val linkedMatches = matches.filter(x => x._1 != null)
+  val unlinkedMatches = matches.filter(x => x._1 == null)
   val entityMatches = SemanticParser.seqToMultimap(
-      matches.map(x => (x._2, (x._1, x._3, x._4))).toSeq)
+      linkedMatches.map(x => (x._2, (x._1, x._3, x._4))).toSeq)
+  // Find matches with max score.
   val bestEntityMatches = entityMatches.map(x => (x._1, x._2.maxBy(_._3)))
   val bestEntityMatchesList = bestEntityMatches.map(x => (x._2._1, x._1, x._2._2, x._2._3)).toList 
   
