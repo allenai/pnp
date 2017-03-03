@@ -1,30 +1,38 @@
 package org.allenai.dqa.matching
 
+import scala.collection.JavaConverters._
+
 import org.allenai.dqa.labeling.Diagram
 import org.allenai.dqa.labeling.DiagramFeatures
+import org.allenai.dqa.labeling.Part
+import org.allenai.dqa.labeling.Point
+import org.allenai.pnp.Env
+import org.allenai.pnp.PnpModel
 
 import com.jayantkrish.jklol.cli.AbstractCli
+import com.jayantkrish.jklol.util.IoUtils
 
 import edu.cmu.dynet._
+import edu.cmu.dynet.DyNetScalaHelpers.floatVectorToSeq
 import edu.cmu.dynet.dynet_swig._
-import edu.cmu.dynet.DyNetScalaHelpers._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
-import org.allenai.pnp.PnpModel
-import org.allenai.pnp.Env
-
+import spray.json.DefaultJsonProtocol
+import spray.json.pimpAny
 
 class TestMatchingCli extends AbstractCli {
   
   var diagramsOpt: OptionSpec[String] = null
   var diagramFeaturesOpt: OptionSpec[String] = null
   var modelOpt: OptionSpec[String] = null
+  var lossJson: OptionSpec[String] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
     diagramFeaturesOpt = parser.accepts("diagramFeatures").withRequiredArg().ofType(classOf[String]).required()
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
+    lossJson = parser.accepts("lossJson").withRequiredArg().ofType(classOf[String])
   }
   
   override def run(options: OptionSet): Unit = {
@@ -45,15 +53,23 @@ class TestMatchingCli extends AbstractCli {
     val matchingModel = MatchingModel.load(loader, model)
     loader.done()
 
-    test(matchingExamples, matchingModel)
+    val losses = test(matchingExamples, matchingModel)
+
+    if (options.has(lossJson)) {
+      val jsons = losses.map(x => x.toJson(MyJsonProtocol.matchingLossFormat).compactPrint)
+      IoUtils.writeLines(options.valueOf(lossJson), jsons.asJava)
+    }
   }
 
-  def test(examples: Seq[MatchingExample], matchingModel: MatchingModel): Unit = {
+  def test(examples: Seq[MatchingExample], matchingModel: MatchingModel): Seq[MatchingLoss] = {
     val beamSize = 5
     var numElementsCorrect = 0
     var numElements = 0
     var numDiagramsCorrect = 0
-    for (x <- examples) {
+    
+    val losses = for {
+      x <- examples
+    } yield {
       val pnp = matchingModel.apply(x.source, x.target)
       
       val cg = ComputationGraph.getNew
@@ -91,13 +107,32 @@ class TestMatchingCli extends AbstractCli {
           x.label.targetToSourcePartMap.toSet)
       numElementsCorrect += intersection.size
       numElements += predicted.targetToSourcePartMap.size
+
+      val sourceDims = Point(x.source.width, x.source.height)
+      val targetDims = Point(x.target.width, x.target.height)
+      MatchingLoss(x.source.imageId, x.source.parts, sourceDims,
+          x.target.imageId, x.target.parts, targetDims, 
+          predicted.targetToSourcePartMap.toList)
     }
-    
+
     val diagramAccuracy = numDiagramsCorrect.toDouble / examples.size
     println("Diagram accuracy: " + diagramAccuracy + " ( " + numDiagramsCorrect + " / " +  examples.size + " )")
     val partAccuracy = numElementsCorrect.toDouble / numElements
     println("Part accuracy: " + partAccuracy + " ( " + numElementsCorrect + " / " +  numElements + " )")
+    
+    losses
   } 
+}
+
+case class MatchingLoss(sourceImgId: String, sourceParts: Vector[Part], sourceDims: Point,
+    targetImgId: String, targetParts: Vector[Part], targetDims: Point,
+    matching: List[(Int, Int)]) {
+}
+
+object MyJsonProtocol extends DefaultJsonProtocol {
+  implicit val pointFormat = jsonFormat2(Point)
+  implicit val partFormat = jsonFormat3(Part)
+  implicit val matchingLossFormat = jsonFormat7(MatchingLoss)
 }
 
 object TestMatchingCli {
