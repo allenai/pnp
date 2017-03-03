@@ -187,7 +187,6 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
 class MatchingPreprocessing(val sourceFeatures: Array[Expression],
     val targetFeatures: Array[Expression], val matchScores: Array[Array[Expression]]) {
   
-  
   def getMatchScore(sourcePart: Part, targetPart: Part): Expression = {
     matchScores(sourcePart.ind)(targetPart.ind)
   }

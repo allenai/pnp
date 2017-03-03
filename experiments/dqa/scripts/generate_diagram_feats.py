@@ -9,13 +9,15 @@ diagram_label_file = sys.argv[1]
 out_file = sys.argv[2]
 
 def label_to_feature_vector(label, xy, width, height):
-    DIMS = 2
+    DIMS = 100
     vec = [0.0] * DIMS
 
-    # TODO: normalize
+    '''
     vec[0] = float(xy[0]) / width
     vec[1] = float(xy[1]) / height
+    vec[2] = 1.0
     return vec
+    '''
 
     # Random with a high-scoring element in a label-specific index.
     '''
@@ -27,11 +29,9 @@ def label_to_feature_vector(label, xy, width, height):
     '''
 
     # One-hot at a label-specific index.
-    '''
     h = label.__hash__() % DIMS
     vec[h] = 1.0
     return vec
-    '''
 
     # Random around a mean per label    
     '''
