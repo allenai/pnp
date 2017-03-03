@@ -13,7 +13,8 @@ import spray.json.pimpString
  * A diagram marked with a collection of parts. Each
  * part has an x/y coordinate and a text label (e.g. "A") 
  */
-case class Diagram(id: String, imageId: String, parts: Vector[Part], features: DiagramFeatures)
+case class Diagram(id: String, imageId: String, width: Int, height: Int,
+    parts: Vector[Part], features: DiagramFeatures)
 
 /**
  * A part of a diagram.
@@ -46,7 +47,9 @@ object Diagram {
     val js = line.parseJson.asJsObject
     val diagramLabel = js.fields("label").convertTo[String]
     val diagramId = js.fields("id").convertTo[String]
-    val imageId = js.fields("imageId").convertTo[String] 
+    val imageId = js.fields("imageId").convertTo[String]
+    val width = js.fields("width").convertTo[Int]
+    val height = js.fields("height").convertTo[Int]
     
     val pointJsons = js.fields("points").asInstanceOf[JsArray]
     
@@ -65,7 +68,7 @@ object Diagram {
 
     val f = features(imageId)
     
-    (Diagram(diagramId, imageId, labeledParts.map(_._1), f),
+    (Diagram(diagramId, imageId, width, height, labeledParts.map(_._1), f),
         (DiagramLabel(diagramLabel, labeledParts.map(_._2)))) 
   }
 }

@@ -54,6 +54,7 @@ class LabelingDqaCli extends AbstractCli {
     val diagrams = diagramsAndLabels.map(_._1)
     val diagramLabels = diagramsAndLabels.map(_._2)
     val diagramMap = diagramsAndLabels.map(x => (x._1.id, x)).toMap
+    val partFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.size.toInt
 
     val trainingData = ListBuffer[LabelingExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
@@ -77,7 +78,8 @@ class LabelingDqaCli extends AbstractCli {
     println("diagramParts: " + diagramParts)
     println("typePartMap: " + typePartMap)
     */
-    val executor = LabelingExecutor.fromLabels(diagramLabels)
+    val model = PnpModel.init(true)
+    val executor = LabelingExecutor.fromLabels(diagramLabels, partFeatureDim, model)
 
     // Configure semantic parser
     val actionSpace: ActionSpace = ActionSpace.fromLfConstants(executor.bindings.keySet,
@@ -91,7 +93,6 @@ class LabelingDqaCli extends AbstractCli {
       }
     }
 
-    val model = PnpModel.init(true)
     val parser = SemanticParser.create(actionSpace, vocab, model)
     val answerSelector = new AnswerSelector()
     val p3 = new LabelingP3Model(parser, executor, answerSelector)

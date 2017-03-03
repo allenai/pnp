@@ -575,7 +575,7 @@ object Pnp {
   def choose[A](items: Array[A], parameter: Expression, tag: Any): Pnp[A] = {
     ParameterizedCategoricalPnp(items, parameter, tag)
   }
-  
+
   def choose[A](items: Array[A], parameter: Expression): Pnp[A] = {
     choose(items, parameter, null)
   }

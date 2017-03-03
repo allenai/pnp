@@ -19,6 +19,7 @@ import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import org.allenai.pnp.BsoTrainer
 
 /**
  * Command line program for training a matching model
@@ -29,13 +30,17 @@ class TrainMatchingCli extends AbstractCli {
   var diagramsOpt: OptionSpec[String] = null
   var diagramFeaturesOpt: OptionSpec[String] = null
   var modelOutputOpt: OptionSpec[String] = null
+  var matchIndependentOpt: OptionSpec[Void] = null
+  var binaryFactorsOpt: OptionSpec[Void] = null
   
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
     diagramFeaturesOpt = parser.accepts("diagramFeatures").withRequiredArg().ofType(classOf[String]).required()
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
+    matchIndependentOpt = parser.accepts("matchIndependent")
+    binaryFactorsOpt = parser.accepts("binaryFactors")
   }
-  
+
   override def run(options: OptionSet): Unit = {
     initialize(new DynetParams())
     
@@ -49,8 +54,9 @@ class TrainMatchingCli extends AbstractCli {
     // matching examples.
     val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 10)
     
-    val model = PnpModel.init(true)
-    val matchingModel = MatchingModel.create(featureDim, model) 
+    val model = PnpModel.init(false)
+    val matchingModel = MatchingModel.create(featureDim, options.has(matchIndependentOpt),
+        options.has(binaryFactorsOpt), model) 
 
     train(matchingExamples, matchingModel)
     
@@ -71,8 +77,9 @@ class TrainMatchingCli extends AbstractCli {
     }
 
     val model = matchingModel.model
-    val sgd = new SimpleSGDTrainer(model.model, 1.0f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(100, 100, false, model, sgd, new DefaultLogFunction())
+    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    // val trainer = new LoglikelihoodTrainer(100, 100, false, model, sgd, new DefaultLogFunction())
+    val trainer = new BsoTrainer(50, 5, -1, model, sgd, new DefaultLogFunction())
     trainer.train(pnpExamples.toList)
   }
 }
@@ -94,7 +101,7 @@ object TrainMatchingCli {
     val random = Pseudorandom.get()
     
     val examples = for {
-      diagramType <- diagramTypes
+      diagramType <- diagramTypes.toList
       diagrams = labeledDiagrams.filter(_._2.diagramType.equals(diagramType))
 
       // throw away diagrams that don't have the full label set.
@@ -118,6 +125,7 @@ object TrainMatchingCli {
           draw
         }
       }
+      // val second = first
         
       val (source, sourceLabel) = filteredDiagrams(first)
       val (target, targetLabel) = filteredDiagrams(second)
