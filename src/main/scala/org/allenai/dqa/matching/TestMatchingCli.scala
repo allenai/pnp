@@ -37,14 +37,14 @@ class TestMatchingCli extends AbstractCli {
     
     // Sample diagram pairs of the same type to create
     // matching examples.
-    val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 10)
+    val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 30)
     
     // Read model
     val loader = new ModelLoader(options.valueOf(modelOpt))
     val model = PnpModel.load(loader)
     val matchingModel = MatchingModel.load(loader, model)
     loader.done()
-    
+
     test(matchingExamples, matchingModel)
   }
 
@@ -57,31 +57,31 @@ class TestMatchingCli extends AbstractCli {
       val pnp = matchingModel.apply(x.source, x.target)
       
       val cg = ComputationGraph.getNew
-      val dist = pnp.beamSearch(beamSize, -1, Env.init, null, 
-          matchingModel.model.getComputationGraph(cg))
-          
+      val compGraph = matchingModel.model.getComputationGraph(cg)
+      val dist = pnp.beamSearch(beamSize, -1, Env.init, null, compGraph)
+
       val predicted = dist.executions(0).value
+      val preprocessing = matchingModel.preprocess(x.source, x.target, compGraph)
       println(x.source.id + " -> " + x.target.id)
+      println(x.source.id)
+      for ((p, e) <- x.source.parts.zip(preprocessing.sourceFeatures)) {
+        val v = as_vector(cg.incremental_forward(e)).mkString(" ")
+        println("  " + p + " " + v)
+      }
+      println(x.target.id)
+      for ((p, e) <- x.target.parts.zip(preprocessing.targetFeatures)) {
+        val v = as_vector(cg.incremental_forward(e)).mkString(" ")
+        println("  " + p + " " + v)
+      }
+      for (i <- 0 until preprocessing.matchScores.length) {
+        println(preprocessing.matchScores(i).map(x => as_scalar(cg.incremental_forward(x))).mkString(" "))
+      }
+
       println("expected: " + x.label)
       
       for (ex <- dist.executions) {
         println("   " + ex.logProb.formatted("%02.3f") + " " + ex.value) 
       }
-      
-      /*
-      val preprocessing = matchingModel.preprocess(x.source, x.target, cg)
-      for (i <- 0 until preprocessing.matchScores.length) {
-        println(preprocessing.matchScores(i).map(x => as_scalar(cg.incremental_forward(x))).mkString(" "))
-      }
-      
-      for (i <- 0 until preprocessing.sourceFeatures.length) {
-        println(as_vector(cg.incremental_forward(preprocessing.sourceFeatures(i))).mkString(" "))
-      }
-
-      for (i <- 0 until preprocessing.targetFeatures.length) {
-        println(as_vector(cg.incremental_forward(preprocessing.targetFeatures(i))).mkString(" "))
-      }
-      */
 
       if (predicted.equals(x.label)) {
         numDiagramsCorrect += 1

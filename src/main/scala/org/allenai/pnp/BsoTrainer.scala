@@ -19,7 +19,8 @@ import edu.cmu.dynet.dynet_swig._
 class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     val model: PnpModel, val trainer: Trainer, val log: LogFunction) {
 
-  Preconditions.checkArgument(model.locallyNormalized == false)
+  Preconditions.checkArgument(model.locallyNormalized == false,
+      "BsoTrainer expects model to be not locally normalized".asInstanceOf[Any])
 
   import DyNetScalaHelpers._
 
