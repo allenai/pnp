@@ -39,14 +39,8 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
   }
 
   def preprocess(source: Diagram, target: Diagram, computationGraph: CompGraph): MatchingPreprocessing = {
-    val cg = computationGraph.cg
-    val sourceFeatures = source.features.getFeatureMatrix(source.parts, cg)
-    val targetFeatures = target.features.getFeatureMatrix(target.parts, cg)
-
-    val distanceWeights = parameter(cg, computationGraph.getParameter(DISTANCE_WEIGHTS))
-    val mlpL1W = parameter(cg, computationGraph.getParameter(MLP_L1_W))
-    val mlpL1B = parameter(cg, computationGraph.getParameter(MLP_L1_B))
-    val mlpL2W = parameter(cg, computationGraph.getParameter(MLP_L2_W))
+    val sourceFeatures = source.features.getFeatureMatrix(source.parts, computationGraph.cg)
+    val targetFeatures = target.features.getFeatureMatrix(target.parts, computationGraph.cg)
     
     val matchScores = for {
       sourceFeature <- sourceFeatures
@@ -54,80 +48,61 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
       for {
         targetFeature <- targetFeatures
       } yield {
-        // Learn a distance metric
-        val delta = sourceFeature - targetFeature
-        val dist = -1.0 * (transpose(delta) * distanceWeights * delta)
-        
-        // multilayer perceptron
-        val concatenated = concatenate(new ExpressionVector(List(sourceFeature, targetFeature)))
-        val mlpOutput = (mlpL2W * tanh((mlpL1W * concatenated) + mlpL1B)) 
-
-        // mlpOutput
-        dist
-        // -1.0 * dot_product(delta, delta)
-        // input(cg, 0.0f)
+        scoreSourceTargetMatch(sourceFeature, targetFeature, computationGraph)
       }
     }
 
     new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores)
   }
 
+  private def scoreSourceTargetMatch(sourceFeature: Expression, targetFeature: Expression,
+      computationGraph: CompGraph): Expression = {
+    // Get neural network parameters.
+    val cg = computationGraph.cg
+    val distanceWeights = parameter(cg, computationGraph.getParameter(DISTANCE_WEIGHTS))
+    val mlpL1W = parameter(cg, computationGraph.getParameter(MLP_L1_W))
+    val mlpL1B = parameter(cg, computationGraph.getParameter(MLP_L1_B))
+    val mlpL2W = parameter(cg, computationGraph.getParameter(MLP_L2_W))
+
+    // Learn a distance metric
+    val delta = sourceFeature - targetFeature
+    val dist = -1.0 * (transpose(delta) * distanceWeights * delta)
+        
+    // multilayer perceptron
+    val concatenated = concatenate(new ExpressionVector(List(sourceFeature, targetFeature)))
+    val mlpOutput = (mlpL2W * tanh((mlpL1W * concatenated) + mlpL1B)) 
+
+    // mlpOutput
+    dist
+    // -1.0 * dot_product(delta, delta)
+    // input(cg, 0.0f)
+  }
+
   private def getScores(targetPart: Part, remainingArray: Array[Part],
       currentMatching: List[(Part, Part)], compGraph: CompGraph,
       preprocessing: MatchingPreprocessing): Expression = {
-    val cg = compGraph.cg
     val unaryScores = remainingArray.map(x => preprocessing.getMatchScore(x, targetPart))
     
     val scores = if (binaryFactors) {
-      val binaryDistanceWeights = parameter(cg,
-          compGraph.getParameter(BINARY_DISTANCE_WEIGHTS))
-      val binaryW = parameter(cg, compGraph.getParameter(BINARY_W))
-      val binaryB = parameter(cg, compGraph.getParameter(BINARY_B))
-      val binaryDistanceWeightsNonlinear = parameter(cg,
-          compGraph.getParameter(BINARY_HIDDEN_DIST))
-          
       val curTargetFeatures = preprocessing.targetFeatures(targetPart.ind)
       
       val binaryScores = for {
         curSource <- remainingArray
+        curSourceFeatures = preprocessing.sourceFeatures(curSource.ind)
       } yield {
-        val curSourceFeatures = preprocessing.sourceFeatures(curSource.ind)
-        
         val pairwiseScores = for {
           (prevTarget, prevSource) <- currentMatching 
         } yield {
+          // TODO: load these binary feature vectors from the
+          // diagram instead.
           val prevTargetFeatures = preprocessing.targetFeatures(prevTarget.ind)
           val prevSourceFeatures = preprocessing.sourceFeatures(prevSource.ind)
-          
           val prevToCurTarget = curTargetFeatures - prevTargetFeatures
           val prevToCurSource = curSourceFeatures - prevSourceFeatures
-
-          val prevToCurTargetNonlinear = tanh((binaryW * prevToCurTarget) + binaryB)
-          val prevToCurSourceNonlinear = tanh((binaryW * prevToCurSource) + binaryB)
-
-          /*
-          val delta = prevToCurTargetNonlinear - prevToCurSourceNonlinear
-          val dist = -1.0 * (transpose(delta) * binaryDistanceWeightsNonlinear * delta)
-          dist
-          */
-
-          // learn a distance metric (assuming binaryDistanceWeights is PSD)
-          val delta = prevToCurTarget - prevToCurSource
-          val dist = -1.0 * (transpose(delta) * binaryDistanceWeights * delta)
-          dist
-          
-          // val sim = dot_product(prevToCurTarget, prevToCurSource)
-          
-          // transpose(prevToCurTarget) * binaryDistanceWeights * prevToCurSource
-
-          /*
-          val delta = prevToCurTarget - prevToCurSource
-          val dist = -1.0 * dot_product(delta, delta)
-          dist
-          */
+          scoreBinaryFactor(prevToCurSource, prevToCurTarget, compGraph)
         }
 
-        pairwiseScores.foldLeft(input(cg, 0))(_ + _)
+        pairwiseScores.foldLeft(input(compGraph.cg, 0))(_ + _)
       }
 
       unaryScores.zip(binaryScores).map(x => x._1 + x._2)
@@ -136,6 +111,41 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
     }
 
     concatenate(new ExpressionVector(scores.toVector))
+  }
+  
+  private def scoreBinaryFactor(prevToCurSource: Expression, prevToCurTarget: Expression,
+      compGraph: CompGraph) = {
+    val cg = compGraph.cg
+    val binaryDistanceWeights = parameter(cg,
+        compGraph.getParameter(BINARY_DISTANCE_WEIGHTS))
+    val binaryW = parameter(cg, compGraph.getParameter(BINARY_W))
+    val binaryB = parameter(cg, compGraph.getParameter(BINARY_B))
+    val binaryDistanceWeightsNonlinear = parameter(cg,
+        compGraph.getParameter(BINARY_HIDDEN_DIST))
+    
+    val prevToCurTargetNonlinear = tanh((binaryW * prevToCurTarget) + binaryB)
+    val prevToCurSourceNonlinear = tanh((binaryW * prevToCurSource) + binaryB)
+
+    /*
+    val delta = prevToCurTargetNonlinear - prevToCurSourceNonlinear
+    val dist = -1.0 * (transpose(delta) * binaryDistanceWeightsNonlinear * delta)
+    dist
+    */
+
+    // learn a distance metric (assuming binaryDistanceWeights is PSD)
+    val delta = prevToCurTarget - prevToCurSource
+    val dist = -1.0 * (transpose(delta) * binaryDistanceWeights * delta)
+    dist
+          
+    // val sim = dot_product(prevToCurTarget, prevToCurSource)
+          
+    // transpose(prevToCurTarget) * binaryDistanceWeights * prevToCurSource
+
+    /*
+    val delta = prevToCurTarget - prevToCurSource
+    val dist = -1.0 * dot_product(delta, delta)
+    dist
+    */
   }
 
   /**

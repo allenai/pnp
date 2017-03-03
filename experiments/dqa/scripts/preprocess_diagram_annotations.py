@@ -32,7 +32,7 @@ with open(diagram_file, 'r') as f:
     for t in j.iterkeys():
         diagrams = j[t]
         for diagram_id in diagrams.iterkeys():
-            if not diagram_sizes.has_key(diagram_id):
+            if not diagram_id in diagram_sizes:
                 print "WARNING: could not find size for", diagram_id, "type:", t
                 continue
             

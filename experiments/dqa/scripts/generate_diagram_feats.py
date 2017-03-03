@@ -59,7 +59,7 @@ with open(diagram_label_file, 'r') as f:
         width = j["width"]
         height = j["height"]
 
-        if not image_points.has_key(image_id):
+        if not image_id in image_points:
             image_points[image_id] = {}
 
         # print image_id
