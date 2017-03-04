@@ -3,7 +3,7 @@ package org.allenai.pnp
 import scala.collection.JavaConverters._
 import org.scalatest._
 import edu.cmu.dynet._
-import edu.cmu.dynet.DynetScalaHelpers._
+import edu.cmu.dynet.DyNetScalaHelpers._
 import edu.cmu.dynet.dynet_swig._
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.NullLogFunction

@@ -21,7 +21,7 @@ import scala.collection.mutable.ListBuffer
   */
 class PnpSpec extends FlatSpec with Matchers {
 
-  import DynetScalaHelpers._
+  import DyNetScalaHelpers._
   initialize(new DynetParams())
 
   val TOLERANCE = 0.01
