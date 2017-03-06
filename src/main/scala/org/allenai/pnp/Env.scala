@@ -16,7 +16,7 @@ import edu.cmu.dynet.dynet_swig._
   * Env is immutable.
   */
 class Env(val labels: List[Int], val labelNodeIds: List[Expression],
-    varnames: IndexedList[String], vars: Array[AnyRef],
+    varnames: IndexedList[String], vars: Array[Any],
     val activeTimers: Set[String], val log: LogFunction) {
 
   import DyNetScalaHelpers._
@@ -27,15 +27,31 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
   def getVar[A](name: String): A = {
     vars(varnames.getIndex(name)).asInstanceOf[A]
   }
+  
+  def getVar[A](name: String, default: A): A = {
+    if (varnames.contains(name)) {
+      getVar(name)
+    } else {
+      default
+    }
+  }
 
   def getVar[A](nameInt: Int): A = {
     vars(nameInt).asInstanceOf[A]
   }
 
+  def getVar[A](nameInt: Int, default: A): A = {
+    if (nameInt < vars.length) {
+      getVar(nameInt)
+    } else {
+      default
+    }
+  }
+
   /** Get a new environment with the named variable
     * set to value.
     */
-  def setVar(name: String, value: AnyRef): Env = {
+  def setVar(name: String, value: Any): Env = {
     val nextVarNames = if (varnames.contains(name)) {
       varnames
     } else {
@@ -44,7 +60,7 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
       i
     }
 
-    val nextVars = Array.ofDim[AnyRef](nextVarNames.size)
+    val nextVars = Array.ofDim[Any](nextVarNames.size)
     Array.copy(vars, 0, nextVars, 0, vars.size)
     val index = nextVarNames.getIndex(name)
     nextVars(index) = value
@@ -52,8 +68,8 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     new Env(labels, labelNodeIds, nextVarNames, nextVars, activeTimers, log)
   }
 
-  def setVar(nameInt: Int, value: AnyRef): Env = {
-    val nextVars = Array.ofDim[AnyRef](vars.size)
+  def setVar(nameInt: Int, value: Any): Env = {
+    val nextVars = Array.ofDim[Any](vars.size)
     Array.copy(vars, 0, nextVars, 0, vars.size)
     nextVars(nameInt) = value
 
