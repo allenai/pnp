@@ -5,8 +5,9 @@ import scala.collection.mutable.ListBuffer
 
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
-import org.allenai.pnp.PpExample
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.GlobalLoglikelihoodTrainer
+import org.allenai.pnp.PnpExample
+import org.allenai.pnp.PnpModel
 
 import com.google.common.collect.Maps
 import com.jayantkrish.jklol.ccg.CcgExample
@@ -29,6 +30,7 @@ import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import org.allenai.pnp.BsoTrainer
 
 /** Command line program for training a semantic parser.
   */
@@ -49,7 +51,7 @@ class TrainSemanticParserCli extends AbstractCli() {
   }
   
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
+    initialize(SemanticParserUtils.DYNET_PARAMS)
     
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
@@ -99,7 +101,7 @@ class TrainSemanticParserCli extends AbstractCli() {
     // println(actionSpace.rootTypes)
     // println(actionSpace.typeTemplateMap)
     
-    val model = PpModel.init(true)
+    val model = PnpModel.init(true)
     val parser = SemanticParser.create(actionSpace, vocab, model)
     
     println("*** Validating types ***")
@@ -108,18 +110,8 @@ class TrainSemanticParserCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     println("*** Training ***")
     train(trainPreprocessed, parser, typeDeclaration)
-
-    // println("***************** TEST EVALUATION *****************")
-    // val testResults = test(testPreprocessed, parser, typeDeclaration, simplifier, comparator)
-    // println("***************** TRAIN EVALUATION *****************")
-    // val trainResults = test(trainPreprocessed, parser, typeDeclaration, simplifier, comparator)
-
-    // println("")
-    // println("Test: ")
-    // println(testResults)
-    // println("Train: ")
-    // println(trainResults)
     
+    // Serialize model to disk.
     val saver = new ModelSaver(options.valueOf(modelOutOpt))
     model.save(saver)
     parser.save(saver)
@@ -143,14 +135,24 @@ class TrainSemanticParserCli extends AbstractCli() {
       unconditional = parser.generateExpression(tokenIds, entityLinking)
       oracle <- parser.generateExecutionOracle(x.getLogicalForm, entityLinking, typeDeclaration)
     } yield {
-      PpExample(unconditional, unconditional, Env.init, oracle)
+      PnpExample(unconditional, unconditional, Env.init, oracle)
     }
 
     // Train model
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
+    println("Running locally-normalized training...")
     trainer.train(ppExamples.toList)
+    
+    // Globally normalized training
+    /*
+    model.locallyNormalized = false
+    val sgd2 = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    val gtrainer = new BsoTrainer(50, 5, 50, model, sgd2, new DefaultLogFunction())
+    println("Running globally-normalized training...")
+    gtrainer.train(ppExamples.toList)
+    */
 
     parser.dropoutProb = -1
   }
@@ -210,7 +212,6 @@ object TrainSemanticParserCli {
     annotations.put("originalTokens", sent.getWords.asScala.toList)
     annotations.put("tokenIds", entityAnonymizedTokenIds.toArray)
     annotations.put("entityLinking", entityLinking)
-
     val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
         sent.getPosTags, annotations)
     

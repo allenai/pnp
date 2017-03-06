@@ -10,18 +10,20 @@ import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
 
 class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleExecutions: Boolean,
-    val model: PpModel, val trainer: Trainer, val log: LogFunction) {
+    val model: PnpModel, val trainer: Trainer, val log: LogFunction) {
 
-  import DynetScalaHelpers._
-
-  def train[A](examples: List[PpExample[A]]): Unit = {
+  Preconditions.checkArgument(model.locallyNormalized == true)
+  
+  import DyNetScalaHelpers._
+  
+  def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
       var searchErrors = 0
       log.notifyIterationStart(i)
       for (example <- examples) {
-        val cg = new ComputationGraph
-
+        val cg = ComputationGraph.getNew
+       
         val env = example.env
         val graph = model.getComputationGraph(cg)
 
@@ -30,7 +32,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         val conditional = example.conditional.beamSearch(beamSize, -1, env,
           example.conditionalExecutionScore, graph, log)
         log.stopTimer("pp_loglikelihood/forward")
-
+        
         log.startTimer("pp_loglikelihood/build_loss")
         var exLosses = ListBuffer[Expression]()
         for (conditionalEx <- conditional.executions) {
@@ -65,7 +67,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
             "Found %s conditional executions (expected exactly 1) for example: %s",
             conditional.executions.size.asInstanceOf[AnyRef], example)
 
-          logsumexp_VE(new ExpressionVector(exLosses.toList.asJava))
+          logsumexp(new ExpressionVector(exLosses.toList.asJava))
         }
         log.stopTimer("pp_loglikelihood/build_loss")
 
@@ -82,8 +84,6 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         } else {
           searchErrors += 1
         }
-
-        cg.delete()
       }
 
       trainer.update_epoch()

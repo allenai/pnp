@@ -15,10 +15,10 @@ import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.SemanticParser
-import org.allenai.pnp.PpExample
-import org.allenai.pnp.PpModel
+import org.allenai.pnp.PnpExample
+import org.allenai.pnp.PnpModel
 import org.allenai.pnp.Env
-import org.allenai.pnp.Pp
+import org.allenai.pnp.Pnp
 import com.jayantkrish.jklol.training.DefaultLogFunction
 import org.allenai.pnp.LoglikelihoodTrainer
 import edu.cmu.dynet.SimpleSGDTrainer
@@ -96,7 +96,7 @@ class LabelingDqaCli extends AbstractCli {
       }
     }
 
-    val model = PpModel.init(true)
+    val model = PnpModel.init(true)
     val parser = SemanticParser.create(actionSpace, vocab, model)
     val answerSelector = new AnswerSelector()
     val p3 = new LabelingP3Model(parser, executor, answerSelector)
@@ -108,7 +108,7 @@ class LabelingDqaCli extends AbstractCli {
   
   def validateParser(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser): Unit = {
     for (ex <- examples) {
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
       
       val lfDist = parser.generateExpression(ex.tokenIds, ex.entityLinking)
       val dist = lfDist.beamSearch(100, 100, Env.init, null, parser.model.getComputationGraph(cg), null)
@@ -121,31 +121,31 @@ class LabelingDqaCli extends AbstractCli {
     }
   }
 
-  def train(examples: Seq[PreprocessedLabelingExample], p3: LabelingP3Model): PpModel = {
+  def train(examples: Seq[PreprocessedLabelingExample], p3: LabelingP3Model): PnpModel = {
 
     // TODO: figure out how to set this configuration in a more
     // reliable way.
     p3.parser.dropoutProb = -1
 
-    val ppExamples = examples.map(p3.exampleToPpExample(_))
+    val pnpExamples = examples.map(p3.exampleToPnpExample(_))
 
     // Train model
     val model = p3.getModel
 
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(50, 100, true, model, sgd, new DefaultLogFunction())
-    trainer.train(ppExamples.toList)
+    trainer.train(pnpExamples.toList)
 
     model
   }
   
   def test(examples: Seq[PreprocessedLabelingExample], p3: LabelingP3Model,
-      model: PpModel): Unit = {
+      model: PnpModel): Unit = {
     var numCorrect = 0 
     for (ex <- examples) {
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
 
-      val pp = p3.exampleToPpExample(ex).unconditional
+      val pp = p3.exampleToPnpExample(ex).unconditional
       val dist = pp.beamSearch(100, 100, Env.init, null, model.getComputationGraph(cg), null)
 
       println(ex.ex.tokens.mkString(" "))
@@ -161,8 +161,6 @@ class LabelingDqaCli extends AbstractCli {
           numCorrect += 1
         }
       }
-
-      cg.delete
     }
     
     val accuracy = numCorrect.asInstanceOf[Double] / examples.length

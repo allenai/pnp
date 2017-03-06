@@ -3,7 +3,7 @@ package org.allenai.pnp
 import scala.collection.JavaConverters._
 import org.scalatest._
 import edu.cmu.dynet._
-import edu.cmu.dynet.DynetScalaHelpers._
+import edu.cmu.dynet.DyNetScalaHelpers._
 import edu.cmu.dynet.dynet_swig._
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.NullLogFunction
@@ -20,8 +20,8 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   "LoglikelihoodTrainer" should "train sequence models" in {
     val model = fooModel()
     val examples = List(
-        PpExample.fromDistributions(foo(2, null), foo(2, List(1, 0))),
-        PpExample.fromDistributions(foo(3, null), foo(3, List(1, 1, 1)))
+        PnpExample.fromDistributions(foo(2, null), foo(2, List(1, 0))),
+        PnpExample.fromDistributions(foo(3, null), foo(3, List(1, 1, 1)))
     )
 
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.1f)
@@ -29,7 +29,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     trainer.train(examples)
 
     val env = Env.init
-    val computationGraph = new ComputationGraph
+    val computationGraph = ComputationGraph.getNew
     val marginals = foo(1, null).beamSearch(100, env, model.getComputationGraph(computationGraph))
     val values = marginals.executions
     val partitionFunction = marginals.partitionFunction
@@ -38,8 +38,6 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     (values(0).prob / partitionFunction) should be(0.8 +- TOLERANCE)
     values(1).value should be(List(0))
     (values(1).prob / partitionFunction) should be(0.2 +- TOLERANCE)
-    
-    computationGraph.delete()
   }
 
   it should "learn xor" in {
@@ -56,11 +54,11 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
       val unconditional = xor(x._1, x._2)
       val conditional = for {
         y <- unconditional;
-        x <- Pp.require(y == x._3)
+        x <- Pnp.require(y == x._3)
       } yield {
         y
       }
-      PpExample.fromDistributions(unconditional, conditional)
+      PnpExample.fromDistributions(unconditional, conditional)
     })
 
     // Train model
@@ -71,14 +69,13 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     // Check that training error is zero.
     for (ex <- data) {
       val env = Env.init
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
       val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph(cg))
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
       values(0).value should be(ex._3)
       (values(0).prob / partitionFunction) should be(1.0 +- 0.1)
-      cg.delete()
     }
   }
   
@@ -110,7 +107,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
         }
       }
       
-      PpExample(unconditional, conditional, Env.init, score)
+      PnpExample(unconditional, conditional, Env.init, score)
     })
 
     // Train model
@@ -121,7 +118,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     // Check that training error is zero.
     for (ex <- data) {
       val env = Env.init
-      val cg = new ComputationGraph
+      val cg = ComputationGraph.getNew
       val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph(cg))
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
@@ -134,26 +131,25 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
         val execution = executions(0)
         (execution.prob / partitionFunction) should be(expectedProb +- 0.1)
       }
-      cg.delete()
     }
   }
 }
 
 object LoglikelihoodTrainerSpec {
-  def foo(k: Int, label: List[Int]): Pp[List[Int]] = {
+  def foo(k: Int, label: List[Int]): Pnp[List[Int]] = {
     if (k == 0) {
-      Pp.value(List.empty[Int])
+      Pnp.value(List.empty[Int])
     } else {
       for {
-        flip <- Pp.param("flip");
-        x <- Pp.choose(Array(0, 1), flip, k);
+        flip <- Pnp.param("flip");
+        x <- Pnp.choose(Array(0, 1), flip, k);
         y <- if (label == null) {
           foo(k - 1, null)
         } else {
           if (x == label.head) {
             foo(k - 1, label.tail)
           } else {
-            Pp.fail
+            Pnp.fail
           }
         }
       } yield {
@@ -162,13 +158,13 @@ object LoglikelihoodTrainerSpec {
     }
   }
   
-  def fooModel(): PpModel = {
-    val model = PpModel.init(true)
+  def fooModel(): PnpModel = {
+    val model = PnpModel.init(true)
     model.addParameter("flip", Seq(2))
     model
   }
   
-  def xor(left: Boolean, right: Boolean): Pp[Boolean] = {
+  def xor(left: Boolean, right: Boolean): Pnp[Boolean] = {
     // Build a feature vector from the inputs
     val values = Array.ofDim[Float](2)
     values(0) = if (left) { 1 } else { 0 }
@@ -180,17 +176,17 @@ object LoglikelihoodTrainerSpec {
     for {
       // Build a 2 layer neural network with a tanh
       // nonlinearity.
-      params <- Pp.param("params")
-      bias <- Pp.param("bias")
-      featureVectorExpression <- Pp.constant(Seq(2), featureVector)
+      params <- Pnp.param("params")
+      bias <- Pnp.param("bias")
+      featureVectorExpression <- Pnp.constant(Seq(2), featureVector)
       hidden = tanh((params * featureVectorExpression) + bias)
-      params2 <- Pp.param("params2")
-      bias2 <- Pp.param("bias2")
+      params2 <- Pnp.param("params2")
+      bias2 <- Pnp.param("bias2")
       dist = (params2 * hidden) + bias2
       
       // Choose the output nondeterministically according to 
       // the per-class scores generated by the neural network.
-      y <- Pp.choose(Array(false, true), dist, "choice")
+      y <- Pnp.choose(Array(false, true), dist, "choice")
 
       // Extraneous values in the computation graph
       // shouldn't cause problems.
@@ -200,9 +196,9 @@ object LoglikelihoodTrainerSpec {
     }
   }
   
-  def xorModel(): PpModel = {
+  def xorModel(): PnpModel = {
     // Initialize model parameters.
-    val model = PpModel.init(true)
+    val model = PnpModel.init(true)
     model.addParameter("params", Seq(8, 2))
     model.addParameter("bias", Seq(8))
     model.addParameter("params2", Seq(2, 8))

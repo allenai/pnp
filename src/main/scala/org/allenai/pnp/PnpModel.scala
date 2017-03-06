@@ -11,8 +11,8 @@ import scala.collection.mutable.ListBuffer
   * parameters are used to initialize the computation
   * graph of a program during inference.
   */
-class PpModel(var names: Map[String, Parameter], var lookupNames: Map[String, LookupParameter], 
-    val model: Model, val locallyNormalized: Boolean) {
+class PnpModel(var names: Map[String, Parameter], var lookupNames: Map[String, LookupParameter], 
+    val model: Model, var locallyNormalized: Boolean) {
 
   def addParameter(name: String, dim: Dim): Parameter = {
     val param = model.add_parameters(dim)
@@ -56,12 +56,12 @@ class PpModel(var names: Map[String, Parameter], var lookupNames: Map[String, Lo
   }
 }
 
-object PpModel {
-  def init(locallyNormalized: Boolean): PpModel = {
-    new PpModel(Map(), Map(), new Model, locallyNormalized)
+object PnpModel {
+  def init(locallyNormalized: Boolean): PnpModel = {
+    new PnpModel(Map(), Map(), new Model, locallyNormalized)
   }
   
-  def load(loader: ModelLoader): PpModel = {
+  def load(loader: ModelLoader): PnpModel = {
     val model = loader.load_model()
     val locallyNormalized = loader.load_boolean()
     
@@ -81,6 +81,6 @@ object PpModel {
       lookups += ((name, param))
     }
 
-    new PpModel(params.toMap, lookups.toMap, model, locallyNormalized)
+    new PnpModel(params.toMap, lookups.toMap, model, locallyNormalized)
   }
 }
