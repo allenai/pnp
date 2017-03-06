@@ -200,7 +200,7 @@ object TrainSemanticParserCli {
     
     val entityAnonymizedWords = unkedWords.toArray
     val entityAnonymizedTokenIds = tokenIds.toArray
-    for (entityMatch <- entityLinking.matches) {
+    for (entityMatch <- entityLinking.linkedMatches) {
       val span = entityMatch._1
       for (i <- span.start until span.end) {
         entityAnonymizedTokenIds(i) = vocab.getIndex(ENTITY)

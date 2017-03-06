@@ -4,10 +4,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.util.Collection;
-import java.util.List;
-import java.util.Arrays;
-import java.util.ArrayList;
+import java.util.*;
 
 import edu.stanford.nlp.sempre.Formula;
 import edu.stanford.nlp.sempre.Builder;
@@ -36,7 +33,7 @@ public class WikiTablesDataProcessor {
   public static List<CustomExample> getDataset(String path, boolean inSempreFormat,
                                                boolean includeDerivations, int beamSize) {
     CustomExample.opts.allowNoAnnotation = true;
-    TableKnowledgeGraph.opts.baseCSVDir = "data/wikitables/WikiTableQuestions";
+    TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions";
     LanguageAnalyzer.opts.languageAnalyzer = "corenlp.CoreNLPAnalyzer";
     CoreNLPAnalyzer.opts.annotators = Arrays.asList(new String[] {"tokenize", "ssplit", "pos", "lemma", "ner"});
     EditDistanceFuzzyMatcher.opts.expandAbbreviations = true;
@@ -87,21 +84,27 @@ public class WikiTablesDataProcessor {
     EditDistanceFuzzyMatcher.opts.fuzzyMatchMaxEditDistanceRatio = 0.3;
     
     FuzzyMatcher matcher = new EditDistanceFuzzyMatcher((TableKnowledgeGraph) ex.context.graph);
-    Collection<Formula> unlinkedFormulas = matcher.getAllFormulas(FuzzyMatchFnMode.ENTITY);
-    //unlinkedFormulas.addAll(matcher.getAllFormulas(FuzzyMatchFnMode.UNARY));
-    unlinkedFormulas.addAll(matcher.getAllFormulas(FuzzyMatchFnMode.BINARY));
-    // Adding unlinked entities with a null span
-    for (Formula formula: unlinkedFormulas)
-      entityLinking.add(new Pair(null, formula));
+    Set<Formula> formulasPresent = new HashSet<>();
     for (int i=0; i <= exTokens.size()-2; i++) {
       for (int j=i+1; j <= exTokens.size()-1; j++) {
         Collection<Formula> linkedFormulas = matcher.getFuzzyMatchedFormulas(ex.getTokens(), i, j,
                                          FuzzyMatchFnMode.ENTITY);
         linkedFormulas.addAll(matcher.getFuzzyMatchedFormulas(ex.getTokens(), i, j,
                 FuzzyMatchFnMode.BINARY));
-        for (Formula formula: linkedFormulas)
+        for (Formula formula: linkedFormulas) {
           entityLinking.add(new Pair(new Pair(i, j), formula));
+          formulasPresent.add(formula);
+        }
       }
+    }
+    // This gives all formulas that can be yielded by the table
+    Collection<Formula> unlinkedFormulas = matcher.getAllFormulas(FuzzyMatchFnMode.ENTITY);
+    //unlinkedFormulas.addAll(matcher.getAllFormulas(FuzzyMatchFnMode.UNARY));
+    unlinkedFormulas.addAll(matcher.getAllFormulas(FuzzyMatchFnMode.BINARY));
+    // Adding unlinked entities with a null span
+    for (Formula formula: unlinkedFormulas) {
+      if (! formulasPresent.contains(formula))
+        entityLinking.add(new Pair(null, formula));
     }
     return entityLinking;
   }

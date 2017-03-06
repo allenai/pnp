@@ -49,7 +49,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   
   var trainingDataOpt: OptionSpec[String] = null
   var testDataOpt: OptionSpec[String] = null
-  val typeDeclaration = new WikiTablesTypeDeclaration()
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -60,12 +59,13 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val dynetParams = new DynetParams()
     dynetParams.setMem_descriptor("2048")
     initialize(dynetParams)
-    
+
     // Initialize expression processing for Wikitables logical forms. 
     val simplifier = ExpressionSimplifier.lambdaCalculus()
     val comparator = new SimplificationComparator(simplifier)
     val logicalFormParser = ExpressionParser.expression2();
-    
+    val typeDeclaration = new WikiTablesTypeDeclaration()
+
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
@@ -94,9 +94,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
     val trainPreprocessed = trainingData.filter(!_.alternativeFormulas.isEmpty).map(
-        x => preprocessExample(x, vocab, logicalFormParser))
+        x => preprocessExample(x, vocab, logicalFormParser, typeDeclaration))
     val testPreprocessed = testData.filter(!_.alternativeFormulas.isEmpty).map(
-        x => preprocessExample(x, vocab, logicalFormParser))
+        x => preprocessExample(x, vocab, logicalFormParser, typeDeclaration))
 
     println("Found correct logical forms for " + trainPreprocessed.size + " training examples")
     println("Found correct logical forms for " + testPreprocessed.size + " test examples")
@@ -185,36 +185,43 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
    * Converts a {@code CustomExample} into a {@code WikiTablesExample}. 
    */
   def preprocessExample(ex: CustomExample, vocab: IndexedList[String],
-                        lfParser: ExpressionParser[Expression2]): WikiTablesExample = {
+                        lfParser: ExpressionParser[Expression2],
+                        typeDeclaration: WikiTablesTypeDeclaration): WikiTablesExample = {
     val sent = new AnnotatedSentence(ex.getTokens(), ex.languageInfo.posTags)
     val unkedWords = sent.getWords.asScala.map(
         x => if (vocab.contains(x)) { x } else { WikiTablesSemanticParserCli.UNK })
     val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toList
     val sempreEntityLinking = WikiTablesDataProcessor.getEntityLinking(ex)
-    val builder = ListBuffer[(Span, Entity, List[Int], Double)]()
+    val builder = ListBuffer[(Option[Span], Entity, List[Int], Double)]()
     for (linking <- sempreEntityLinking.asScala) {
       val entityString = linking.getSecond.toString
       val entityExpr = Expression2.constant(entityString)
       val entityType = typeDeclaration.getType(entityString)
       val template = ConstantTemplate(entityType, entityExpr)
-      // TODO: Passing names as null. Not sure what happens.
-      val entity = Entity(entityExpr, entityType, template, null)
       // Note: Passing a constant score of 0.1 for all matches
       if (linking.getFirst() == null) {
+        // For unlinked entities, the "name" corresponds to the sequence [type, token1, token2, ..] where
+        // token1, token2, .. are the tokens in the entity string.
+        // Eg.: "fb:row.row.player_name" -> ["fb:row.row", "player", "name"]
         val entityParts = entityString.split('.')
+        // Make the type string by joining all fields delimited by ., except the last one.
         val entityTokens = ListBuffer[String](entityParts.slice(1, entityParts.size - 1).mkString("."))
+        // Split the last field on _, because it represents spaces.
         entityTokens ++ entityParts.last.split('_')
         val entityTokenIds = entityTokens.map(x => vocab.getIndex(x)).toList
-        builder += ((null, entity, entityTokenIds, 0.1))
+        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
+        builder += ((None, entity, entityTokenIds, 0.1))
       }
       else {
         val i = linking.getFirst().getFirst()
         val j = linking.getFirst().getSecond()
-        builder += ((Span(i, j), entity, tokenIds.slice(i, j), 0.1))
+        val entityTokenIds = tokenIds.slice(i, j)
+        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
+        builder += ((Some(Span(i, j)), entity, entityTokenIds, 0.1))
       }
     }
     val entityLinking = new EntityLinking(builder.toList)
-    
+
     val entityAnonymizedWords = unkedWords.toArray
     val entityAnonymizedTokenIds = tokenIds.toArray
     for (entityMatch <- entityLinking.linkedMatches) {

@@ -111,15 +111,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
     val output = ListBuffer[(Type, EntityEncoding)]()
-    val linkedAndUnlinkedEntities = entityLinking.bestEntityMatchesList ++ entityLinking.unlinkedMatches
-    for (entityMatch <- linkedAndUnlinkedEntities) {
-      val span = entityMatch._1
-      val entity = entityMatch._2
-      val name = entityMatch._3
-      val score = entityMatch._4
-
+    def encodeBOW(tokenIds: List[Int]): Expression = {
       var lastOutput: Expression = null
-      for (wordId <- name) {
+      for (wordId <- tokenIds) {
         val inputEmbedding = lookup(cg, wordEmbeddings, wordId)
         if (lastOutput == null) {
           lastOutput = inputEmbedding
@@ -129,18 +123,31 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       }
       Preconditions.checkState(lastOutput != null)
       // Entity encoding is average of the representations of the corresponding span.
-      lastOutput = lastOutput / name.length
+      lastOutput / tokenIds.length
+    }
+    for (linkedEntityMatch <- entityLinking.bestEntityMatchesList) {
+      val span = linkedEntityMatch._1
+      val entity = linkedEntityMatch._2
+      val tokenIds = linkedEntityMatch._3
+      //val score = linkedEntityMatch._4
+      val encoding = encodeBOW(tokenIds)
       val spanVector = new FloatVector(tokens.length)
       for (i <- 0 until tokens.length) {
-        val spanStart = if(span == null) -1 else span.start
-        val spanEnd = if(span == null)  -1 else span.end
-        // Note: If span is null, spanVector will be all 0s.
-        val value = if (i >= spanStart && i < spanEnd) { 1.0 } else { 0.0 }
+        val value = if (i >= span.start && i < span.end) { 1.0 } else { 0.0 }
         spanVector.set(i, value.asInstanceOf[Float])
       }
       val spanExpression = input(cg, Seq(tokens.length), spanVector)
+      output += ((entity.t, EntityEncoding(entity, encoding, Some(span), spanExpression)))
+    }
 
-      output += ((entity.t, EntityEncoding(entity, lastOutput, span, spanExpression)))
+    for (unlinkedEntityMatch <- entityLinking.unlinkedMatches) {
+      val entity = unlinkedEntityMatch._1
+      val tokenIds = unlinkedEntityMatch._2
+      //val score = unlinkedEntityMatch._3
+      val encoding = encodeBOW(tokenIds)
+      val spanVector = new FloatVector(Seq.fill(tokens.length)(0.0))
+      val spanExpression = input(cg, Seq(tokens.length), spanVector)
+      output += ((entity.t, EntityEncoding(entity, encoding, None, spanExpression)))
     }
 
     SemanticParser.seqToMultimap(output)
@@ -565,7 +572,7 @@ case class InputEncoding(val tokens: Array[Int], val rnnState: ExpressionVector,
     val entityEncoding: MultiMap[Type, EntityEncoding]) {
 }
 
-case class EntityEncoding(val entity: Entity, val vector: Expression, val span: Span,
+case class EntityEncoding(val entity: Entity, val vector: Expression, val span: Option[Span],
     val spanVector: Expression) {
 }
 
