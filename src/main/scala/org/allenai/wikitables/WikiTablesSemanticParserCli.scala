@@ -99,9 +99,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
     val trainPreprocessed = trainingData.filter(!_.alternativeFormulas.isEmpty).map(
-        x => preprocessExample(x, vocab, logicalFormParser, typeDeclaration))
+        x => preprocessExample(x, vocab, simplifier, logicalFormParser, typeDeclaration))
     val testPreprocessed = testData.filter(!_.alternativeFormulas.isEmpty).map(
-        x => preprocessExample(x, vocab, logicalFormParser, typeDeclaration))
+        x => preprocessExample(x, vocab, simplifier, logicalFormParser, typeDeclaration))
 
     println("Found correct logical forms for " + trainPreprocessed.size + " training examples")
     println("Found correct logical forms for " + testPreprocessed.size + " test examples")
@@ -190,6 +190,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
    * Converts a {@code CustomExample} into a {@code WikiTablesExample}. 
    */
   def preprocessExample(ex: CustomExample, vocab: IndexedList[String],
+                        simplifier: ExpressionSimplifier,
                         lfParser: ExpressionParser[Expression2],
                         typeDeclaration: WikiTablesTypeDeclaration): WikiTablesExample = {
     val sent = new AnnotatedSentence(ex.getTokens(), ex.languageInfo.posTags)
@@ -248,7 +249,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Sempre's logical forms do not have parens around x in lambda expressions. Fixing that.
     // TODO: This is fragile.
     val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => x.toString().replaceAll("lambda x", "lambda (x)")}
-    val parsedLogicalForms = correctLogicalForms.map {x => lfParser.parse(x)}
+    val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(lfParser.parse(x))}
     new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava))
   }
 
