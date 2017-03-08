@@ -9,7 +9,6 @@ import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.PnpExample
 import org.allenai.pnp.PnpModel
-import org.allenai.pnp.ExecutionScore
 import org.allenai.pnp.semparse.MaxExecutionScore
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
@@ -49,40 +48,50 @@ import org.allenai.pnp.semparse.ActionSpace
 class WikiTablesSemanticParserCli extends AbstractCli() {
   
   var trainingDataOpt: OptionSpec[String] = null
+  // Path to the directory containing the correct logical forms
+  var derivationsPathOpt: OptionSpec[String] = null
   var testDataOpt: OptionSpec[String] = null
-  
+
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
+    derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
   }
   
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
-    
+    val dynetParams = new DynetParams()
+    dynetParams.setMem_descriptor("2048")
+    initialize(dynetParams)
+
     // Initialize expression processing for Wikitables logical forms. 
-    val typeDeclaration = new WikiTablesTypeDeclaration()
     val simplifier = ExpressionSimplifier.lambdaCalculus()
     val comparator = new SimplificationComparator(simplifier)
     val logicalFormParser = ExpressionParser.expression2();
-    
+    val typeDeclaration = new WikiTablesTypeDeclaration()
+
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true, 1000).asScala
+      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
+        options.valueOf(derivationsPathOpt), 100).asScala
     }
     
     val testData = ListBuffer[CustomExample]()
     if (options.has(testDataOpt)) {
       for (filename <- options.valuesOf(testDataOpt).asScala) {
-        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true, 1000).asScala
+        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
+          options.valueOf(derivationsPathOpt), 100).asScala
       }
     }
     
     println("Read " + trainingData.size + " training examples")
     val wordCounts = getWordCounts(trainingData)
+    val allEntities = trainingData.map(ex => getUnlinkedEntities(ex)).flatten.toList
+    val entityCounts = getEntityCounts(allEntities)
     // Vocab consists of all words that appear more than once in
     // the training data.
     val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
+    vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
     vocab.add(WikiTablesSemanticParserCli.UNK)
     vocab.add(WikiTablesSemanticParserCli.ENTITY)
     println(vocab.size + " words")
@@ -90,9 +99,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
     val trainPreprocessed = trainingData.filter(!_.alternativeFormulas.isEmpty).map(
-        x => preprocessExample(x, vocab, logicalFormParser))
+        x => preprocessExample(x, vocab, simplifier, logicalFormParser, typeDeclaration))
     val testPreprocessed = testData.filter(!_.alternativeFormulas.isEmpty).map(
-        x => preprocessExample(x, vocab, logicalFormParser))
+        x => preprocessExample(x, vocab, simplifier, logicalFormParser, typeDeclaration))
 
     println("Found correct logical forms for " + trainPreprocessed.size + " training examples")
     println("Found correct logical forms for " + testPreprocessed.size + " test examples")
@@ -161,31 +170,67 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     acc
   }
 
+  def getEntityCounts(entityNames: List[String]): CountAccumulator[String] = {
+    val acc = CountAccumulator.create[String]
+    for (entityString <- entityNames) {
+      // Strings are of the form fb:cell.cell_name
+      val parts = entityString.split('.')
+      acc.increment(parts.slice(1, parts.size - 1).mkString("."), 1.0)  // entity type
+      parts.last.split('_').map(x => acc.increment(x, 1.0))  // actual value split into tokens
+    }
+    acc
+  }
+
+  def getUnlinkedEntities(ex: CustomExample): List[String] = {
+    val sempreEntityLinking = WikiTablesDataProcessor.getEntityLinking(ex)
+    sempreEntityLinking.asScala.filter(p => p.getFirst() == null).map(p => p.getSecond().toString).toList
+  }
+  
   /**
    * Converts a {@code CustomExample} into a {@code WikiTablesExample}. 
    */
   def preprocessExample(ex: CustomExample, vocab: IndexedList[String],
-                        lfParser: ExpressionParser[Expression2]): WikiTablesExample = {
+                        simplifier: ExpressionSimplifier,
+                        lfParser: ExpressionParser[Expression2],
+                        typeDeclaration: WikiTablesTypeDeclaration): WikiTablesExample = {
     val sent = new AnnotatedSentence(ex.getTokens(), ex.languageInfo.posTags)
     val unkedWords = sent.getWords.asScala.map(
         x => if (vocab.contains(x)) { x } else { WikiTablesSemanticParserCli.UNK })
     val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toList
     val sempreEntityLinking = WikiTablesDataProcessor.getEntityLinking(ex)
-    val builder = ListBuffer[(Span, Entity, List[Int], Double)]()
+    val builder = ListBuffer[(Option[Span], Entity, List[Int], Double)]()
     for (linking <- sempreEntityLinking.asScala) {
-      val entityExpr = Expression2.constant(linking.getSecond().toString)
-      val entityType = WikiTablesTypeDeclaration.CELL_TYPE
+      val entityString = linking.getSecond.toString
+      val entityExpr = Expression2.constant(entityString)
+      val entityType = typeDeclaration.getType(entityString)
       val template = ConstantTemplate(entityType, entityExpr)
-      // TODO: Passing names as null. Not sure what happens.
-      val entity = Entity(entityExpr, entityType, template, null)
       // Note: Passing a constant score of 0.1 for all matches
-      builder += ((Span(linking.getFirst().getFirst(), linking.getFirst().getSecond()), entity, tokenIds, 0.1))
+      if (linking.getFirst() == null) {
+        // For unlinked entities, the "name" corresponds to the sequence [type, token1, token2, ..] where
+        // token1, token2, .. are the tokens in the entity string.
+        // Eg.: "fb:row.row.player_name" -> ["fb:row.row", "player", "name"]
+        val entityParts = entityString.split('.')
+        // Make the type string by joining all fields delimited by ., except the last one.
+        val entityTokens = ListBuffer[String](entityParts.slice(1, entityParts.size - 1).mkString("."))
+        // Split the last field on _, because it represents spaces.
+        entityTokens ++ entityParts.last.split('_')
+        val entityTokenIds = entityTokens.map(x => vocab.getIndex(x)).toList
+        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
+        builder += ((None, entity, entityTokenIds, 0.1))
+      }
+      else {
+        val i = linking.getFirst().getFirst()
+        val j = linking.getFirst().getSecond()
+        val entityTokenIds = tokenIds.slice(i, j)
+        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
+        builder += ((Some(Span(i, j)), entity, entityTokenIds, 0.1))
+      }
     }
     val entityLinking = new EntityLinking(builder.toList)
-    
+
     val entityAnonymizedWords = unkedWords.toArray
     val entityAnonymizedTokenIds = tokenIds.toArray
-    for (entityMatch <- entityLinking.matches) {
+    for (entityMatch <- entityLinking.linkedMatches) {
       val span = entityMatch._1
       for (i <- span.start until span.end) {
         entityAnonymizedTokenIds(i) = vocab.getIndex(WikiTablesSemanticParserCli.ENTITY)
@@ -204,7 +249,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Sempre's logical forms do not have parens around x in lambda expressions. Fixing that.
     // TODO: This is fragile.
     val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => x.toString().replaceAll("lambda x", "lambda (x)")}
-    val parsedLogicalForms = correctLogicalForms.map {x => lfParser.parse(x)}
+    val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(lfParser.parse(x))}
     new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava))
   }
 

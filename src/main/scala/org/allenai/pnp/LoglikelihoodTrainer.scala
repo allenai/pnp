@@ -30,31 +30,16 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         // Compute the distribution over correct executions.
         log.startTimer("pp_loglikelihood/forward")
         val conditional = example.conditional.beamSearch(beamSize, -1, env,
-            example.conditionalExecutionScore, graph, log)
+          example.conditionalExecutionScore, graph, log)
         log.stopTimer("pp_loglikelihood/forward")
         
         log.startTimer("pp_loglikelihood/build_loss")
-        var exLosses = ListBuffer[Expression]()
-        for (conditionalEx <- conditional.executions) {
-          val labeledExpressions = conditionalEx.env.labelNodeIds
-          val labelIndexes = conditionalEx.env.labels
-        
-          var exLoss: Expression = null          
-          for ((expr, labelInd) <- labeledExpressions.zip(labelIndexes)) {
-            val loss = pickneglogsoftmax(expr, labelInd)
-            if (exLoss == null) {
-              exLoss = loss
-            } else {
-              exLoss = (exLoss + loss)
-            }
-          }
-          exLosses += exLoss
-        }
+        val exLosses = conditional.executions.map(_.env.getScore(true, cg))
         
         val lossExpr = if (exLosses.length == 0) {
           Preconditions.checkState(sumMultipleExecutions,
-              "Found %s conditional executions (expected exactly 1) for example: %s",
-              conditional.executions.size.asInstanceOf[AnyRef], example)
+            "Found %s conditional executions (expected exactly 1) for example: %s",
+            conditional.executions.size.asInstanceOf[AnyRef], example)
 
           null
         } else if (exLosses.length == 1) {
@@ -64,13 +49,13 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
           // single label per example doesn't work "by accident" 
           // with an execution score that permits multiple labels.
           Preconditions.checkState(sumMultipleExecutions,
-              "Found %s conditional executions (expected exactly 1) for example: %s",
-              conditional.executions.size.asInstanceOf[AnyRef], example)
+            "Found %s conditional executions (expected exactly 1) for example: %s",
+            conditional.executions.size.asInstanceOf[AnyRef], example)
 
           logsumexp(new ExpressionVector(exLosses.toList.asJava))
         }
         log.stopTimer("pp_loglikelihood/build_loss")
-        
+
         if (lossExpr != null) {
           log.startTimer("pp_loglikelihood/eval_loss")
           loss += as_scalar(cg.incremental_forward(lossExpr))

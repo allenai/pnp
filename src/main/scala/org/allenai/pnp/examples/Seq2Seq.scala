@@ -269,6 +269,7 @@ object Seq2Seq {
     // Train using beam search optimization, similar to LaSO.
     // This optimizes the neural network parameters such that the
     // correct target sequence stays on the beam.
+    model.locallyNormalized = false
     val trainer = new BsoTrainer(50, beamSize, maxBeamSteps, model, sgd, new NullLogFunction())
     
     // Train with maximum likelihood (i.e., the usual way

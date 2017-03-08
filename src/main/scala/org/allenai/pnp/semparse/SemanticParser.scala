@@ -111,14 +111,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
     val output = ListBuffer[(Type, EntityEncoding)]()
-    for (entityMatch <- entityLinking.bestEntityMatchesList) {
-      val span = entityMatch._1
-      val entity = entityMatch._2
-      val name = entityMatch._3
-      val score = entityMatch._4
-
+    def encodeBOW(tokenIds: List[Int]): Expression = {
       var lastOutput: Expression = null
-      for (wordId <- name) {
+      for (wordId <- tokenIds) {
         val inputEmbedding = lookup(cg, wordEmbeddings, wordId)
         if (lastOutput == null) {
           lastOutput = inputEmbedding
@@ -127,15 +122,32 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         }
       }
       Preconditions.checkState(lastOutput != null)
-      
+      // Entity encoding is average of the representations of the corresponding span.
+      lastOutput / tokenIds.length
+    }
+    for (linkedEntityMatch <- entityLinking.bestEntityMatchesList) {
+      val span = linkedEntityMatch._1
+      val entity = linkedEntityMatch._2
+      val tokenIds = linkedEntityMatch._3
+      //val score = linkedEntityMatch._4
+      val encoding = encodeBOW(tokenIds)
       val spanVector = new FloatVector(tokens.length)
       for (i <- 0 until tokens.length) {
         val value = if (i >= span.start && i < span.end) { 1.0 } else { 0.0 }
         spanVector.set(i, value.asInstanceOf[Float])
       }
       val spanExpression = input(cg, Seq(tokens.length), spanVector)
+      output += ((entity.t, EntityEncoding(entity, encoding, Some(span), spanExpression)))
+    }
 
-      output += ((entity.t, EntityEncoding(entity, lastOutput, span, spanExpression)))
+    for (unlinkedEntityMatch <- entityLinking.unlinkedMatches) {
+      val entity = unlinkedEntityMatch._1
+      val tokenIds = unlinkedEntityMatch._2
+      //val score = unlinkedEntityMatch._3
+      val encoding = encodeBOW(tokenIds)
+      val spanVector = new FloatVector(Seq.fill(tokens.length)(0.0))
+      val spanExpression = input(cg, Seq(tokens.length), spanVector)
+      output += ((entity.t, EntityEncoding(entity, encoding, None, spanExpression)))
     }
 
     SemanticParser.seqToMultimap(output)
@@ -268,15 +280,24 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         // Score the entity templates
         entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
         entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
-        allScores = if (entities.size > 0) {
-          // TODO: How should we score these entities using attentions?
-          /*
-            entityChoiceScore = dot_product(entityWeights, rnnOutputDropout) + entityBias 
+        /*
+
+            entityChoiceScore = dot_product(entityWeights, rnnOutputDropout) + entityBias
             entityScores = concatenate(entityVectors.map(v => dot_product(v, attentionVector)
                 + entityChoiceScore))
-           */
-          
-          val entityScores = concatenateArray(entities.map(x => wordAttentions * x.spanVector))
+
+         */
+
+        allScores = if (entities.size > 0) {
+          // Note: We have two possibilities to score entities here. The second one that uses entity spans
+          // worked better for GeoQuery.
+          // Option 1:
+          val entityChoiceScore = dot_product(entityWeights, rnnOutputDropout) + entityBias
+          val entityScores = concatenateArray(entityVectors.map(v => dot_product(v, attentionVector)
+                        + entityChoiceScore))
+
+          // Option 2:
+          //val entityScores = concatenateArray(entities.map(x => wordAttentions * x.spanVector))
           concatenateArray(Array(actionScores, entityScores))
         } else {
           actionScores
@@ -346,7 +367,6 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val templates = actionSpace.getTemplates(curType) ++
         currentScope.getVariableTemplates(curType) ++
         entityLinking.getEntitiesWithType(curType).map(_.template)
-        
       val matches = templates.filter(_.matches(expIndex, exp, typeMap))
       if (matches.size != 1) {
         println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) +
@@ -553,7 +573,7 @@ case class InputEncoding(val tokens: Array[Int], val rnnState: ExpressionVector,
     val entityEncoding: MultiMap[Type, EntityEncoding]) {
 }
 
-case class EntityEncoding(val entity: Entity, val vector: Expression, val span: Span,
+case class EntityEncoding(val entity: Entity, val vector: Expression, val span: Option[Span],
     val spanVector: Expression) {
 }
 
