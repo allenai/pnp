@@ -48,10 +48,13 @@ import org.allenai.pnp.semparse.ActionSpace
 class WikiTablesSemanticParserCli extends AbstractCli() {
   
   var trainingDataOpt: OptionSpec[String] = null
+  // Path to the directory containing the correct logical forms
+  var derivationsPathOpt: OptionSpec[String] = null
   var testDataOpt: OptionSpec[String] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
+    derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
   }
   
@@ -69,13 +72,15 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true, 100).asScala
+      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
+        options.valueOf(derivationsPathOpt), 100).asScala
     }
     
     val testData = ListBuffer[CustomExample]()
     if (options.has(testDataOpt)) {
       for (filename <- options.valuesOf(testDataOpt).asScala) {
-        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true, 100).asScala
+        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
+          options.valueOf(derivationsPathOpt), 100).asScala
       }
     }
     

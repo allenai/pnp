@@ -1,10 +1,8 @@
 package org.allenai.wikitables;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.BufferedReader;
-import java.io.IOException;
+import java.io.*;
 import java.util.*;
+import java.util.zip.GZIPInputStream;
 
 import edu.stanford.nlp.sempre.Formula;
 import edu.stanford.nlp.sempre.Builder;
@@ -31,7 +29,8 @@ import fig.basic.*;
 
 public class WikiTablesDataProcessor {
   public static List<CustomExample> getDataset(String path, boolean inSempreFormat,
-                                               boolean includeDerivations, int beamSize) {
+                                               boolean includeDerivations, String derivationsPath,
+                                               int beamSize) {
     CustomExample.opts.allowNoAnnotation = true;
     TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions";
     LanguageAnalyzer.opts.languageAnalyzer = "corenlp.CoreNLPAnalyzer";
@@ -41,36 +40,56 @@ public class WikiTablesDataProcessor {
     EditDistanceFuzzyMatcher.opts.alsoReturnUnion = true;
     EditDistanceFuzzyMatcher.opts.alsoMatchPart = true;
     EditDistanceFuzzyMatcher.opts.fuzzyMatchMaxEditDistanceRatio = 0.3;
+    List<CustomExample> dataset;
     if (inSempreFormat) {
-        List<Pair<String, String>> pairedPaths = new ArrayList<Pair<String, String>>();
-        pairedPaths.add(new Pair("train", path));
-        List<CustomExample> dataset = CustomExample.getDataset(pairedPaths, null);
-        if (includeDerivations)
-            addDerivations(dataset, beamSize);
-        return dataset;
+      List<Pair<String, String>> pairedPaths = new ArrayList<>();
+      pairedPaths.add(new Pair("train", path));
+      dataset = CustomExample.getDataset(pairedPaths, null);
     } else {
-        List<CustomExample> dataset = new ArrayList<CustomExample>();
-        try {
-            BufferedReader reader = new BufferedReader(new FileReader(new File(path)));
-            int exampleId = 0;
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String[] lineParts = line.split("\t");
-                LispTree tree = LispTree.proto.parseFromString(lineParts[0]);
-                CustomExample ex = CustomExample.fromLispTree(tree, Integer.toString(exampleId));
-                // This does things like tokenizing the utterance.
-                ex.preprocess();
-                ex.targetFormula = Formula.fromString(lineParts[1]);
-                dataset.add(ex);
-                exampleId++;
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
+      dataset = new ArrayList<>();
+      try {
+        BufferedReader reader = new BufferedReader(new FileReader(new File(path)));
+        int exampleId = 0;
+        String line;
+        while ((line = reader.readLine()) != null) {
+          String[] lineParts = line.split("\t");
+          LispTree tree = LispTree.proto.parseFromString(lineParts[0]);
+          CustomExample ex = CustomExample.fromLispTree(tree, Integer.toString(exampleId));
+          // This does things like tokenizing the utterance.
+          ex.preprocess();
+          ex.targetFormula = Formula.fromString(lineParts[1]);
+          dataset.add(ex);
+          exampleId++;
         }
-        if (includeDerivations)
-            addDerivations(dataset, beamSize);
-        return dataset;
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
     }
+    if (includeDerivations) {
+      if (derivationsPath == null)
+        computeDerivations(dataset, beamSize);
+      else
+        addDerivations(dataset, derivationsPath);
+      int maxNumFormulas = 0;
+      int minNumFormulas = (int) Double.POSITIVE_INFINITY;
+      int totalNumFormulas = 0;
+      int numZeroFormulas = 0;
+      for (CustomExample ex: dataset) {
+        int numFormulas = ex.alternativeFormulas.size();
+        if (numFormulas > maxNumFormulas)
+          maxNumFormulas = numFormulas;
+        if (numFormulas < minNumFormulas)
+          minNumFormulas = numFormulas;
+        numZeroFormulas += numFormulas == 0 ? 1 : 0;
+        totalNumFormulas += numFormulas;
+      }
+      System.out.println("Finished adding derivations to the dataset.");
+      System.out.println("Max number of formulas per question: " + maxNumFormulas);
+      System.out.println("Min number of formulas per question: " + minNumFormulas);
+      System.out.println("Average number of formulas per question: " + (float) totalNumFormulas / dataset.size());
+      System.out.println(numZeroFormulas + " questions did not yield any logical forms.");
+    }
+    return dataset;
   }
 
   public static List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(CustomExample ex) {
@@ -109,7 +128,29 @@ public class WikiTablesDataProcessor {
     return entityLinking;
   }
 
-  static void addDerivations(List<CustomExample> dataset, int beamSize) {
+  static void addDerivations(List<CustomExample> dataset, String derivationsPath) {
+    for (CustomExample ex: dataset) {
+      String exId = ex.getId();
+      File file = new File(derivationsPath + "/" + exId + ".gz");
+      if (file.exists()) {
+        try {
+          BufferedReader reader = new BufferedReader(new InputStreamReader(
+                  new GZIPInputStream(new FileInputStream(file))));
+          List<Formula> correctFormulas = new ArrayList<>();
+          String line;
+          // TODO: Sort the derivations by length and set a limit on their number.
+          while ((line = reader.readLine()) != null) {
+            correctFormulas.add(Formula.fromString(line));
+          }
+          ex.alternativeFormulas = correctFormulas;
+        } catch (IOException e) {
+          e.printStackTrace();
+        }
+      }
+    }
+  }
+
+  static void computeDerivations(List<CustomExample> dataset, int beamSize) {
     // Parses the examples in the given dataset, and stores all the correct derivations.
 
     // Setting all the options typically selected by Sempre
@@ -141,12 +182,8 @@ public class WikiTablesDataProcessor {
     // End of command line arguments.
     Builder builder = new Builder();
     builder.build();
-    int maxNumFormulas = 0;
-    int minNumFormulas = (int) Double.POSITIVE_INFINITY;
-    int totalNumFormulas = 0;
     float sumAvgNumCorrect = 0;
     int numOffBeam = 0;
-    int numZeroFormulas = 0;
     for (CustomExample ex: dataset) {
       int numAllDerivations = 0;
       List<Formula> correctFormulas = new ArrayList<>();
@@ -166,27 +203,16 @@ public class WikiTablesDataProcessor {
       ex.alternativeFormulas = correctFormulas;
       int numFormulas = correctFormulas.size();
       sumAvgNumCorrect += numAllDerivations == 0 ? 0.0 : (float) numFormulas / numAllDerivations;
-      if (numFormulas > maxNumFormulas)
-        maxNumFormulas = numFormulas;
-      if (numFormulas < minNumFormulas)
-        minNumFormulas = numFormulas;
-      numZeroFormulas += numFormulas == 0 ? 1 : 0;
-      totalNumFormulas += numFormulas;
     }
-    System.out.println("Finished adding derivations to the dataset.");
-    System.out.println("Max number of formulas per question: " + maxNumFormulas);
-    System.out.println("Min number of formulas per question: " + minNumFormulas);
-    System.out.println("Average number of formulas per question: " + (float) totalNumFormulas / dataset.size());
     System.out.println("Average proportion of correct formulas per question: " + sumAvgNumCorrect / dataset.size());
     System.out.println(numOffBeam + " out of " + dataset.size() + " questions had derivations that fell off the beam.");
-    System.out.println(numZeroFormulas + " questions did not yield any logical forms.");
   }
 
   public static void main(String[] args) {
-    String path = "data/wikitables/wikitables_sample_small.examples";
-    //String path = "data/WikiTableQuestions/data/training-before300.examples";
-    //String path = "data/wikitables/wikitables_data.ldcs";
-    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, false, 50);
+    //String path = "data/wikitables/wikitables_sample_small.examples";
+    String derivationsPath = "data/WikiTableQuestions/all_lfs";
+    String path = "data/WikiTableQuestions/data/training-before300.examples";
+    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, true, derivationsPath, 50);
     for (int i = 0; i < dataset.size(); i++) {
       CustomExample ex = dataset.get(i);
       System.out.println("Utterance: " + ex.utterance);
@@ -199,10 +225,6 @@ public class WikiTablesDataProcessor {
         else
           System.out.println("Linked entity: " + p.getFirst().getFirst() + " " + p.getFirst().getSecond() + " " + p.getSecond());
       }
-      //int numFormulas = ex.alternativeFormulas.size();
-      //for (Formula formula: ex.alternativeFormulas) {
-      //  System.out.println("Correct formula: " + formula);
-      //}
     }
-  } 
+  }
 }
