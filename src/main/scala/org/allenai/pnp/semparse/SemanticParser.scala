@@ -289,13 +289,14 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
          */
 
         allScores = if (entities.size > 0) {
-          // TODO: How should we score these entities using attentions?
-
+          // Note: We have two possibilities to score entities here. The second one that uses entity spans
+          // worked better for GeoQuery.
+          // Option 1:
           val entityChoiceScore = dot_product(entityWeights, rnnOutputDropout) + entityBias
           val entityScores = concatenateArray(entityVectors.map(v => dot_product(v, attentionVector)
                         + entityChoiceScore))
 
-          
+          // Option 2:
           //val entityScores = concatenateArray(entities.map(x => wordAttentions * x.spanVector))
           concatenateArray(Array(actionScores, entityScores))
         } else {

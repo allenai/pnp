@@ -104,11 +104,18 @@ public class WikiTablesDataProcessor {
     
     FuzzyMatcher matcher = new EditDistanceFuzzyMatcher((TableKnowledgeGraph) ex.context.graph);
     Set<Formula> formulasPresent = new HashSet<>();
-    for (int i=0; i <= exTokens.size()-2; i++) {
-      for (int j=i+1; j <= exTokens.size()-1; j++) {
-        Collection<Formula> linkedFormulas = matcher.getFuzzyMatchedFormulas(ex.getTokens(), i, j,
+    for (int i=0; i <= exTokens.size()-1; i++) {
+      for (int j=i+1; j <= exTokens.size(); j++) {
+        if (j == i+1) {
+          // We're looking at a span of one token
+          String token = exTokens.get(i);
+          if (token.matches("[-+]?\\d*\\.?\\d+"))
+            //entityLinking.add(new Pair(new Pair(i, j), Formula.fromString("(number "+token+")")));
+            entityLinking.add(new Pair(new Pair(i, j), Formula.fromString(token)));
+        }
+        Collection<Formula> linkedFormulas = matcher.getFuzzyMatchedFormulas(exTokens, i, j,
                                          FuzzyMatchFnMode.ENTITY);
-        linkedFormulas.addAll(matcher.getFuzzyMatchedFormulas(ex.getTokens(), i, j,
+        linkedFormulas.addAll(matcher.getFuzzyMatchedFormulas(exTokens, i, j,
                 FuzzyMatchFnMode.BINARY));
         for (Formula formula: linkedFormulas) {
           entityLinking.add(new Pair(new Pair(i, j), formula));
@@ -125,6 +132,13 @@ public class WikiTablesDataProcessor {
       if (! formulasPresent.contains(formula))
         entityLinking.add(new Pair(null, formula));
     }
+    // Sempre often generates formulas that contain 1, 0 and -1. Adding them as unlinked entities.
+    //entityLinking.add(new Pair(null, Formula.fromString("(number 0)")));
+    //entityLinking.add(new Pair(null, Formula.fromString("(number 1)")));
+    //entityLinking.add(new Pair(null, Formula.fromString("(number -1)")));
+    entityLinking.add(new Pair(null, Formula.fromString("0")));
+    entityLinking.add(new Pair(null, Formula.fromString("1")));
+    entityLinking.add(new Pair(null, Formula.fromString("-1")));
     return entityLinking;
   }
 

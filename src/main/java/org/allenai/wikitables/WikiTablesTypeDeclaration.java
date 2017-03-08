@@ -1,7 +1,6 @@
 package org.allenai.wikitables;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 import com.google.common.collect.Maps;
 import com.jayantkrish.jklol.ccg.lambda.AbstractTypeDeclaration;
