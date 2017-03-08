@@ -141,7 +141,7 @@ class TrainSemanticParserCli extends AbstractCli() {
     // Train model
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
+    val trainer = new LoglikelihoodTrainer(50, 10, false, model, sgd, new DefaultLogFunction())
     println("Running locally-normalized training...")
     trainer.train(ppExamples.toList)
     
