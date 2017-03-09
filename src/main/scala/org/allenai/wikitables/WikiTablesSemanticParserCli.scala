@@ -43,7 +43,11 @@ import org.allenai.pnp.semparse.ActionSpace
 import org.allenai.pnp.PnpInferenceContext
 
 /** Command line program for training a semantic parser 
-  * on the WikiTables data set.  
+  * on the WikiTables data set.
+  * runMain org.allenai.wikitables.WikiTablesSemanticParserCli -trainingData TRAIN-DATA-PATH
+  *                                                           [-testData TEST-DATA-PATH]
+  *                                                           [-derivationsPath PATH-TO-LOGICAL-FORMS]
+  * If derivationsPath is not specified, Sempre will be used to parse utterances (this will be SLOW!)
   */
 class WikiTablesSemanticParserCli extends AbstractCli() {
   
@@ -248,7 +252,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // TODO: This is fragile.
     val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => x.toString().replaceAll("lambda x", "lambda (x)")}
     val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(lfParser.parse(x))}
-    new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava))
+    new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
+                          ex.context, ex.targetValue);
   }
 
   /** Returns a modified dataset that has CcgExamples, with one logical form per example.
@@ -299,20 +304,20 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     model
   }
 
+  //TODO(pradeep): Make a new Test Cli
   /** Evaluate the test accuracy of parser on examples. Logical
     * forms are compared for equality using comparator.  
     */
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser,
       model: PnpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
       comparator: ExpressionComparator): SemanticParserLoss = {
-    // TODO: Change the errors to denotation errors.
     println("")
     var numCorrect = 0
     var numCorrectAt10 = 0
     for (e <- examples) {
       println(e.getSentence.getWords.asScala.mkString(" "))
       println(e.getSentence.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
-      println("expected: " + e.getLogicalForm)
+      //println("expected: " + e.getLogicalForm)
       
       val sent = e.getSentence
       val dist = parser.parse(
@@ -325,8 +330,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
-        val simplified = simplifier.apply(x.value.decodeExpression)
-        if (comparator.equals(e.getLogicalForm, simplified)) {
+         val simplified = simplifier.apply(x.value.decodeExpression)
+        if (e.isFormulaCorrect(simplified)) {
           println("* " + x.logProb.formatted("%02.3f") + "  " + simplified)
           true
         } else {
