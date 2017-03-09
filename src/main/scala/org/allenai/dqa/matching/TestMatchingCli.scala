@@ -25,12 +25,14 @@ class TestMatchingCli extends AbstractCli {
   
   var diagramsOpt: OptionSpec[String] = null
   var diagramFeaturesOpt: OptionSpec[String] = null
+  var examplesOpt: OptionSpec[String] = null
   var modelOpt: OptionSpec[String] = null
   var lossJson: OptionSpec[String] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
     diagramFeaturesOpt = parser.accepts("diagramFeatures").withRequiredArg().ofType(classOf[String]).required()
+    examplesOpt = parser.accepts("examples").withRequiredArg().ofType(classOf[String]).required()
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
     lossJson = parser.accepts("lossJson").withRequiredArg().ofType(classOf[String])
   }
@@ -42,11 +44,15 @@ class TestMatchingCli extends AbstractCli {
     val diagramFeatures = DiagramFeatures.fromJsonFile(options.valueOf(diagramFeaturesOpt)).map(
         x => (x.imageId, x)).toMap
     val diagramsAndLabels = Diagram.fromJsonFile(options.valueOf(diagramsOpt), diagramFeatures)
-    
+    val diagramsMap = diagramsAndLabels.map(x => (x._1.id, x)).toMap
+
+    // Read examples for training.
+    val matchingExamples = MatchingExample.fromJsonFile(options.valueOf(examplesOpt), diagramsMap)
     // Sample diagram pairs of the same type to create
     // matching examples.
-    val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 30)
-    
+    // val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 30)
+    println(matchingExamples.length + " test examples.")
+
     // Read model
     val loader = new ModelLoader(options.valueOf(modelOpt))
     val model = PnpModel.load(loader)

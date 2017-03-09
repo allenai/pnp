@@ -29,6 +29,7 @@ class TrainMatchingCli extends AbstractCli {
   
   var diagramsOpt: OptionSpec[String] = null
   var diagramFeaturesOpt: OptionSpec[String] = null
+  var examplesOpt: OptionSpec[String] = null
   var modelOutputOpt: OptionSpec[String] = null
   var matchIndependentOpt: OptionSpec[Void] = null
   var binaryFactorsOpt: OptionSpec[Void] = null
@@ -36,6 +37,7 @@ class TrainMatchingCli extends AbstractCli {
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
     diagramFeaturesOpt = parser.accepts("diagramFeatures").withRequiredArg().ofType(classOf[String]).required()
+    examplesOpt = parser.accepts("examples").withRequiredArg().ofType(classOf[String]).required()
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
     matchIndependentOpt = parser.accepts("matchIndependent")
     binaryFactorsOpt = parser.accepts("binaryFactors")
@@ -48,11 +50,14 @@ class TrainMatchingCli extends AbstractCli {
     val diagramFeatures = DiagramFeatures.fromJsonFile(options.valueOf(diagramFeaturesOpt)).map(
         x => (x.imageId, x)).toMap
     val diagramsAndLabels = Diagram.fromJsonFile(options.valueOf(diagramsOpt), diagramFeatures)
+    val diagramsMap = diagramsAndLabels.map(x => (x._1.id, x)).toMap
     val featureDim = diagramFeatures.head._2.pointFeatures.head._2.size.toInt
     
-    // Sample diagram pairs of the same type to create
-    // matching examples.
-    val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 10)
+    // Read in pairs of examples for training
+    val matchingExamples = MatchingExample.fromJsonFile(options.valueOf(examplesOpt), diagramsMap)
+    // Sample examples for training
+    // val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 10)
+    println(matchingExamples.length + " training examples.")
     
     val model = PnpModel.init(false)
     val matchingModel = MatchingModel.create(featureDim, options.has(matchIndependentOpt),

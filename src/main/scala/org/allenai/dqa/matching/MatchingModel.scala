@@ -39,8 +39,14 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
   }
 
   def preprocess(source: Diagram, target: Diagram, computationGraph: CompGraph): MatchingPreprocessing = {
-    val sourceFeatures = source.features.getFeatureMatrix(source.parts, computationGraph.cg)
-    val targetFeatures = target.features.getFeatureMatrix(target.parts, computationGraph.cg)
+    val cg = computationGraph.cg
+    val sourceFeatures = source.features.getFeatureMatrix(source.parts, cg)
+    val targetFeatures = target.features.getFeatureMatrix(target.parts, cg)
+    
+    val distanceWeights = parameter(cg, computationGraph.getParameter(DISTANCE_WEIGHTS))
+    val mlpL1W = parameter(cg, computationGraph.getParameter(MLP_L1_W))
+    val mlpL1B = parameter(cg, computationGraph.getParameter(MLP_L1_B))
+    val mlpL2W = parameter(cg, computationGraph.getParameter(MLP_L2_W))
     
     val matchScores = for {
       sourceFeature <- sourceFeatures
@@ -48,29 +54,33 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
       for {
         targetFeature <- targetFeatures
       } yield {
-        scoreSourceTargetMatch(sourceFeature, targetFeature, computationGraph)
+        scoreSourceTargetMatch(sourceFeature, targetFeature, distanceWeights,
+            mlpL1W, mlpL1B, mlpL2W)
       }
     }
-
-    new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores)
+    
+    // Create expressions for parameters once up front for efficiency.
+    val binaryDistanceWeights = parameter(cg,
+        computationGraph.getParameter(BINARY_DISTANCE_WEIGHTS))
+    val binaryW = parameter(cg, computationGraph.getParameter(BINARY_W))
+    val binaryB = parameter(cg, computationGraph.getParameter(BINARY_B))
+    val binaryDistanceWeightsNonlinear = parameter(cg,
+        computationGraph.getParameter(BINARY_HIDDEN_DIST))
+    
+    new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores,
+        binaryDistanceWeights, binaryW, binaryB, binaryDistanceWeightsNonlinear)
   }
 
   private def scoreSourceTargetMatch(sourceFeature: Expression, targetFeature: Expression,
-      computationGraph: CompGraph): Expression = {
-    // Get neural network parameters.
-    val cg = computationGraph.cg
-    val distanceWeights = parameter(cg, computationGraph.getParameter(DISTANCE_WEIGHTS))
-    val mlpL1W = parameter(cg, computationGraph.getParameter(MLP_L1_W))
-    val mlpL1B = parameter(cg, computationGraph.getParameter(MLP_L1_B))
-    val mlpL2W = parameter(cg, computationGraph.getParameter(MLP_L2_W))
-
+      distanceWeights: Expression, mlpL1W: Expression, mlpL1B: Expression,
+      mlpL2W: Expression): Expression = {
     // Learn a distance metric
     val delta = sourceFeature - targetFeature
     val dist = -1.0 * (transpose(delta) * distanceWeights * delta)
-        
+
     // multilayer perceptron
-    val concatenated = concatenate(new ExpressionVector(List(sourceFeature, targetFeature)))
-    val mlpOutput = (mlpL2W * tanh((mlpL1W * concatenated) + mlpL1B)) 
+    // val concatenated = concatenate(new ExpressionVector(List(sourceFeature, targetFeature)))
+    // val mlpOutput = (mlpL2W * tanh((mlpL1W * concatenated) + mlpL1B))
 
     // mlpOutput
     dist
@@ -99,7 +109,7 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
           val prevSourceFeatures = preprocessing.sourceFeatures(prevSource.ind)
           val prevToCurTarget = curTargetFeatures - prevTargetFeatures
           val prevToCurSource = curSourceFeatures - prevSourceFeatures
-          scoreBinaryFactor(prevToCurSource, prevToCurTarget, compGraph)
+          scoreBinaryFactor(prevToCurSource, prevToCurTarget, preprocessing)
         }
 
         pairwiseScores.foldLeft(input(compGraph.cg, 0))(_ + _)
@@ -114,19 +124,10 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
   }
   
   private def scoreBinaryFactor(prevToCurSource: Expression, prevToCurTarget: Expression,
-      compGraph: CompGraph) = {
-    val cg = compGraph.cg
-    val binaryDistanceWeights = parameter(cg,
-        compGraph.getParameter(BINARY_DISTANCE_WEIGHTS))
-    val binaryW = parameter(cg, compGraph.getParameter(BINARY_W))
-    val binaryB = parameter(cg, compGraph.getParameter(BINARY_B))
-    val binaryDistanceWeightsNonlinear = parameter(cg,
-        compGraph.getParameter(BINARY_HIDDEN_DIST))
-    
-    val prevToCurTargetNonlinear = tanh((binaryW * prevToCurTarget) + binaryB)
-    val prevToCurSourceNonlinear = tanh((binaryW * prevToCurSource) + binaryB)
-
+      p: MatchingPreprocessing) = {
     /*
+    val prevToCurTargetNonlinear = tanh((p.binaryW * prevToCurTarget) + p.binaryB)
+    val prevToCurSourceNonlinear = tanh((p.binaryW * prevToCurSource) + p.binaryB)
     val delta = prevToCurTargetNonlinear - prevToCurSourceNonlinear
     val dist = -1.0 * (transpose(delta) * binaryDistanceWeightsNonlinear * delta)
     dist
@@ -134,9 +135,9 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
 
     // learn a distance metric (assuming binaryDistanceWeights is PSD)
     val delta = prevToCurTarget - prevToCurSource
-    val dist = -1.0 * (transpose(delta) * binaryDistanceWeights * delta)
+    val dist = -1.0 * (transpose(delta) * p.binaryDistanceWeights * delta)
     dist
-          
+
     // val sim = dot_product(prevToCurTarget, prevToCurSource)
           
     // transpose(prevToCurTarget) * binaryDistanceWeights * prevToCurSource
@@ -195,7 +196,9 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
  * computations that can be shared across many choices.
  */
 class MatchingPreprocessing(val sourceFeatures: Array[Expression],
-    val targetFeatures: Array[Expression], val matchScores: Array[Array[Expression]]) {
+    val targetFeatures: Array[Expression], val matchScores: Array[Array[Expression]],
+    val binaryDistanceWeights: Expression, val binaryW: Expression, val binaryB: Expression,
+    val binaryDistanceWeightsNonlinear: Expression) {
   
   def getMatchScore(sourcePart: Part, targetPart: Part): Expression = {
     matchScores(sourcePart.ind)(targetPart.ind)

@@ -1,13 +1,42 @@
 #!/bin/bash -e
 
-DATA_DIR=data/dqa/
-RAW_ANNOTATIONS=$DATA_DIR/all_output.json
-IMAGE_DIR=$DATA_DIR/images/
+DATA_DIR=data/dqa_parts_v1/
+RAW_ANNOTATIONS=$DATA_DIR/annotation.json
+IMAGE_DIR=$DATA_DIR/
 
 DIAGRAM_SIZE_OUTPUT=$DATA_DIR/diagram_sizes.txt
 OUTPUT=$DATA_DIR/diagrams.json
-FEATURE_OUTPUT=data/dqa/diagram_features_synthetic.json
+FEATURE_OUTPUT=$DATA_DIR/diagram_features_xy.json
+
+UNSEEN_SAMPLE=$DATA_DIR/unseen_sample.json
+UNSEEN_S_DIR=$DATA_DIR/data_splits/unseen_sample
+UNSEEN_SAMPLE_TRAIN=$UNSEEN_S_DIR/train.json
+UNSEEN_SAMPLE_TEST=$UNSEEN_S_DIR/test.json
+
+UNSEEN_CATEGORY=$DATA_DIR/unseen_category.json
+UNSEEN_C_DIR=$DATA_DIR/data_splits/unseen_category
+UNSEEN_CATEGORY_TRAIN=$UNSEEN_C_DIR/train.json
+UNSEEN_CATEGORY_TEST=$UNSEEN_C_DIR/test.json
 
 sips -g pixelHeight -g pixelWidth $IMAGE_DIR/**/*.png > $DIAGRAM_SIZE_OUTPUT
 python experiments/dqa/scripts/preprocess_diagram_annotations.py $RAW_ANNOTATIONS $DIAGRAM_SIZE_OUTPUT $OUTPUT
 python experiments/dqa/scripts/generate_diagram_feats.py $OUTPUT $FEATURE_OUTPUT
+
+# Generate data splits. Note that the sampling is seeded so as to be repeatable
+# (as long as the number of samples doesn't change.)
+python experiments/dqa/scripts/sample_pairs.py $UNSEEN_SAMPLE $UNSEEN_SAMPLE_TRAIN train 1 -1
+python experiments/dqa/scripts/sample_pairs.py $UNSEEN_SAMPLE $UNSEEN_SAMPLE_TEST test -1 -1
+python experiments/dqa/scripts/sample_pairs.py $UNSEEN_CATEGORY $UNSEEN_CATEGORY_TRAIN train 1 -1
+python experiments/dqa/scripts/sample_pairs.py $UNSEEN_CATEGORY $UNSEEN_CATEGORY_TEST test 10 -1
+
+# Unseen sample splits for different numbers of training diagrams
+SPLITS=( 2 5 10 20 )
+for i in ${SPLITS[@]}; do
+    DIR=$DATA_DIR/data_splits/unseen_sample_$i
+    mkdir -p $DIR
+    TRAIN=$DATA_DIR/data_splits/unseen_sample_$i/train.json
+    TEST=$DATA_DIR/data_splits/unseen_sample_$i/test.json
+
+    python experiments/dqa/scripts/sample_pairs.py $UNSEEN_SAMPLE $TRAIN train 1 $i
+    python experiments/dqa/scripts/sample_pairs.py $UNSEEN_SAMPLE $TEST test -1 -1
+done
