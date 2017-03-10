@@ -7,8 +7,8 @@ import org.allenai.pnp.Pnp.computationGraph
 import org.allenai.pnp.PnpModel
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
-import edu.cmu.dynet.dynet_swig._
+import Utilities.RichNumeric
+
 import org.allenai.pnp.ExecutionScore
 import com.google.common.base.Preconditions
 import org.allenai.pnp.Env
@@ -39,8 +39,8 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
   }
 
   def preprocess(source: Diagram, target: Diagram, computationGraph: CompGraph): MatchingPreprocessing = {
-    val sourceFeatures = source.features.getFeatureMatrix(source.parts, computationGraph.cg)
-    val targetFeatures = target.features.getFeatureMatrix(target.parts, computationGraph.cg)
+    val sourceFeatures = source.features.getFeatureMatrix(source.parts)
+    val targetFeatures = target.features.getFeatureMatrix(target.parts)
     
     val matchScores = for {
       sourceFeature <- sourceFeatures
@@ -58,19 +58,19 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
   private def scoreSourceTargetMatch(sourceFeature: Expression, targetFeature: Expression,
       computationGraph: CompGraph): Expression = {
     // Get neural network parameters.
-    val cg = computationGraph.cg
-    val distanceWeights = parameter(cg, computationGraph.getParameter(DISTANCE_WEIGHTS))
-    val mlpL1W = parameter(cg, computationGraph.getParameter(MLP_L1_W))
-    val mlpL1B = parameter(cg, computationGraph.getParameter(MLP_L1_B))
-    val mlpL2W = parameter(cg, computationGraph.getParameter(MLP_L2_W))
+    val distanceWeights = Expression.parameter(computationGraph.getParameter(DISTANCE_WEIGHTS))
+    val mlpL1W = Expression.parameter(computationGraph.getParameter(MLP_L1_W))
+    val mlpL1B = Expression.parameter(computationGraph.getParameter(MLP_L1_B))
+    val mlpL2W = Expression.parameter(computationGraph.getParameter(MLP_L2_W))
 
     // Learn a distance metric
     val delta = sourceFeature - targetFeature
-    val dist = -1.0 * (transpose(delta) * distanceWeights * delta)
+    val dist = -1.0 * (Expression.transpose(delta) * distanceWeights * delta)
         
     // multilayer perceptron
-    val concatenated = concatenate(new ExpressionVector(List(sourceFeature, targetFeature)))
-    val mlpOutput = (mlpL2W * tanh((mlpL1W * concatenated) + mlpL1B)) 
+    val concatenated = Expression.concatenate(
+      new ExpressionVector(List(sourceFeature, targetFeature)))
+    val mlpOutput = (mlpL2W * Expression.tanh((mlpL1W * concatenated) + mlpL1B))
 
     // mlpOutput
     dist
@@ -102,7 +102,7 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
           scoreBinaryFactor(prevToCurSource, prevToCurTarget, compGraph)
         }
 
-        pairwiseScores.foldLeft(input(compGraph.cg, 0))(_ + _)
+        Expression.sum(new ExpressionVector(pairwiseScores))
       }
 
       unaryScores.zip(binaryScores).map(x => x._1 + x._2)
@@ -110,17 +110,18 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
       unaryScores
     }
 
-    concatenate(new ExpressionVector(scores.toVector))
+    Expression.concatenate(new ExpressionVector(scores.toVector))
   }
   
   private def scoreBinaryFactor(prevToCurSource: Expression, prevToCurTarget: Expression,
-      compGraph: CompGraph) = {
-    val cg = compGraph.cg
-    val binaryDistanceWeights = parameter(cg,
+      compGraph: CompGraph): Expression = {
+    import Expression.{parameter, tanh, transpose}
+
+    val binaryDistanceWeights = parameter(
         compGraph.getParameter(BINARY_DISTANCE_WEIGHTS))
-    val binaryW = parameter(cg, compGraph.getParameter(BINARY_W))
-    val binaryB = parameter(cg, compGraph.getParameter(BINARY_B))
-    val binaryDistanceWeightsNonlinear = parameter(cg,
+    val binaryW = parameter(compGraph.getParameter(BINARY_W))
+    val binaryB = parameter(compGraph.getParameter(BINARY_B))
+    val binaryDistanceWeightsNonlinear = parameter(
         compGraph.getParameter(BINARY_HIDDEN_DIST))
     
     val prevToCurTargetNonlinear = tanh((binaryW * prevToCurTarget) + binaryB)
@@ -184,9 +185,9 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
   }
   
   def save(saver: ModelSaver): Unit = {
-    saver.add_int(featureDim)
-    saver.add_boolean(matchIndependent)
-    saver.add_boolean(binaryFactors)
+    saver.addInt(featureDim)
+    saver.addBoolean(matchIndependent)
+    saver.addBoolean(binaryFactors)
   }
 }
 
@@ -240,14 +241,14 @@ object MatchingModel {
   def create(featureDim: Int, matchIndependent: Boolean,
       binaryFactors: Boolean, model: PnpModel): MatchingModel = {
     val hiddenDim = 10
-    model.addParameter(DISTANCE_WEIGHTS, Seq(featureDim, featureDim))
-    model.addParameter(BINARY_DISTANCE_WEIGHTS, Seq(featureDim, featureDim))
-    model.addParameter(BINARY_W, Seq(hiddenDim, featureDim))
-    model.addParameter(BINARY_B, Seq(hiddenDim))
-    model.addParameter(BINARY_HIDDEN_DIST, Seq(hiddenDim, hiddenDim))
-    model.addParameter(MLP_L1_W, Seq(hiddenDim, featureDim * 2))
-    model.addParameter(MLP_L1_B, Seq(hiddenDim))
-    model.addParameter(MLP_L2_W, Seq(1, hiddenDim))
+    model.addParameter(DISTANCE_WEIGHTS, Dim(featureDim, featureDim))
+    model.addParameter(BINARY_DISTANCE_WEIGHTS, Dim(featureDim, featureDim))
+    model.addParameter(BINARY_W, Dim(hiddenDim, featureDim))
+    model.addParameter(BINARY_B, Dim(hiddenDim))
+    model.addParameter(BINARY_HIDDEN_DIST, Dim(hiddenDim, hiddenDim))
+    model.addParameter(MLP_L1_W, Dim(hiddenDim, featureDim * 2))
+    model.addParameter(MLP_L1_B, Dim(hiddenDim))
+    model.addParameter(MLP_L2_W, Dim(1, hiddenDim))
     new MatchingModel(featureDim, matchIndependent, binaryFactors, model)
   }
 
@@ -255,9 +256,9 @@ object MatchingModel {
    * Load a serialized MatchingModel.
    */
   def load(loader: ModelLoader, model: PnpModel): MatchingModel = {
-    val featureDim = loader.load_int()
-    val matchIndependent = loader.load_boolean()
-    val binaryFactors = loader.load_boolean()
+    val featureDim = loader.loadInt()
+    val matchIndependent = loader.loadBoolean()
+    val binaryFactors = loader.loadBoolean()
     new MatchingModel(featureDim, matchIndependent, binaryFactors, model)
   }
 }

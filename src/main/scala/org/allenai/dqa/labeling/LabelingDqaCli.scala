@@ -10,7 +10,7 @@ import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.util.IndexedList
 
-import edu.cmu.dynet.dynet_swig._
+import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
@@ -21,11 +21,8 @@ import org.allenai.pnp.Env
 import org.allenai.pnp.Pnp
 import com.jayantkrish.jklol.training.DefaultLogFunction
 import org.allenai.pnp.LoglikelihoodTrainer
-import edu.cmu.dynet.SimpleSGDTrainer
 import org.allenai.pnp.semparse.ActionSpace
 import com.google.common.collect.HashMultimap
-import edu.cmu.dynet.ComputationGraph
-import edu.cmu.dynet.DynetParams
 
 class LabelingDqaCli extends AbstractCli {
   
@@ -40,7 +37,7 @@ class LabelingDqaCli extends AbstractCli {
   }
   
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
+    Initialize.initialize()
   
     // Initialize expression processing for logical forms. 
     val typeDeclaration = ExplicitTypeDeclaration.getDefault
@@ -104,10 +101,9 @@ class LabelingDqaCli extends AbstractCli {
   
   def validateParser(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser): Unit = {
     for (ex <- examples) {
-      val cg = ComputationGraph.getNew
-      
+      ComputationGraph.renew()
       val lfDist = parser.generateExpression(ex.tokenIds, ex.entityLinking)
-      val dist = lfDist.beamSearch(100, 100, Env.init, null, parser.model.getComputationGraph(cg), null)
+      val dist = lfDist.beamSearch(100, 100, Env.init, null, parser.model.getComputationGraph(), null)
       println(ex.ex.tokens.mkString(" "))
       for (x <- dist.executions) {
         println("  "  + x)
@@ -137,10 +133,9 @@ class LabelingDqaCli extends AbstractCli {
       model: PnpModel): Unit = {
     var numCorrect = 0 
     for (ex <- examples) {
-      val cg = ComputationGraph.getNew
-
+      ComputationGraph.renew()
       val pp = p3.exampleToPnpExample(ex).unconditional
-      val dist = pp.beamSearch(100, 100, Env.init, null, model.getComputationGraph(cg), null)
+      val dist = pp.beamSearch(100, 100, Env.init, null, model.getComputationGraph(), null)
 
       println(ex.ex.tokens.mkString(" "))
       println(ex.ex.answerOptions)

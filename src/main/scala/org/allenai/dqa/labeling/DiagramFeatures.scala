@@ -3,8 +3,6 @@ package org.allenai.dqa.labeling
 import scala.io.Source
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
-import edu.cmu.dynet.dynet_swig._
 import spray.json._
 import spray.json.DefaultJsonProtocol._
 
@@ -17,12 +15,12 @@ case class DiagramFeatures(imageId: String, pointFeatures: Map[Point, FloatVecto
     pointFeatures(part.coords)
   }
 
-  def getFeatureMatrix(parts: Seq[Part], cg: ComputationGraph): Array[Expression] = {
+  def getFeatureMatrix(parts: Seq[Part]): Array[Expression] = {
     val expressions = for {
       part <- parts
     } yield {
       val features = getFeatures(part)
-      input(cg, Seq(features.size().asInstanceOf[Int]), features)
+      Expression.input(Dim(features.size), features)
     }
 
     expressions.toArray

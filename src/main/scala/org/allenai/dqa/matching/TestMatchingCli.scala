@@ -13,8 +13,6 @@ import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.util.IoUtils
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers.floatVectorToSeq
-import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
@@ -36,7 +34,7 @@ class TestMatchingCli extends AbstractCli {
   }
   
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
+    Initialize.initialize()
     
     // Read and preprocess data
     val diagramFeatures = DiagramFeatures.fromJsonFile(options.valueOf(diagramFeaturesOpt)).map(
@@ -70,10 +68,10 @@ class TestMatchingCli extends AbstractCli {
     val losses = for {
       x <- examples
     } yield {
+      ComputationGraph.renew()
       val pnp = matchingModel.apply(x.source, x.target)
       
-      val cg = ComputationGraph.getNew
-      val compGraph = matchingModel.model.getComputationGraph(cg)
+      val compGraph = matchingModel.model.getComputationGraph()
       val dist = pnp.beamSearch(beamSize, -1, Env.init, null, compGraph)
 
       val predicted = dist.executions(0).value
@@ -81,16 +79,18 @@ class TestMatchingCli extends AbstractCli {
       println(x.source.id + " -> " + x.target.id)
       println(x.source.id)
       for ((p, e) <- x.source.parts.zip(preprocessing.sourceFeatures)) {
-        val v = as_vector(cg.incremental_forward(e)).mkString(" ")
+        val v = ComputationGraph.incrementalForward(e).toSeq.mkString(" ")
         println("  " + p + " " + v)
       }
       println(x.target.id)
       for ((p, e) <- x.target.parts.zip(preprocessing.targetFeatures)) {
-        val v = as_vector(cg.incremental_forward(e)).mkString(" ")
+        val v = ComputationGraph.incrementalForward(e).toSeq.mkString(" ")
         println("  " + p + " " + v)
       }
       for (i <- 0 until preprocessing.matchScores.length) {
-        println(preprocessing.matchScores(i).map(x => as_scalar(cg.incremental_forward(x))).mkString(" "))
+        println(preprocessing.matchScores(i)
+            .map(x => ComputationGraph.incrementalForward(x).toFloat)
+            .mkString(" "))
       }
 
       println("expected: " + x.label)
