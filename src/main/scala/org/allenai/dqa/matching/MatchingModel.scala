@@ -7,7 +7,7 @@ import org.allenai.pnp.Pnp.computationGraph
 import org.allenai.pnp.PnpModel
 
 import edu.cmu.dynet._
-import Utilities.RichNumeric
+import Utilities.NumbersAsExpressions
 
 import org.allenai.pnp.ExecutionScore
 import com.google.common.base.Preconditions
