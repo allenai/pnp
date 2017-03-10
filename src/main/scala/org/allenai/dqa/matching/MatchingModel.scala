@@ -102,7 +102,7 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
           scoreBinaryFactor(prevToCurSource, prevToCurTarget, compGraph)
         }
 
-        Expression.sum(new ExpressionVector(pairwiseScores))
+        pairwiseScores.foldLeft(Expression.input(0))(_ + _)
       }
 
       unaryScores.zip(binaryScores).map(x => x._1 + x._2)
