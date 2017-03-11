@@ -12,10 +12,13 @@ import scala.io.Source
  * Example for diagram part matching model. Each example
  * consists of a source diagram whose parts are to be
  * matched with those of the target diagram. The label
- * is the correct matching. 
+ * is the correct matching. sourceLabel and targetLabel are
+ * included for evaluation purposes, but should not be 
+ * used in a matching model. They will be null for real
+ * test examples.  
  */
-case class MatchingExample(source: Diagram, target: Diagram,
-    label: MatchingLabel) {
+case class MatchingExample(source: Diagram, sourceLabel: DiagramLabel,
+    target: Diagram, targetLabel: DiagramLabel, label: MatchingLabel) {
   
 }
 
@@ -65,6 +68,6 @@ object MatchingExample {
 
     val label = MatchingLabel(partMap.toMap)
 
-    MatchingExample(source, target, label)
+    MatchingExample(source, sourceLabel, target, targetLabel, label)
   }
 }

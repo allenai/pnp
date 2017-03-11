@@ -27,6 +27,7 @@ class TestMatchingCli extends AbstractCli {
   var diagramFeaturesOpt: OptionSpec[String] = null
   var examplesOpt: OptionSpec[String] = null
   var modelOpt: OptionSpec[String] = null
+  var beamSizeOpt: OptionSpec[Integer] = null
   var lossJson: OptionSpec[String] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
@@ -34,6 +35,7 @@ class TestMatchingCli extends AbstractCli {
     diagramFeaturesOpt = parser.accepts("diagramFeatures").withRequiredArg().ofType(classOf[String]).required()
     examplesOpt = parser.accepts("examples").withRequiredArg().ofType(classOf[String]).required()
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
+    beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     lossJson = parser.accepts("lossJson").withRequiredArg().ofType(classOf[String])
   }
   
@@ -59,7 +61,7 @@ class TestMatchingCli extends AbstractCli {
     val matchingModel = MatchingModel.load(loader, model)
     loader.done()
 
-    val losses = test(matchingExamples, matchingModel)
+    val losses = test(matchingExamples, matchingModel, options.valueOf(beamSizeOpt))
 
     if (options.has(lossJson)) {
       val jsons = losses.map(x => x.toJson(MyJsonProtocol.matchingLossFormat).compactPrint)
@@ -67,8 +69,8 @@ class TestMatchingCli extends AbstractCli {
     }
   }
 
-  def test(examples: Seq[MatchingExample], matchingModel: MatchingModel): Seq[MatchingLoss] = {
-    val beamSize = 5
+  def test(examples: Seq[MatchingExample], matchingModel: MatchingModel,
+      beamSize: Int): Seq[MatchingLoss] = {
     var numElementsCorrect = 0
     var numElements = 0
     var numDiagramsCorrect = 0
@@ -87,12 +89,12 @@ class TestMatchingCli extends AbstractCli {
       println(x.source.id + " -> " + x.target.id)
       println(x.source.id)
       for ((p, e) <- x.source.parts.zip(preprocessing.sourceFeatures)) {
-        val v = as_vector(cg.incremental_forward(e)).mkString(" ")
+        val v = as_vector(cg.incremental_forward(e.xy)).mkString(" ")
         println("  " + p + " " + v)
       }
       println(x.target.id)
       for ((p, e) <- x.target.parts.zip(preprocessing.targetFeatures)) {
-        val v = as_vector(cg.incremental_forward(e)).mkString(" ")
+        val v = as_vector(cg.incremental_forward(e.xy)).mkString(" ")
         println("  " + p + " " + v)
       }
       for (i <- 0 until preprocessing.matchScores.length) {
@@ -113,6 +115,8 @@ class TestMatchingCli extends AbstractCli {
           x.label.targetToSourcePartMap.toSet)
       numElementsCorrect += intersection.size
       numElements += predicted.targetToSourcePartMap.size
+      
+      // TODO: Compute confusion matrix
 
       val sourceDims = Point(x.source.width, x.source.height)
       val targetDims = Point(x.target.width, x.target.height)

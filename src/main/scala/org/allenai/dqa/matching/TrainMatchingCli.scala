@@ -34,6 +34,9 @@ class TrainMatchingCli extends AbstractCli {
   var matchIndependentOpt: OptionSpec[Void] = null
   var binaryFactorsOpt: OptionSpec[Void] = null
   
+  var epochsOpt: OptionSpec[Integer] = null
+  var beamSizeOpt: OptionSpec[Integer] = null
+  
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
     diagramFeaturesOpt = parser.accepts("diagramFeatures").withRequiredArg().ofType(classOf[String]).required()
@@ -41,6 +44,9 @@ class TrainMatchingCli extends AbstractCli {
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
     matchIndependentOpt = parser.accepts("matchIndependent")
     binaryFactorsOpt = parser.accepts("binaryFactors")
+    
+    epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
+    beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
   }
 
   override def run(options: OptionSet): Unit = {
@@ -51,7 +57,16 @@ class TrainMatchingCli extends AbstractCli {
         x => (x.imageId, x)).toMap
     val diagramsAndLabels = Diagram.fromJsonFile(options.valueOf(diagramsOpt), diagramFeatures)
     val diagramsMap = diagramsAndLabels.map(x => (x._1.id, x)).toMap
-    val featureDim = diagramFeatures.head._2.pointFeatures.head._2.size.toInt
+
+    val xyFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.xy.size.toInt
+    val matchingFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.matching.size.toInt
+    val vggFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.vgg0.size.toInt
+    val vggAllFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.vggAll.size.toInt
+    
+    println("xy feature dim: " + xyFeatureDim)
+    println("matching feature dim: " + matchingFeatureDim)
+    println("vgg feature dim: " + vggFeatureDim)
+    println("vgg all feature dim: " + vggAllFeatureDim)
     
     // Read in pairs of examples for training
     val matchingExamples = MatchingExample.fromJsonFile(options.valueOf(examplesOpt), diagramsMap)
@@ -60,10 +75,11 @@ class TrainMatchingCli extends AbstractCli {
     println(matchingExamples.length + " training examples.")
     
     val model = PnpModel.init(false)
-    val matchingModel = MatchingModel.create(featureDim, options.has(matchIndependentOpt),
-        options.has(binaryFactorsOpt), model) 
+    val matchingModel = MatchingModel.create(xyFeatureDim, matchingFeatureDim,
+        vggFeatureDim, options.has(matchIndependentOpt), options.has(binaryFactorsOpt), model) 
 
-    train(matchingExamples, matchingModel)
+    train(matchingExamples, matchingModel, options.valueOf(epochsOpt),
+        options.valueOf(beamSizeOpt))
     
     // Serialize model to disk.
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
@@ -72,7 +88,8 @@ class TrainMatchingCli extends AbstractCli {
     saver.done()
   }
 
-  def train(examples: Seq[MatchingExample], matchingModel: MatchingModel): Unit = {
+  def train(examples: Seq[MatchingExample], matchingModel: MatchingModel,
+      epochs: Int, beamSize: Int): Unit = {
     val pnpExamples = for {
       x <- examples
     } yield {
@@ -82,9 +99,9 @@ class TrainMatchingCli extends AbstractCli {
     }
 
     val model = matchingModel.model
-    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    val sgd = new SimpleSGDTrainer(model.model, 0.01f, 0.01f)
     // val trainer = new LoglikelihoodTrainer(100, 100, false, model, sgd, new DefaultLogFunction())
-    val trainer = new BsoTrainer(50, 5, -1, model, sgd, new DefaultLogFunction())
+    val trainer = new BsoTrainer(epochs, beamSize, -1, model, sgd, new DefaultLogFunction())
     trainer.train(pnpExamples.toList)
   }
 }
