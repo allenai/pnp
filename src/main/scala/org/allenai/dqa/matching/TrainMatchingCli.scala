@@ -98,9 +98,35 @@ class TrainMatchingCli extends AbstractCli {
       PnpExample(unconditional, unconditional, Env.init, oracle) 
     }
 
+    val learningRate = 0.01f
+    val decay = 0.01f
+
     val model = matchingModel.model
-    val sgd = new SimpleSGDTrainer(model.model, 0.01f, 0.01f)
-    // val trainer = new LoglikelihoodTrainer(100, 100, false, model, sgd, new DefaultLogFunction())
+
+    // Pretraining
+    /*
+    println("Pretraining with loglikelihood...")
+    // Save current model configuration then set it up for
+    // conditional loglikelihood training.
+    val matchIndependent = matchingModel.matchIndependent
+    val locallyNormalized = model.locallyNormalized
+    matchingModel.matchIndependent = true
+    model.locallyNormalized = true
+
+    // Pretrain with conditional loglikelihood.
+    val pretrainSgd = new SimpleSGDTrainer(model.model, learningRate, decay)
+    val pretrainer = new LoglikelihoodTrainer(1, 1, false, model, pretrainSgd,
+        new DefaultLogFunction())
+    pretrainer.train(pnpExamples)
+    
+    // Restore model configuration. 
+    matchingModel.matchIndependent = matchIndependent
+    model.locallyNormalized = locallyNormalized
+    */
+    
+    // Globally-normalized training
+    println("Training...")
+    val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)
     val trainer = new BsoTrainer(epochs, beamSize, -1, model, sgd, new DefaultLogFunction())
     trainer.train(pnpExamples.toList)
   }

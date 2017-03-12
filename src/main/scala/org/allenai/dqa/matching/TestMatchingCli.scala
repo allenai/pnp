@@ -20,6 +20,7 @@ import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import spray.json.DefaultJsonProtocol
 import spray.json.pimpAny
+import org.allenai.dqa.labeling.DiagramLabel
 
 class TestMatchingCli extends AbstractCli {
   
@@ -120,8 +121,8 @@ class TestMatchingCli extends AbstractCli {
 
       val sourceDims = Point(x.source.width, x.source.height)
       val targetDims = Point(x.target.width, x.target.height)
-      MatchingLoss(x.source.imageId, x.source.parts, sourceDims,
-          x.target.imageId, x.target.parts, targetDims, 
+      MatchingLoss(x.source.imageId, x.source.parts, x.sourceLabel, sourceDims,
+          x.target.imageId, x.target.parts, x.targetLabel, targetDims,
           predicted.targetToSourcePartMap.toList)
     }
 
@@ -134,15 +135,16 @@ class TestMatchingCli extends AbstractCli {
   } 
 }
 
-case class MatchingLoss(sourceImgId: String, sourceParts: Vector[Part], sourceDims: Point,
-    targetImgId: String, targetParts: Vector[Part], targetDims: Point,
-    matching: List[(Int, Int)]) {
+case class MatchingLoss(sourceImgId: String, sourceParts: Vector[Part], sourceLabel: DiagramLabel,
+    sourceDims: Point, targetImgId: String, targetParts: Vector[Part], targetLabel: DiagramLabel,
+    targetDims: Point, matching: List[(Int, Int)]) {
 }
 
 object MyJsonProtocol extends DefaultJsonProtocol {
   implicit val pointFormat = jsonFormat2(Point)
   implicit val partFormat = jsonFormat3(Part)
-  implicit val matchingLossFormat = jsonFormat7(MatchingLoss)
+  implicit val diagramLabelFormat = jsonFormat2(DiagramLabel)
+  implicit val matchingLossFormat = jsonFormat9(MatchingLoss)
 }
 
 object TestMatchingCli {

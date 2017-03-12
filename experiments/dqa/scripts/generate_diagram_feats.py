@@ -14,22 +14,24 @@ matching_dir = sys.argv[3]
 out_file = sys.argv[4]
 
 def label_to_matching_vector(diagram_json, label):
-    '''
     matching_vec = []
     matching_file = matching_dir + "/" + j["label"] + "/" + j["imageId"] + "_" + label + ".pklz"
     with open(matching_file, 'rb') as g:
         matching = pickle.loads(gzip.decompress(g.read()))
         matching_vec = matching[0]
+        # print(j["imageId"] + " " + label)
+        # print(matching_vec)
 
     return matching_vec
-    '''
 
+    '''
     # One-hot at a label-specific index.
-    DIMS = 8
+    DIMS = 32
     vec = [0.0] * DIMS
     h = label.__hash__() % DIMS
     vec[h] = 1.0
     return np.array(vec)
+    '''
 
 def label_to_vgg_vector(diagram_json, label, scale):
     vgg_vec = []

@@ -5,6 +5,10 @@ trait ExecutionScore {
 }
 
 object ExecutionScore {
+  // TODO: make this a type so we can compose it with other functions, etc.
+  // tag, choice, env
+  // type ExecutionScore = (Any, Any, Env) => Double
+
   val zero = new ExecutionScore() {
     def apply(tag: Any, choice: Any, env: Env): Double = {
         0.0

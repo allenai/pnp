@@ -21,7 +21,7 @@ import org.allenai.dqa.labeling.PointExpressions
  * distribution over matchings between the two sets of
  * parts. 
  */
-class MatchingModel(val matchIndependent: Boolean,
+class MatchingModel(var matchIndependent: Boolean,
     val binaryFactors: Boolean, val model: PnpModel) {
 
   import MatchingModel._
@@ -54,9 +54,11 @@ class MatchingModel(val matchIndependent: Boolean,
     val matchingW1 = parameter(cg, computationGraph.getParameter(MATCHING_W1))
     val matchingB1 = parameter(cg, computationGraph.getParameter(MATCHING_B1))
     val matchingW2 = parameter(cg, computationGraph.getParameter(MATCHING_W2))
+    val matchingL = parameter(cg, computationGraph.getParameter(MATCHING_L))
     val matchingOuterW1 = parameter(cg, computationGraph.getParameter(MATCHING_OUTER_W1))
     val matchingOuterB1 = parameter(cg, computationGraph.getParameter(MATCHING_OUTER_B1))
     val matchingOuterW2 = parameter(cg, computationGraph.getParameter(MATCHING_OUTER_W2))
+    val matchingOuterL = parameter(cg, computationGraph.getParameter(MATCHING_OUTER_L))
     
     val matchScores = for {
       sourceFeature <- sourceFeatures
@@ -66,7 +68,8 @@ class MatchingModel(val matchIndependent: Boolean,
       } yield {
         scoreSourceTargetMatch(sourceFeature, targetFeature, distanceWeights,
             mlpL1W, mlpL1B, mlpL2W, vggW1, vggB1, vggW2, matchingW1, matchingB1, matchingW2,
-            matchingOuterW1, matchingOuterB1, matchingOuterW2)
+            matchingL, matchingOuterW1, matchingOuterB1, matchingOuterW2, matchingOuterL,
+            computationGraph)
       }
     }
 
@@ -86,11 +89,13 @@ class MatchingModel(val matchIndependent: Boolean,
       targetFeature: PointExpressions,
       distanceWeights: Expression, mlpL1W: Expression, mlpL1B: Expression,
       mlpL2W: Expression, vggW1: Expression, vggB1: Expression, vggW2: Expression,
-      matchingW1: Expression, matchingB1: Expression, matchingW2: Expression,
-      matchingOuterW1: Expression, matchingOuterB1: Expression, matchingOuterW2: Expression): Expression = {
+      matchingW1: Expression, matchingB1: Expression, matchingW2: Expression, matchingL: Expression,
+      matchingOuterW1: Expression, matchingOuterB1: Expression, matchingOuterW2: Expression,
+      matchingOuterL: Expression, computationGraph: CompGraph): Expression = {
     // Learn a distance metric
-    val delta = sourceFeature.xy - targetFeature.xy
-    val dist = -1.0 * (transpose(delta) * distanceWeights * delta)
+    // val delta = sourceFeature.xy - targetFeature.xy
+    // val dist = -1.0 * (transpose(delta) * distanceWeights * delta)
+    // dist
 
     // val vggDelta = sourceFeature.vggAll - targetFeature.vggAll
     // val vggDist = -1.0 * dot_product(vggDelta, vggDelta)
@@ -103,12 +108,20 @@ class MatchingModel(val matchIndependent: Boolean,
 
     // matching MLP
     val matchingDelta = sourceFeature.matching - targetFeature.matching
-    // val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
-    val matchingAbsScore = matchingW2 * rectify((matchingW1 * matchingDelta) + matchingB1)
+    val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
+    val matchingAbsScore = matchingW2 * rectify((matchingW1 * matchingAbsDelta) + matchingB1)
+    matchingAbsScore
 
-    dist + matchingAbsScore
-    
-    
+    // matchingAbsScore + dist
+
+    // Matching linear model
+    /*
+    val matchingDelta = sourceFeature.matching - targetFeature.matching
+    val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
+    val matchingLinearScore = matchingL * matchingAbsDelta
+    matchingLinearScore
+    */
+
     // Outer product
     /*
     val matchingDim = 32
@@ -122,6 +135,17 @@ class MatchingModel(val matchIndependent: Boolean,
     oprodScore
     */
     
+    // Outer product of absolute value delta
+    /*
+    val matchingDim = 32
+    val delta = sourceFeature.matching - targetFeature.matching
+    val absDelta = rectify(delta) + rectify(-1 * delta)
+    val mat = concatenate_cols(new ExpressionVector(Vector.fill(matchingDim)(absDelta)))
+    val oprod = reshape(cmult(mat, transpose(mat)), Seq(matchingDim * matchingDim))
+    val oprodScore = matchingOuterL * oprod
+    oprodScore
+    */
+    
     // dist
     
     // multilayer perceptron
@@ -131,7 +155,7 @@ class MatchingModel(val matchIndependent: Boolean,
     // mlpOutput
     // dist
     // -1.0 * dot_product(delta, delta)
-    // input(cg, 0.0f)
+    // input(computationGraph.cg, 0.0f)
   }
   
   private def getAffineTransformData(matching: List[(Part, Part)],
@@ -156,7 +180,7 @@ class MatchingModel(val matchIndependent: Boolean,
       val sourceMatrix = transpose(concatenate_cols(new ExpressionVector(sourceTargetExpressions.map(_._2))))
           
       val identity = input(compGraph.cg, Seq(2, 2), new FloatVector(Vector(1.0f, 0.0f, 0.0f, 1.0f)))
-      val l2Regularization = 1.0f
+      val l2Regularization = 0.1f
       val regressionParams = inverse((transpose(sourceMatrix) * sourceMatrix)
         + (identity * l2Regularization)) * (transpose(sourceMatrix) * targetMatrix)
 
@@ -186,59 +210,9 @@ class MatchingModel(val matchIndependent: Boolean,
       remainingArray.map(x => input(compGraph.cg, 0.0f))
     }
 
-    // XXX: false => binaryFactors
-    val binaryScores = if (false) {
-      val curTargetFeatures = preprocessing.targetFeatures(targetPart.ind).xy
-      
-      remainingArray.map { curSource =>
-        val curSourceFeatures = preprocessing.sourceFeatures(curSource.ind).xy      
-        val pairwiseScores = for {
-          (prevTarget, prevSource) <- currentMatching 
-        } yield {
-          // TODO: load these binary feature vectors from the
-          // diagram instead.
-          val prevTargetFeatures = preprocessing.targetFeatures(prevTarget.ind).xy
-          val prevSourceFeatures = preprocessing.sourceFeatures(prevSource.ind).xy
-          val prevToCurTarget = curTargetFeatures - prevTargetFeatures
-          val prevToCurSource = curSourceFeatures - prevSourceFeatures
-          scoreBinaryFactor(prevToCurSource, prevToCurTarget, preprocessing)
-        }
-
-        pairwiseScores.foldLeft(input(compGraph.cg, 0))(_ + _)
-      }
-    } else {
-      remainingArray.map(x => input(compGraph.cg, 0.0f))
-    }
-
-    val scores = unaryScores.zip(binaryScores).map(x => x._1 + x._2).zip(affineTransformScores).map(x => x._1 + x._2)
+    val scores = unaryScores.zip(affineTransformScores).map(x => x._1 + x._2)
 
     concatenate(new ExpressionVector(scores.toVector))
-  }
-  
-  private def scoreBinaryFactor(prevToCurSource: Expression, prevToCurTarget: Expression,
-      p: MatchingPreprocessing) = {
-    /*
-    val prevToCurTargetNonlinear = tanh((p.binaryW * prevToCurTarget) + p.binaryB)
-    val prevToCurSourceNonlinear = tanh((p.binaryW * prevToCurSource) + p.binaryB)
-    val delta = prevToCurTargetNonlinear - prevToCurSourceNonlinear
-    val dist = -1.0 * (transpose(delta) * binaryDistanceWeightsNonlinear * delta)
-    dist
-    */
-
-    // learn a distance metric (assuming binaryDistanceWeights is PSD)
-    val delta = prevToCurTarget - prevToCurSource
-    val dist = -1.0 * (transpose(delta) * p.binaryDistanceWeights * delta)
-    dist
-
-    // val sim = dot_product(prevToCurTarget, prevToCurSource)
-          
-    // transpose(prevToCurTarget) * binaryDistanceWeights * prevToCurSource
-
-    /*
-    val delta = prevToCurTarget - prevToCurSource
-    val dist = -1.0 * dot_product(delta, delta)
-    dist
-    */
   }
 
   /**
@@ -334,10 +308,12 @@ object MatchingModel {
   val MATCHING_W1 = "matchingW1"
   val MATCHING_B1 = "matchingB1"
   val MATCHING_W2 = "matchingW2"
+  val MATCHING_L = "matchingL"
   
   val MATCHING_OUTER_W1 = "matchingOuterW1"
   val MATCHING_OUTER_B1 = "matchingOuterB1"
   val MATCHING_OUTER_W2 = "matchingOuterW2"
+  val MATCHING_OUTER_L = "matchingOuterL"
 
   val AFFINE_TRANSFORM_PARAM = "AFFINE_TRANSFORM_PARAM"
 
@@ -364,15 +340,17 @@ object MatchingModel {
     model.addParameter(VGG_B1, Seq(vggHiddenDim))
     model.addParameter(VGG_W2, Seq(1, vggHiddenDim))
     
-    val matchingHiddenDim = 512
+    val matchingHiddenDim = 768
     model.addParameter(MATCHING_W1, Seq(matchingHiddenDim, matchingFeatureDim))
     model.addParameter(MATCHING_B1, Seq(matchingHiddenDim))
     model.addParameter(MATCHING_W2, Seq(1, matchingHiddenDim))
+    model.addParameter(MATCHING_L, Seq(1, matchingFeatureDim))
     
     val matchingOuterDim = matchingFeatureDim * matchingFeatureDim
     model.addParameter(MATCHING_OUTER_W1, Seq(matchingHiddenDim, matchingOuterDim))
     model.addParameter(MATCHING_OUTER_B1, Seq(matchingHiddenDim))
     model.addParameter(MATCHING_OUTER_W2, Seq(1, matchingHiddenDim))
+    model.addParameter(MATCHING_OUTER_L, Seq(1, matchingOuterDim))
     
     model.addParameter(AFFINE_TRANSFORM_PARAM, Seq(1))
     

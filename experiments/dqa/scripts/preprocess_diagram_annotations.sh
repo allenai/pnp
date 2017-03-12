@@ -7,7 +7,9 @@ IMAGE_DIR=$DATA_DIR/
 DIAGRAM_SIZE_OUTPUT=$DATA_DIR/diagram_sizes.txt
 OUTPUT=$DATA_DIR/diagrams.json
 VGG_DIR=$DATA_DIR/vgg_features/dqa_matching_final_complete_working_crop_feat_fc2/
-MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_seg_12/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_37/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_seg_12/
+MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_51/
 FEATURE_OUTPUT=$DATA_DIR/diagram_features_xy.json
 
 UNSEEN_SAMPLE=$DATA_DIR/unseen_sample_trvats.json
@@ -28,10 +30,10 @@ sips -g pixelHeight -g pixelWidth $IMAGE_DIR/**/*.png > $DIAGRAM_SIZE_OUTPUT
 
 # Generate data splits. Note that the sampling is seeded so as to be repeatable
 # (as long as the number of samples doesn't change.)
-./experiments/dqa/scripts/sample_pairs.py $UNSEEN_SAMPLE $UNSEEN_SAMPLE_TRAIN train 1 -1
+./experiments/dqa/scripts/sample_pairs.py $UNSEEN_SAMPLE $UNSEEN_SAMPLE_TRAIN train -1 -1
 ./experiments/dqa/scripts/sample_pairs.py $UNSEEN_SAMPLE $UNSEEN_SAMPLE_VAL val -1 -1
 ./experiments/dqa/scripts/sample_pairs.py $UNSEEN_SAMPLE $UNSEEN_SAMPLE_TEST test -1 -1
-./experiments/dqa/scripts/sample_pairs.py $UNSEEN_CATEGORY $UNSEEN_CATEGORY_TRAIN train 1 -1
+./experiments/dqa/scripts/sample_pairs.py $UNSEEN_CATEGORY $UNSEEN_CATEGORY_TRAIN train -1 -1
 ./experiments/dqa/scripts/sample_pairs.py $UNSEEN_CATEGORY $UNSEEN_CATEGORY_VAL val -1 -1
 ./experiments/dqa/scripts/sample_pairs.py $UNSEEN_CATEGORY $UNSEEN_CATEGORY_TEST test -1 -1
 
