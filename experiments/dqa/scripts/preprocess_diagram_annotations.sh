@@ -9,7 +9,12 @@ OUTPUT=$DATA_DIR/diagrams.json
 VGG_DIR=$DATA_DIR/vgg_features/dqa_matching_final_complete_working_crop_feat_fc2/
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_37/
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_seg_12/
-MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_51/
+# Current best:
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_51/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_61/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_gray400/
+MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_dist400_pool4_mm6_epoch21/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_dist400_pool4_mm6/
 FEATURE_OUTPUT=$DATA_DIR/diagram_features_xy.json
 
 UNSEEN_SAMPLE=$DATA_DIR/unseen_sample_trvats.json

@@ -2,18 +2,19 @@ package org.allenai.dqa.matching
 
 import org.allenai.dqa.labeling.Diagram
 import org.allenai.dqa.labeling.Part
+import org.allenai.dqa.labeling.PointExpressions
+import org.allenai.pnp.CompGraph
+import org.allenai.pnp.Env
+import org.allenai.pnp.ExecutionScore
 import org.allenai.pnp.Pnp
 import org.allenai.pnp.Pnp.computationGraph
 import org.allenai.pnp.PnpModel
 
+import com.google.common.base.Preconditions
+
 import edu.cmu.dynet._
 import edu.cmu.dynet.DyNetScalaHelpers._
 import edu.cmu.dynet.dynet_swig._
-import org.allenai.pnp.ExecutionScore
-import com.google.common.base.Preconditions
-import org.allenai.pnp.Env
-import org.allenai.pnp.CompGraph
-import org.allenai.dqa.labeling.PointExpressions
 
 /**
  * Structured prediction model for diagram part matching.
@@ -190,21 +191,69 @@ class MatchingModel(var matchIndependent: Boolean,
       input(compGraph.cg, 0.0f)
     }
   }
+    
+  private def getNnTransformScore(matching: List[(Part, Part)], 
+      compGraph: CompGraph, preprocessing: MatchingPreprocessing,
+      transformW1: Expression, transformB1: Expression,
+      transformW2: Expression, deltaW1: Expression, deltaB1: Expression,
+      deltaW2: Expression, deltaB2: Expression): Expression = {
+    val sourceTargetExpressions = getAffineTransformData(matching, preprocessing)
+    val concatenatedSourceTargets = sourceTargetExpressions.map(
+        x => concatenate(new ExpressionVector(List(x._1, x._2))))
+
+    val transformed = concatenatedSourceTargets.map(x => 
+      rectify(deltaW2 * rectify((deltaW1 * x) + deltaB1) + deltaB2)
+      )
+    
+    // This might be too complicated?
+    // transformW2 * rectify((transformW1 * sum(new ExpressionVector(transformed))) + transformB1)
+    // transformW2 * sum(new ExpressionVector(transformed))
+    // input(compGraph.cg, 0.0f)
+
+    if (transformed.length > 0) {
+      transformW2 * sum(new ExpressionVector(transformed))
+    } else {
+      input(compGraph.cg, 0.0f)
+    }
+  }
 
   private def getScores(targetPart: Part, remainingArray: Array[Part],
       currentMatching: List[(Part, Part)], compGraph: CompGraph,
       preprocessing: MatchingPreprocessing): Expression = {
     val unaryScores = remainingArray.map(x => preprocessing.getMatchScore(x, targetPart))
 
-    val currentMse = getAffineTransformSse(currentMatching, compGraph, preprocessing) 
-
+    /*
     val affineTransformScores = if (binaryFactors) {
+      val currentMse = getAffineTransformSse(currentMatching, compGraph, preprocessing)
       val affineTransformParam = parameter(compGraph.cg, compGraph.getParameter(AFFINE_TRANSFORM_PARAM))
       
       remainingArray.map { curSource => 
         val candidateMatching = (targetPart, curSource) :: currentMatching
         val candidateMse = getAffineTransformSse(candidateMatching, compGraph, preprocessing)
         affineTransformParam * (candidateMse - currentMse)
+      }
+    } else {
+      remainingArray.map(x => input(compGraph.cg, 0.0f))
+    }
+    */
+
+    val affineTransformScores = if (binaryFactors) {
+      val transformW1 = parameter(compGraph.cg, compGraph.getParameter(TRANSFORM_W1))
+      val transformB1 = parameter(compGraph.cg, compGraph.getParameter(TRANSFORM_B1))
+      val transformW2 = parameter(compGraph.cg, compGraph.getParameter(TRANSFORM_W2))
+      val deltaW1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_W1))
+      val deltaB1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_B1))
+      val deltaW2 = parameter(compGraph.cg, compGraph.getParameter(DELTA_W2))
+      val deltaB2 = parameter(compGraph.cg, compGraph.getParameter(DELTA_B2))
+      val currentNnScore = getNnTransformScore(currentMatching, compGraph, preprocessing,
+          transformW1, transformB1, transformW2, deltaW1, deltaB1, deltaW2, deltaB2)
+      
+      remainingArray.map { curSource => 
+        val candidateMatching = (targetPart, curSource) :: currentMatching
+        val candidateNnScore = getNnTransformScore(candidateMatching, compGraph, preprocessing, transformW1,
+          transformB1, transformW2, deltaW1, deltaB1, deltaW2, deltaB2)
+
+        candidateNnScore - currentNnScore
       }
     } else {
       remainingArray.map(x => input(compGraph.cg, 0.0f))
@@ -316,6 +365,14 @@ object MatchingModel {
   val MATCHING_OUTER_L = "matchingOuterL"
 
   val AFFINE_TRANSFORM_PARAM = "AFFINE_TRANSFORM_PARAM"
+  
+  val TRANSFORM_W1 = "transformW1"
+  val TRANSFORM_B1 = "transformB1"
+  val TRANSFORM_W2 = "transformW2"
+  val DELTA_W1 = "deltaW1"
+  val DELTA_B1 = "deltaB1"
+  val DELTA_W2 = "deltaW2"
+  val DELTA_B2 = "deltaB2"
 
   /**
    * Create a MatchingModel and populate {@code model} with the
@@ -354,6 +411,18 @@ object MatchingModel {
     
     model.addParameter(AFFINE_TRANSFORM_PARAM, Seq(1))
     
+    val transformHiddenDim1 = 32
+    val transformHiddenDim2 = 32
+    val deltaDim = 4
+    model.addParameter(TRANSFORM_W1, Seq(transformHiddenDim2, transformHiddenDim2))
+    model.addParameter(TRANSFORM_B1, Seq(transformHiddenDim2))
+    model.addParameter(TRANSFORM_W2, Seq(1, transformHiddenDim2))
+    model.addParameter(DELTA_W1, Seq(transformHiddenDim1, deltaDim))
+    model.addParameter(DELTA_B1, Seq(transformHiddenDim1))
+    model.addParameter(DELTA_W2, Seq(transformHiddenDim2, transformHiddenDim1))
+    model.addParameter(DELTA_B2, Seq(transformHiddenDim2))
+
+
     new MatchingModel(matchIndependent, binaryFactors, model)
   }
 

@@ -33,7 +33,7 @@ html_footer = '''
 '''
 
 NUM_LABELS = 5
-IMG_WIDTH=224
+IMG_WIDTH=448
 
 def image_id_to_path(imgid):
     t = imgid.split("_")[0]
@@ -41,11 +41,11 @@ def image_id_to_path(imgid):
 
 def print_loss_html(j, outfile):
     html_format = '''
-<img width="%(w)" height="%(w)" src="%(srcpath)s"></img> <img width="%(w)" height="%(w)" src="%(targetpath)s"></img>
+<img width="%(w)s" height="%(w)s" src="%(srcpath)s"></img> <img width="%(w)s" height="%(w)s" src="%(targetpath)s"></img>
 '''
     args = {'srcpath' : image_id_to_path(j["sourceImgId"]),
-            'targetpath' : image_id_to_path(j["targetImgId"])
-            'w' : }
+            'targetpath' : image_id_to_path(j["targetImgId"]),
+            'w' : IMG_WIDTH}
 
     target_to_source = {}
     for arr in j["matching"]:
@@ -56,16 +56,16 @@ def print_loss_html(j, outfile):
     print >> outfile, '<div style="position: relative">'
     for part in j["sourceParts"]:
         label = source_labels[part["ind"]]
-        x = 500 * part["coords"]["x"] / j["sourceDims"]["x"]
-        y = 500 * part["coords"]["y"] / j["sourceDims"]["y"]
+        x = IMG_WIDTH * part["coords"]["x"] / j["sourceDims"]["x"]
+        y = IMG_WIDTH * part["coords"]["y"] / j["sourceDims"]["y"]
         print >> outfile, '<p class="partid" style="background-color: lightgray; left: %s; top: %s">%s</p>' % (x, y, label)
         # Print source labels on target image
-        # print >> outfile, '<p class="partid" style="background-color: lightgreen; left: %s; top: %s">%s</p>' % (x + 500, y, label)
+        # print >> outfile, '<p class="partid" style="background-color: lightgreen; left: %s; top: %s">%s</p>' % (x + IMG_WIDTH, y, label)
 
     target_labels = j["sourceLabel"]["partLabels"]
     for part in j["targetParts"]:
-        x = 500 * part["coords"]["x"] / j["targetDims"]["x"]
-        y = 500 * part["coords"]["y"] / j["targetDims"]["y"]
+        x = IMG_WIDTH * part["coords"]["x"] / j["targetDims"]["x"]
+        y = IMG_WIDTH * part["coords"]["y"] / j["targetDims"]["y"]
         target_ind = part["ind"]
         target_label = target_labels[target_ind]
         source_ind = target_to_source[target_ind]
@@ -80,7 +80,7 @@ def print_loss_html(j, outfile):
             color = "red"
             text = source_label
 
-        print >> outfile, '<p class="partid" style="background-color: %s; left: %s; top: %s">%s</p>' % (color, x + 500, y, text)
+        print >> outfile, '<p class="partid" style="background-color: %s; left: %s; top: %s">%s</p>' % (color, x + IMG_WIDTH, y, text)
 
     print >> outfile, html_format % args
 

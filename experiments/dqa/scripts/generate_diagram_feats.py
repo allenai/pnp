@@ -7,6 +7,7 @@ import random
 import pickle
 import gzip
 import numpy as np
+import re
 
 diagram_label_file = sys.argv[1]
 vgg_dir = sys.argv[2]
@@ -15,11 +16,17 @@ out_file = sys.argv[4]
 
 def label_to_matching_vector(diagram_json, label):
     matching_vec = []
-    matching_file = matching_dir + "/" + j["label"] + "/" + j["imageId"] + "_" + label + ".pklz"
+    # img_id = re.sub("-([^0-9])", "_\g<1>", j["imageId"])
+    img_id = j["imageId"]
+    matching_file = matching_dir + "/" + j["label"] + "/" + img_id + "_" + label + ".pklz"
+    # print(matching_file)
     with open(matching_file, 'rb') as g:
         matching = pickle.loads(gzip.decompress(g.read()))
-        matching_vec = matching[0]
-        # print(j["imageId"] + " " + label)
+        # Ani's format
+        matching_vec = matching
+        
+        # This is choi's format
+        # matching_vec = matching[0]
         # print(matching_vec)
 
     return matching_vec

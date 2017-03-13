@@ -129,6 +129,15 @@ class TrainMatchingCli extends AbstractCli {
     val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)
     val trainer = new BsoTrainer(epochs, beamSize, -1, model, sgd, new DefaultLogFunction())
     trainer.train(pnpExamples.toList)
+
+    // Locally-normalized training
+    /*
+    model.locallyNormalized = true
+    val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)
+    val trainer = new LoglikelihoodTrainer(epochs, 1, false, model, sgd,
+        new DefaultLogFunction())
+    trainer.train(pnpExamples.toList)
+    */
   }
 }
 
