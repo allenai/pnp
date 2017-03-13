@@ -150,7 +150,7 @@ class MatchingModel(var matchIndependent: Boolean,
     val unaryScores = remainingArray.map(x => preprocessing.getMatchScore(x, targetPart))
 
     /*
-    val affineTransformScores = if (binaryFactors) {
+    val globalScores = if (binaryFactors) {
       val currentMse = getAffineTransformSse(currentMatching, compGraph, preprocessing)
       val affineTransformParam = parameter(compGraph.cg, compGraph.getParameter(AFFINE_TRANSFORM_PARAM))
       
@@ -164,8 +164,8 @@ class MatchingModel(var matchIndependent: Boolean,
     }
     */
 
-    val affineTransformScores = if (globalNn) {
-      val transformW2 = parameter(compGraph.cg, compGraph.getParameter(TRANSFORM_W2))
+    val globalScores = if (globalNn) {
+      val transformW2 = parameter(compGraph.cg, compGraph.getParameter(TRANSFORM_W1))
       val deltaW1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_W1))
       val deltaB1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_B1))
       val deltaW2 = parameter(compGraph.cg, compGraph.getParameter(DELTA_W2))
@@ -184,7 +184,7 @@ class MatchingModel(var matchIndependent: Boolean,
       remainingArray.map(x => input(compGraph.cg, 0.0f))
     }
 
-    val scores = unaryScores.zip(affineTransformScores).map(x => x._1 + x._2)
+    val scores = unaryScores.zip(globalScores).map(x => x._1 + x._2)
 
     concatenate(new ExpressionVector(scores.toVector))
   }
@@ -263,16 +263,16 @@ case class MatchingExecutionScore(label: MatchingLabel) extends ExecutionScore {
 
 object MatchingModel {
 
-  val DISTANCE_WEIGHTS = "sourceTargetWeights"
+  val DISTANCE_WEIGHTS = "distanceWeights"
   
   val MATCHING_W1 = "matchingW1"
   val MATCHING_B1 = "matchingB1"
   val MATCHING_W2 = "matchingW2"
   val MATCHING_L = "matchingL"
 
-  val AFFINE_TRANSFORM_PARAM = "AFFINE_TRANSFORM_PARAM"
+  val AFFINE_TRANSFORM_PARAM = "affineTransformParam"
   
-  val TRANSFORM_W2 = "transformW2"
+  val TRANSFORM_W1 = "transformW1"
   val DELTA_W1 = "deltaW1"
   val DELTA_B1 = "deltaB1"
   val DELTA_W2 = "deltaW2"
@@ -298,7 +298,7 @@ object MatchingModel {
     val transformHiddenDim1 = 32
     val transformHiddenDim2 = 32
     val deltaDim = 4
-    model.addParameter(TRANSFORM_W2, Seq(1, transformHiddenDim2))
+    model.addParameter(TRANSFORM_W1, Seq(1, transformHiddenDim2))
     model.addParameter(DELTA_W1, Seq(transformHiddenDim1, deltaDim))
     model.addParameter(DELTA_B1, Seq(transformHiddenDim1))
     model.addParameter(DELTA_W2, Seq(transformHiddenDim2, transformHiddenDim1))
