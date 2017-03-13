@@ -91,7 +91,13 @@ class MatchingModel(var matchIndependent: Boolean,
     // input(computationGraph.cg, 0.0f)
   }
   
-  private def getAffineTransformData(matching: List[(Part, Part)],
+  /**
+   * Gets pairs of vectors encoding the relationship between pairs of
+   * parts on the source and target side of the matching. For example,
+   * if the matching is [(s1 -> t1), (s2 -> t2)], this generates
+   * (r(s1, s2), r(t1, t2)). 
+   */
+  private def getRelationVectors(matching: List[(Part, Part)],
       preprocessing: MatchingPreprocessing): List[(Expression, Expression)] = {
     for {
       (t1, s1) <- matching
@@ -103,9 +109,9 @@ class MatchingModel(var matchIndependent: Boolean,
     }
   }
   
-  private def getAffineTransformSse(matching: List[(Part, Part)],
+  private def getAffineGlobalScore(matching: List[(Part, Part)],
     compGraph: CompGraph, preprocessing: MatchingPreprocessing): Expression = {
-    val sourceTargetExpressions = getAffineTransformData(matching, preprocessing)
+    val sourceTargetExpressions = getRelationVectors(matching, preprocessing)
     if (sourceTargetExpressions.size > 2) {
       // Fit a linear regression that transforms the vectors between
       // aligned source points to those of aligned target points.
@@ -123,12 +129,12 @@ class MatchingModel(var matchIndependent: Boolean,
       input(compGraph.cg, 0.0f)
     }
   }
-    
-  private def getNnTransformScore(matching: List[(Part, Part)], 
+
+  private def getNnGlobalScore(matching: List[(Part, Part)], 
       compGraph: CompGraph, preprocessing: MatchingPreprocessing,
       transformW2: Expression, deltaW1: Expression, deltaB1: Expression,
       deltaW2: Expression, deltaB2: Expression): Expression = {
-    val sourceTargetExpressions = getAffineTransformData(matching, preprocessing)
+    val sourceTargetExpressions = getRelationVectors(matching, preprocessing)
     val concatenatedSourceTargets = sourceTargetExpressions.map(
         x => concatenate(new ExpressionVector(List(x._1, x._2))))
 
@@ -144,6 +150,10 @@ class MatchingModel(var matchIndependent: Boolean,
     }
   }
 
+  /**
+   * Get a score for matching targetPart against each source part
+   * in remainingArray, given the currentMatching. 
+   */
   private def getScores(targetPart: Part, remainingArray: Array[Part],
       currentMatching: List[(Part, Part)], compGraph: CompGraph,
       preprocessing: MatchingPreprocessing): Expression = {
@@ -151,12 +161,12 @@ class MatchingModel(var matchIndependent: Boolean,
 
     /*
     val globalScores = if (binaryFactors) {
-      val currentMse = getAffineTransformSse(currentMatching, compGraph, preprocessing)
+      val currentMse = getAffineGlobalScore(currentMatching, compGraph, preprocessing)
       val affineTransformParam = parameter(compGraph.cg, compGraph.getParameter(AFFINE_TRANSFORM_PARAM))
       
       remainingArray.map { curSource => 
         val candidateMatching = (targetPart, curSource) :: currentMatching
-        val candidateMse = getAffineTransformSse(candidateMatching, compGraph, preprocessing)
+        val candidateMse = getAffineGlobalScore(candidateMatching, compGraph, preprocessing)
         affineTransformParam * (candidateMse - currentMse)
       }
     } else {
@@ -170,12 +180,12 @@ class MatchingModel(var matchIndependent: Boolean,
       val deltaB1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_B1))
       val deltaW2 = parameter(compGraph.cg, compGraph.getParameter(DELTA_W2))
       val deltaB2 = parameter(compGraph.cg, compGraph.getParameter(DELTA_B2))
-      val currentNnScore = getNnTransformScore(currentMatching, compGraph, preprocessing,
+      val currentNnScore = getNnGlobalScore(currentMatching, compGraph, preprocessing,
           transformW2, deltaW1, deltaB1, deltaW2, deltaB2)
       
       remainingArray.map { curSource => 
         val candidateMatching = (targetPart, curSource) :: currentMatching
-        val candidateNnScore = getNnTransformScore(candidateMatching, compGraph, preprocessing,
+        val candidateNnScore = getNnGlobalScore(candidateMatching, compGraph, preprocessing,
             transformW2, deltaW1, deltaB1, deltaW2, deltaB2)
 
         candidateNnScore - currentNnScore
