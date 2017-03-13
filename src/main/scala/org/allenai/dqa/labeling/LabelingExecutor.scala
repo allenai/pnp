@@ -4,7 +4,7 @@ import scala.collection.JavaConverters._
 
 import org.allenai.pnp.CompGraph
 import org.allenai.pnp.Env
-import org.allenai.pnp.ExecutionScore
+import org.allenai.pnp.ExecutionScore.ExecutionScore
 import org.allenai.pnp.Pnp
 import org.allenai.pnp.PnpUtil
 

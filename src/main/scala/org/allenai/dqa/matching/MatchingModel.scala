@@ -1,11 +1,13 @@
 package org.allenai.dqa.matching
 
+import scala.Vector
+
 import org.allenai.dqa.labeling.Diagram
 import org.allenai.dqa.labeling.Part
 import org.allenai.dqa.labeling.PointExpressions
 import org.allenai.pnp.CompGraph
 import org.allenai.pnp.Env
-import org.allenai.pnp.ExecutionScore
+import org.allenai.pnp.ExecutionScore.ExecutionScore
 import org.allenai.pnp.Pnp
 import org.allenai.pnp.Pnp.computationGraph
 import org.allenai.pnp.PnpModel
@@ -13,7 +15,11 @@ import org.allenai.pnp.PnpModel
 import com.google.common.base.Preconditions
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
+import edu.cmu.dynet.DyNetScalaHelpers.RichExpression
+import edu.cmu.dynet.DyNetScalaHelpers.RichNumeric
+import edu.cmu.dynet.DyNetScalaHelpers.convertExpressionsToExpressions
+import edu.cmu.dynet.DyNetScalaHelpers.convertFloatsToFloats
+import edu.cmu.dynet.DyNetScalaHelpers.seqToDim
 import edu.cmu.dynet.dynet_swig._
 
 /**

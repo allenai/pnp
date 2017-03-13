@@ -19,6 +19,7 @@ import edu.cmu.dynet.dynet_swig._
 import org.allenai.pnp.PnpExample
 import com.jayantkrish.jklol.training.NullLogFunction
 import org.allenai.pnp.BsoTrainer
+import org.allenai.pnp.ExecutionScore.ExecutionScore
 
 /**
  * Basic sequence-to-sequence model. This model encodes

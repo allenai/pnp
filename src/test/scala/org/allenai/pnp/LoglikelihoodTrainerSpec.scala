@@ -1,13 +1,15 @@
 package org.allenai.pnp
 
-import scala.collection.JavaConverters._
-import org.scalatest._
-import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
-import edu.cmu.dynet.dynet_swig._
-import com.jayantkrish.jklol.util.IndexedList
+import org.allenai.pnp.ExecutionScore.ExecutionScore
+import org.scalatest.FlatSpec
+import org.scalatest.Matchers
+
 import com.jayantkrish.jklol.training.NullLogFunction
-import scala.collection.mutable.ListBuffer
+
+import edu.cmu.dynet._
+import edu.cmu.dynet.DyNetScalaHelpers.RichExpression
+import edu.cmu.dynet.DyNetScalaHelpers.seqToDim
+import edu.cmu.dynet.dynet_swig._
 
 class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   

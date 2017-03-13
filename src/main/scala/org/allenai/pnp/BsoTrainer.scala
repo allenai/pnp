@@ -1,14 +1,15 @@
 package org.allenai.pnp
 
 import scala.collection.mutable.ListBuffer
+import scala.util.Random
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.util.KbestQueue
 
+import ExecutionScore.ExecutionScore
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
-import scala.util.Random
 
 /**
  * Beam search trainer implementing a LaSO-like algorithm.

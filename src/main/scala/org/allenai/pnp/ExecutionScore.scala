@@ -1,13 +1,13 @@
 package org.allenai.pnp
 
-trait ExecutionScore {
-  def apply(tag: Any, choice: Any, env: Env): Double
-}
-
 object ExecutionScore {
-  // TODO: make this a type so we can compose it with other functions, etc.
-  // tag, choice, env
-  // type ExecutionScore = (Any, Any, Env) => Double
+  
+  /**
+   * ExecutionScore is a function from a tag
+   * (i.e., a name for a choice point), a choice,
+   * and an env to a score for the choice.
+   */
+  type ExecutionScore = (Any, Any, Env) => Double
 
   val zero = new ExecutionScore() {
     def apply(tag: Any, choice: Any, env: Env): Double = {
