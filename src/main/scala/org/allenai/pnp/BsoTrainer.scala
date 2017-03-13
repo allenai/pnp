@@ -45,11 +45,9 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     var loss = 0.0
 
     val env = example.env
-    val stateCost = if (example.conditionalExecutionScore == null) {
-      ExecutionScore.zero
-    } else {
-      example.conditionalExecutionScore
-    }
+    Preconditions.checkArgument(example.conditionalExecutionScore != null,
+        "BsoTrainer requires an execution score".asInstanceOf[AnyRef])
+    val stateCost = example.conditionalExecutionScore
     val graph = model.getComputationGraph(cg)
 
     val queue = new BsoPnpQueue[A](beamSize, stateCost, graph, log)
@@ -92,8 +90,11 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       log.stopTimer("bso/beam_search/get_executions")
 
       var nextBeamSize = -1
+      // XXX: allow different margins. Could pull these out of the
+      // environment of the incorrect execution.
+      val margin = 1
       if (numIters != 0 && bestCorrectEx != null && worstIncorrectEx != null &&
-          worstIncorrectEx.logProb + 1 > bestCorrectEx.logProb) {
+          worstIncorrectEx.logProb + margin > bestCorrectEx.logProb) {
         // Margin violation
         // println("m: " + numIters + " " + worstIncorrectEx.logProb + " " + bestCorrectEx.logProb)
 
@@ -102,9 +103,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         
         val beamScoreExpr = worstIncorrectEx.env.getScore(false, cg)
         val correctScoreExpr = bestCorrectEx.env.getScore(false, cg)
-
-        // XXX: allow different costs.
-        losses += ((beamScoreExpr + 1) - correctScoreExpr)
+        losses += ((beamScoreExpr + margin) - correctScoreExpr)
 
         // Continue the search with the best correct execution.
         beam(0) = bestCorrectEx
@@ -200,7 +199,8 @@ class BsoPnpQueue[A](size: Int, val stateCost: ExecutionScore,
       log.stopTimer("bso/beam_search/search_step/eval_cost")
 
       val nextEnv = if (cost != 0.0) {
-        env.setVar(EXECUTION_INCORRECT_VAR_NAME, null)
+        val prevCost = env.getVar(EXECUTION_INCORRECT_VAR_NAME, 0.0)
+        env.setVar(EXECUTION_INCORRECT_VAR_NAME, (prevCost + cost))
       } else {
         env
       }
