@@ -15,7 +15,6 @@ import com.jayantkrish.jklol.training.DefaultLogFunction
 import com.jayantkrish.jklol.util.Pseudorandom
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
@@ -42,8 +41,7 @@ class TrainMatchingCli extends AbstractCli {
   }
 
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
-    
+    Initialize.initialize()
     // Read and preprocess data
     val diagramFeatures = DiagramFeatures.fromJsonFile(options.valueOf(diagramFeaturesOpt)).map(
         x => (x.imageId, x)).toMap

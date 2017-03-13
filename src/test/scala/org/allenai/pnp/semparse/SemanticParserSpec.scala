@@ -12,12 +12,11 @@ import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import org.allenai.pnp.PnpModel
 
 class SemanticParserSpec extends FlatSpec with Matchers {
   
-  initialize(new DynetParams())
+  Initialize.initialize()
  
   val dataStrings = List(
       ("state", "state:<e,t>"),
@@ -57,8 +56,8 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val oracle = parser.generateExecutionOracle(label, entityLinking, typeDeclaration).get
     val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)), entityLinking)
 
-    val cg = ComputationGraph.getNew
-    val compGraph = parser.model.getComputationGraph(cg)
+    ComputationGraph.renew()
+    val compGraph = parser.model.getComputationGraph()
     
     val results = exprs.beamSearch(1, -1, Env.init, oracle, compGraph, new NullLogFunction()).executions
     for (result <- results) {

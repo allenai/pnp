@@ -6,8 +6,6 @@ import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
-import edu.cmu.dynet.DyNetScalaHelpers._
 import scala.collection.mutable.MapBuilder
 
 /** Probabilistic neural program monad. Pnp[X] represents a
@@ -118,8 +116,8 @@ trait Pnp[A] {
   // parameters
   
   def beamSearch(k: Int, model: PnpModel): PnpBeamMarginals[A] = {
-    val dynetCg = ComputationGraph.getNew()
-    val cg = model.getComputationGraph(dynetCg)
+    ComputationGraph.renew()
+    val cg = model.getComputationGraph()
     beamSearch(k, Env.init, cg)
   }
 
@@ -222,10 +220,10 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
 
   def getTensor(graph: CompGraph): (Tensor, Int) = {
     val paramTensor = if (graph.locallyNormalized) {
-      val softmaxed = log_softmax(parameter)
-      graph.cg.incremental_forward(softmaxed)
+      val softmaxed = Expression.logSoftmax(parameter)
+      ComputationGraph.incrementalForward(softmaxed)
     } else {
-      graph.cg.incremental_forward(parameter)
+      ComputationGraph.incrementalForward(parameter)
     }
 
     val dims = paramTensor.getD
@@ -240,8 +238,8 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
     */
     
     if (size != items.length) {
-      graph.cg.print_graphviz()
-      println(as_vector(paramTensor).size())
+      ComputationGraph.printGraphViz()
+      println(paramTensor.toVector.size)
 
       Preconditions.checkState(
           size == items.length,
@@ -257,10 +255,10 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
       continuation: PnpContinuation[A, B], queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
       
     val (paramTensor, numTensorValues) = getTensor(queue.graph)
-    val v = as_vector(paramTensor)
+    val v = paramTensor.toVector
     for (i <- 0 until numTensorValues) {
       val nextEnv = env.addLabel(parameter, i)
-      queue.offer(BindPnp(ValuePnp(items(i)), continuation), nextEnv, logProb + v.get(i),
+      queue.offer(BindPnp(ValuePnp(items(i)), continuation), nextEnv, logProb + v(i),
           tag, items(i), env)
     }
   }
@@ -269,7 +267,7 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
     queue: PnpSearchQueue[D], finished: PnpSearchQueue[D]): Unit = {
     
     val (paramTensor, numTensorValues) = getTensor(queue.graph)
-    val logScores = as_vector(paramTensor).toArray
+    val logScores = paramTensor.toSeq.toArray
     // TODO: This code assumes that the distribution is locally normalized.
     val scores = logScores.map(Math.exp(_))
 
@@ -555,7 +553,7 @@ object Pnp {
     for {
       cg <- computationGraph()
     } yield {
-      parameter(cg.cg, cg.getParameter(name))
+      Expression.parameter(cg.getParameter(name))
     }
   }
 
@@ -565,7 +563,7 @@ object Pnp {
     for {
       cg <- computationGraph()
     } yield {
-      input(cg.cg, dims, vector)
+      Expression.input(dims, vector)
     }
   }
 

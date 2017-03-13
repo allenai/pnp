@@ -14,8 +14,6 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
-import edu.cmu.dynet.dynet_swig._
 import org.allenai.pnp.PnpModel
 
 /**
@@ -84,12 +82,14 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
     */
   def labelPart(part: Part, permittedLabels: Array[String], cg: CompGraph,
       diagram: Diagram): Pnp[String] = {
+    import Expression.{parameter, input, dotProduct, concatenate}
+
     val scores = for {
       label <- permittedLabels
     } yield {
-      val params = parameter(cg.cg, cg.getParameter(PART_PREFIX + label))
-      val featureVector = input(cg.cg, Seq(partFeatureDim), diagram.features.getFeatures(part))
-      dot_product(params, featureVector)
+      val params = parameter(cg.getParameter(PART_PREFIX + label))
+      val featureVector = input(Dim(partFeatureDim), diagram.features.getFeatures(part))
+      dotProduct(params, featureVector)
     }
 
     val scoreExpression = concatenate(new ExpressionVector(scores.toList))
@@ -168,12 +168,12 @@ object LabelingExecutor {
   def create(diagramTypes: IndexedList[String], parts: IndexedList[String], 
       typePartMap: Multimap[Int, Int], partFeatureDim: Int, model: PnpModel): LabelingExecutor = {
     for (part <- parts.items().asScala) {
-      model.addParameter(PART_PREFIX + part, Seq(partFeatureDim))
+      model.addParameter(PART_PREFIX + part, Dim(partFeatureDim))
     }
     for (diagram <- diagramTypes.items().asScala) {
       val index = diagramTypes.getIndex(diagram)
       val numParts = typePartMap.get(index).size()
-      model.addParameter(DIAGRAM_PART_BIAS_PREFIX + diagram, Seq(numParts))
+      model.addParameter(DIAGRAM_PART_BIAS_PREFIX + diagram, Dim(numParts))
     }
     
     new LabelingExecutor(diagramTypes, parts, typePartMap, partFeatureDim)

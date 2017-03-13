@@ -14,15 +14,13 @@ import com.jayantkrish.jklol.training.StochasticGradientTrainer
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import scala.collection.mutable.ListBuffer
 
 /** Test cases for the probabilistic programming monad.
   */
 class PnpSpec extends FlatSpec with Matchers {
 
-  import DyNetScalaHelpers._
-  initialize(new DynetParams())
+  Initialize.initialize()
 
   val TOLERANCE = 0.01
   
@@ -229,14 +227,12 @@ class PnpSpec extends FlatSpec with Matchers {
       }
     }
 
-    val computationGraph = ComputationGraph.getNew    
-
     val model = PnpModel.init(false)
-    val flipParam = model.addParameter("flip", Seq(2))
+    val flipParam = model.addParameter("flip", Dim(2))
     flipParam.zero()
     
     val env = Env.init
-    val cg = model.getComputationGraph(computationGraph)
+    val cg = model.getComputationGraph()
 
     val values = foo(1).beamSearch(100, env, cg).executions
     values.length should be(2)

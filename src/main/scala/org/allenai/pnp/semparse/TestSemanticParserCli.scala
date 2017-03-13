@@ -17,7 +17,6 @@ import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
 import com.jayantkrish.jklol.training.NullLogFunction
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
@@ -36,7 +35,7 @@ class TestSemanticParserCli extends AbstractCli() {
   }
 
   override def run(options: OptionSet): Unit = {
-    initialize(SemanticParserUtils.DYNET_PARAMS)
+    Initialize.initialize(SemanticParserUtils.DYNET_PARAMS)
     
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()
@@ -83,6 +82,8 @@ class TestSemanticParserCli extends AbstractCli() {
     var numCorrect = 0
     var numCorrectAt10 = 0
     for (e <- examples) {
+      ComputationGraph.renew()
+
       println(e.getSentence.getWords.asScala.mkString(" "))
       println(e.getSentence.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
       println("expected: " + e.getLogicalForm)
@@ -91,9 +92,8 @@ class TestSemanticParserCli extends AbstractCli() {
       val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
-      val cg = ComputationGraph.getNew
       val results = dist.beamSearch(5, 75, Env.init, null,
-          parser.model.getComputationGraph(cg), new NullLogFunction())
+          parser.model.getComputationGraph(), new NullLogFunction())
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
@@ -121,11 +121,11 @@ class TestSemanticParserCli extends AbstractCli() {
         val attentions = state.getAttentions
         val tokens = e.getSentence.getWords.asScala.toArray
         for (i <- 0 until templates.length) {
-          val floatVector = as_vector(cg.get_value(attentions(i)))
+          val floatVector = ComputationGraph.getValue(attentions(i)).toVector
           val values = for {
-            j <- 0 until floatVector.size().asInstanceOf[Int]
+            j <- 0 until floatVector.size
           } yield {
-            floatVector.get(j)
+            floatVector(j)
           }
         
           val maxIndex = values.zipWithIndex.max._2

@@ -7,7 +7,6 @@ import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.util.KbestQueue
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 
 /**
  * Beam search trainer implementing a LaSO-like algorithm.
@@ -22,8 +21,6 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
   Preconditions.checkArgument(model.locallyNormalized == false,
       "BsoTrainer expects model to be not locally normalized".asInstanceOf[Any])
 
-  import DyNetScalaHelpers._
-
   def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
@@ -32,7 +29,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         loss +=  doExampleUpdate(example)
       }
       
-      trainer.update_epoch()
+      trainer.updateEpoch()
 
       log.logStatistic(i, "loss", loss)
       log.notifyIterationEnd(i)
@@ -40,7 +37,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
   }
 
   private def doExampleUpdate[A](example: PnpExample[A]): Double = {
-    val cg = ComputationGraph.getNew
+    ComputationGraph.renew()
     var loss = 0.0
 
     val env = example.env
@@ -49,7 +46,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     } else {
       example.conditionalExecutionScore
     }
-    val graph = model.getComputationGraph(cg)
+    val graph = model.getComputationGraph()
 
     val queue = new BsoPnpQueue[A](beamSize, stateCost, graph, log)
     val finished = new BsoPnpQueue[A](beamSize, stateCost, graph, log)
@@ -99,8 +96,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         // Add to the loss.
         log.startTimer("bso/beam_search/margin_violation")
         
-        val beamScoreExpr = worstIncorrectEx.env.getScore(false, cg)
-        val correctScoreExpr = bestCorrectEx.env.getScore(false, cg)
+        val beamScoreExpr = worstIncorrectEx.env.getScore(false)
+        val correctScoreExpr = bestCorrectEx.env.getScore(false)
 
         // XXX: allow different costs.
         losses += ((beamScoreExpr + 1) - correctScoreExpr)
@@ -158,22 +155,22 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       // println("m: end " + finalBestIncorrect.logProb + " " + finalBestCorrect.logProb)
 
       // Add to the loss.
-      val beamScoreExpr = finalBestIncorrect.env.getScore(false, cg)
-      val correctScoreExpr = finalBestCorrect.env.getScore(false, cg)
+      val beamScoreExpr = finalBestIncorrect.env.getScore(false)
+      val correctScoreExpr = finalBestCorrect.env.getScore(false)
 
       // XXX: allow different costs.
       losses += ((beamScoreExpr + 1) - correctScoreExpr)
     }
 
     if (losses.size > 0) {
-      val lossExpr = sum(new ExpressionVector(losses))
+      val lossExpr = Expression.sum(new ExpressionVector(losses))
       
       log.startTimer("bso/eval_loss")
-      loss += as_scalar(cg.incremental_forward(lossExpr)) 
+      loss += ComputationGraph.incrementalForward(lossExpr).toFloat
       log.stopTimer("bso/eval_loss")
       
       log.startTimer("bso/backward")
-      cg.backward(lossExpr)
+      ComputationGraph.backward(lossExpr)
       trainer.update(1.0f)
       log.stopTimer("bso/backward")
     }

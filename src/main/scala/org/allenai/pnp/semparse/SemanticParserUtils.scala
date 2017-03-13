@@ -17,13 +17,10 @@ import edu.cmu.dynet._
 
 object SemanticParserUtils {
   
-  val DYNET_PARAMS = { 
-    val d = new DynetParams()
-    d.setMem_descriptor("1024")
-    d
-  }
-  
-  
+  val DYNET_PARAMS = Map(
+    "dynet-mem" -> "1024"
+  )
+
   /**
    * Count the number of occurrences of each word type
    * in a collection of examples. 
@@ -105,9 +102,9 @@ object SemanticParserUtils {
 
       if (oracleOpt.isDefined) {
         val oracle = oracleOpt.get
-        val cg = ComputationGraph.getNew
+        ComputationGraph.renew()
         val results = dist.beamSearch(1, 50, Env.init, oracle,
-            parser.model.getComputationGraph(cg), new NullLogFunction())
+            parser.model.getComputationGraph(), new NullLogFunction())
         if (results.executions.size != 1) {
           println("ERROR: " + e + " " + results)
           println("  " + e.getSentence.getWords)
