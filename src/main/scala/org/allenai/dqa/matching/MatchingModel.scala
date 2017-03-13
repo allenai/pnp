@@ -236,10 +236,25 @@ class MatchingModel(var matchIndependent: Boolean,
     }
   }
 
-  def getLabelOracle(label: MatchingLabel): MatchingExecutionScore = {
+  /**
+   * Gets an execution score that assigns 0 to
+   * executions that are consistent with {@code label} and
+   * -infinity to the rest.
+   */
+  def getLabelScore(label: MatchingLabel): ExecutionScore = {
+    val score = MatchingExecutionScore(label)
+    ((x, y, z) => if (score(x, y, z) > 0.0) { Double.NegativeInfinity } else { 0.0 })
+  }
+
+  /**
+   * Gets an execution score that assigns a cost of 0 to
+   * executions that are consistent with {@code label}, and
+   * 1 per mistake to the rest.
+   */
+  def getMarginScore(label: MatchingLabel): ExecutionScore = {
     MatchingExecutionScore(label)
   }
-  
+
   def save(saver: ModelSaver): Unit = {
     saver.add_boolean(matchIndependent)
     saver.add_boolean(globalNn)
@@ -269,7 +284,7 @@ case class MatchingExecutionScore(label: MatchingLabel) extends ExecutionScore {
       if (label.getSourcePartInd(targetPart.ind) == sourcePart.ind) {
         0.0
       } else {
-        Double.NegativeInfinity
+        1.0
       }
     } else {
       0.0

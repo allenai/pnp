@@ -22,11 +22,14 @@ def label_to_matching_vector(diagram_json, label):
     # print(matching_file)
     with open(matching_file, 'rb') as g:
         matching = pickle.loads(gzip.decompress(g.read()))
-        # Ani's format
-        matching_vec = matching
-        
-        # This is choi's format
-        # matching_vec = matching[0]
+
+        if len(matching) == 1:
+            # Choi's format
+            matching_vec = matching[0]
+        else:
+            # Ani's format
+            matching_vec = matching        
+
         # print(matching_vec)
 
     return matching_vec

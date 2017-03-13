@@ -94,7 +94,7 @@ class TrainMatchingCli extends AbstractCli {
       x <- examples
     } yield {
       val unconditional = matchingModel.apply(x.source, x.target)
-      val oracle = matchingModel.getLabelOracle(x.label)
+      val oracle = matchingModel.getMarginScore(x.label)
       PnpExample(unconditional, unconditional, Env.init, oracle) 
     }
 

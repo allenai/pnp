@@ -32,4 +32,3 @@ object CompGraph {
     new CompGraph(cg, model, Map(), Map(), false)
   }
 }
-

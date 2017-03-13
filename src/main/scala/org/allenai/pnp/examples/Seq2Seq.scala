@@ -20,6 +20,8 @@ import org.allenai.pnp.PnpExample
 import com.jayantkrish.jklol.training.NullLogFunction
 import org.allenai.pnp.BsoTrainer
 import org.allenai.pnp.ExecutionScore.ExecutionScore
+import com.jayantkrish.jklol.training.DefaultLogFunction
+import org.allenai.pnp.LoglikelihoodTrainer
 
 /**
  * Basic sequence-to-sequence model. This model encodes
@@ -151,11 +153,20 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
     }
   }
 
-  def generateLabelCost(targetTokens: Seq[T]): Seq2SeqExecutionScore = {
-    new Seq2SeqExecutionScore(targetTokens.map(x => targetVocab.getIndex(x)).toArray)
+  def getLabelCost(targetTokens: Seq[T]): ExecutionScore = {
+    getLabelCostEncoded(targetTokens.map(x => targetVocab.getIndex(x)))
   }
 
-  def generateLabelCostEncoded(targetTokens: Seq[Int]): Seq2SeqExecutionScore = {
+  def getLabelCostEncoded(targetTokens: Seq[Int]): ExecutionScore = {
+    val score = new Seq2SeqExecutionScore(targetTokens.toArray)
+    (x, y, z) => if (score(x, y, z) > 0.0) { Double.NegativeInfinity } else { 0.0 }
+  }
+
+  def getMarginCost(targetTokens: Seq[T]): ExecutionScore = {
+    getMarginCostEncoded(targetTokens.map(x => targetVocab.getIndex(x)))
+  }
+  
+  def getMarginCostEncoded(targetTokens: Seq[Int]): ExecutionScore = {
     new Seq2SeqExecutionScore(targetTokens.toArray)
   }
 }
@@ -174,7 +185,7 @@ class Seq2SeqExecutionScore(val targetTokensLabel: Array[Int]) extends Execution
       if (tokenIndex < targetTokensLabel.length && targetTokensLabel(tokenIndex) == chosen) {
         0.0
       } else {
-        Double.NegativeInfinity
+        1.0
       }
     } else {
       0.0
@@ -244,6 +255,9 @@ object Seq2Seq {
     val model = PnpModel.init(false)
     val seq2seq = Seq2Seq.create(sourceVocab, targetVocab, endTokenIndex, model)
 
+    // Flag controlling the training algorithm.
+    val trainBso = true
+    
     // 2. Generate training examples.
     val trainingExamples = for {
       d <- trainingDataTokenized
@@ -259,7 +273,11 @@ object Seq2Seq {
       // a cost to each program execution. In this case we're using a cost
       // function. 
       val conditionalPnp = unconditionalPnp
-      val oracle = seq2seq.generateLabelCost(d._2)
+      val oracle = if (trainBso) {
+        seq2seq.getMarginCost(d._2)
+      } else {
+        seq2seq.getLabelCost(d._2)
+      }
       PnpExample(unconditionalPnp, conditionalPnp, Env.init, oracle)
     }
     
@@ -267,18 +285,20 @@ object Seq2Seq {
     // an objective function.
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     
-    // Train using beam search optimization, similar to LaSO.
-    // This optimizes the neural network parameters such that the
-    // correct target sequence stays on the beam.
-    model.locallyNormalized = false
-    val trainer = new BsoTrainer(50, beamSize, maxBeamSteps, model, sgd, new NullLogFunction())
-    
-    // Train with maximum likelihood (i.e., the usual way
-    // seq2seq models are trained).
-    // model.locallyNormalized = true
-    // val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
-    
-    trainer.train(trainingExamples)
+    if (trainBso) {
+      // Train using beam search optimization, similar to LaSO.
+      // This optimizes the neural network parameters such that the
+      // correct target sequence stays on the beam.
+      model.locallyNormalized = false
+      val trainer = new BsoTrainer(50, beamSize, maxBeamSteps, model, sgd, new NullLogFunction())
+      trainer.train(trainingExamples)
+    } else {
+      // Train with maximum likelihood (i.e., the usual way
+      // seq2seq models are trained).
+      model.locallyNormalized = true
+      val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
+      trainer.train(trainingExamples)
+    }
     
     // 4. Apply the trained model to new data.
     for (d <- testDataTokenized) {

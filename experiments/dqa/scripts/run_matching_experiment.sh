@@ -11,7 +11,7 @@ TRAIN="$DATA_DIR/data_splits/$DATA_SPLIT/train.json"
 TEST="$DATA_DIR/data_splits/$DATA_SPLIT/validation.json"
 
 OUT_DIR="experiments/dqa_parts_v1/output/"
-EXPERIMENT_NAME="$DATA_SPLIT/inference_uc_dist400_pool4_mm6_epoch21/mlpabs_h=768_epochs=1"
+EXPERIMENT_NAME="$DATA_SPLIT/dqa_61/margin_test_hamming2"
 EXPERIMENT_DIR="$OUT_DIR/$EXPERIMENT_NAME/"
 
 MATCHING_MODEL="$EXPERIMENT_DIR/matching_model.ser"
