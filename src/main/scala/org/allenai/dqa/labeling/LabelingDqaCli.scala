@@ -54,7 +54,8 @@ class LabelingDqaCli extends AbstractCli {
     val diagrams = diagramsAndLabels.map(_._1)
     val diagramLabels = diagramsAndLabels.map(_._2)
     val diagramMap = diagramsAndLabels.map(x => (x._1.id, x)).toMap
-    val partFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.size.toInt
+    // TODO: fix the feature dimensionality
+    val partFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.xy.size.toInt
 
     val trainingData = ListBuffer[LabelingExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {

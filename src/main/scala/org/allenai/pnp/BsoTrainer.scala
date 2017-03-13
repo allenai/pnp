@@ -8,6 +8,7 @@ import com.jayantkrish.jklol.util.KbestQueue
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
+import scala.util.Random
 
 /**
  * Beam search trainer implementing a LaSO-like algorithm.
@@ -28,7 +29,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     for (i <- 0 until epochs) {
       var loss = 0.0
       log.notifyIterationStart(i)
-      for (example <- examples) {
+      for (example <- Random.shuffle(examples)) {
         loss +=  doExampleUpdate(example)
       }
       

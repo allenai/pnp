@@ -13,6 +13,7 @@ import org.allenai.pnp.ExecutionScore
 import com.google.common.base.Preconditions
 import org.allenai.pnp.Env
 import org.allenai.pnp.CompGraph
+import org.allenai.dqa.labeling.PointExpressions
 
 /**
  * Structured prediction model for diagram part matching.
@@ -20,7 +21,7 @@ import org.allenai.pnp.CompGraph
  * distribution over matchings between the two sets of
  * parts. 
  */
-class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
+class MatchingModel(var matchIndependent: Boolean,
     val binaryFactors: Boolean, val model: PnpModel) {
 
   import MatchingModel._
@@ -39,8 +40,25 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
   }
 
   def preprocess(source: Diagram, target: Diagram, computationGraph: CompGraph): MatchingPreprocessing = {
-    val sourceFeatures = source.features.getFeatureMatrix(source.parts, computationGraph.cg)
-    val targetFeatures = target.features.getFeatureMatrix(target.parts, computationGraph.cg)
+    val cg = computationGraph.cg
+    val sourceFeatures = source.features.getFeatureMatrix(source.parts, cg)
+    val targetFeatures = target.features.getFeatureMatrix(target.parts, cg)
+    
+    val distanceWeights = parameter(cg, computationGraph.getParameter(DISTANCE_WEIGHTS))
+    val mlpL1W = parameter(cg, computationGraph.getParameter(MLP_L1_W))
+    val mlpL1B = parameter(cg, computationGraph.getParameter(MLP_L1_B))
+    val mlpL2W = parameter(cg, computationGraph.getParameter(MLP_L2_W))
+    val vggW1 = parameter(cg, computationGraph.getParameter(VGG_W1))
+    val vggB1 = parameter(cg, computationGraph.getParameter(VGG_B1))
+    val vggW2 = parameter(cg, computationGraph.getParameter(VGG_W2))
+    val matchingW1 = parameter(cg, computationGraph.getParameter(MATCHING_W1))
+    val matchingB1 = parameter(cg, computationGraph.getParameter(MATCHING_B1))
+    val matchingW2 = parameter(cg, computationGraph.getParameter(MATCHING_W2))
+    val matchingL = parameter(cg, computationGraph.getParameter(MATCHING_L))
+    val matchingOuterW1 = parameter(cg, computationGraph.getParameter(MATCHING_OUTER_W1))
+    val matchingOuterB1 = parameter(cg, computationGraph.getParameter(MATCHING_OUTER_B1))
+    val matchingOuterW2 = parameter(cg, computationGraph.getParameter(MATCHING_OUTER_W2))
+    val matchingOuterL = parameter(cg, computationGraph.getParameter(MATCHING_OUTER_L))
     
     val matchScores = for {
       sourceFeature <- sourceFeatures
@@ -48,104 +66,153 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
       for {
         targetFeature <- targetFeatures
       } yield {
-        scoreSourceTargetMatch(sourceFeature, targetFeature, computationGraph)
+        scoreSourceTargetMatch(sourceFeature, targetFeature, distanceWeights,
+            mlpL1W, mlpL1B, mlpL2W, vggW1, vggB1, vggW2, matchingW1, matchingB1, matchingW2,
+            matchingL, matchingOuterW1, matchingOuterB1, matchingOuterW2, matchingOuterL,
+            computationGraph)
       }
     }
 
-    new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores)
+    // Create expressions for parameters once up front for efficiency.
+    val binaryDistanceWeights = parameter(cg,
+        computationGraph.getParameter(BINARY_DISTANCE_WEIGHTS))
+    val binaryW = parameter(cg, computationGraph.getParameter(BINARY_W))
+    val binaryB = parameter(cg, computationGraph.getParameter(BINARY_B))
+    val binaryDistanceWeightsNonlinear = parameter(cg,
+        computationGraph.getParameter(BINARY_HIDDEN_DIST))
+    
+    new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores,
+        binaryDistanceWeights, binaryW, binaryB, binaryDistanceWeightsNonlinear)
   }
 
-  private def scoreSourceTargetMatch(sourceFeature: Expression, targetFeature: Expression,
-      computationGraph: CompGraph): Expression = {
-    // Get neural network parameters.
-    val cg = computationGraph.cg
-    val distanceWeights = parameter(cg, computationGraph.getParameter(DISTANCE_WEIGHTS))
-    val mlpL1W = parameter(cg, computationGraph.getParameter(MLP_L1_W))
-    val mlpL1B = parameter(cg, computationGraph.getParameter(MLP_L1_B))
-    val mlpL2W = parameter(cg, computationGraph.getParameter(MLP_L2_W))
-
+  private def scoreSourceTargetMatch(sourceFeature: PointExpressions,
+      targetFeature: PointExpressions,
+      distanceWeights: Expression, mlpL1W: Expression, mlpL1B: Expression,
+      mlpL2W: Expression, vggW1: Expression, vggB1: Expression, vggW2: Expression,
+      matchingW1: Expression, matchingB1: Expression, matchingW2: Expression, matchingL: Expression,
+      matchingOuterW1: Expression, matchingOuterB1: Expression, matchingOuterW2: Expression,
+      matchingOuterL: Expression, computationGraph: CompGraph): Expression = {
     // Learn a distance metric
-    val delta = sourceFeature - targetFeature
-    val dist = -1.0 * (transpose(delta) * distanceWeights * delta)
-        
+    // val delta = sourceFeature.xy - targetFeature.xy
+    // val dist = -1.0 * (transpose(delta) * distanceWeights * delta)
+    // dist
+
+    // val vggDelta = sourceFeature.vggAll - targetFeature.vggAll
+    // val vggDist = -1.0 * dot_product(vggDelta, vggDelta)
+
+    // val vggAbsDelta = rectify(vggDelta) + rectify(-1 * vggDelta)
+    // val vggDelta = sourceFeature.vgg0 - targetFeature.vgg0
+    // val vggAbsScore = vggW2 * rectify((vggW1 * vggDelta) + vggB1)
+    // vggAbsScore
+    // vggDist
+
+    // matching MLP
+    val matchingDelta = sourceFeature.matching - targetFeature.matching
+    val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
+    val matchingAbsScore = matchingW2 * rectify((matchingW1 * matchingAbsDelta) + matchingB1)
+    matchingAbsScore
+
+    // matchingAbsScore + dist
+
+    // Matching linear model
+    /*
+    val matchingDelta = sourceFeature.matching - targetFeature.matching
+    val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
+    val matchingLinearScore = matchingL * matchingAbsDelta
+    matchingLinearScore
+    */
+
+    // Outer product
+    /*
+    val matchingDim = 32
+    val sourceMat = concatenate_cols(new ExpressionVector(Vector.fill(matchingDim)(sourceFeature.matching)))
+    val targetMat = transpose(concatenate_cols(new ExpressionVector(Vector.fill(matchingDim)(targetFeature.matching))))
+    
+    val oprod = reshape(sourceMat * targetMat, Seq(matchingDim * matchingDim))
+    // val oprodScore = matchingOuterW2 * oprod
+    val oprodScore = matchingOuterW2 * rectify((matchingOuterW1 * oprod) + matchingOuterB1)
+
+    oprodScore
+    */
+    
+    // Outer product of absolute value delta
+    /*
+    val matchingDim = 32
+    val delta = sourceFeature.matching - targetFeature.matching
+    val absDelta = rectify(delta) + rectify(-1 * delta)
+    val mat = concatenate_cols(new ExpressionVector(Vector.fill(matchingDim)(absDelta)))
+    val oprod = reshape(cmult(mat, transpose(mat)), Seq(matchingDim * matchingDim))
+    val oprodScore = matchingOuterL * oprod
+    oprodScore
+    */
+    
+    // dist
+    
     // multilayer perceptron
-    val concatenated = concatenate(new ExpressionVector(List(sourceFeature, targetFeature)))
-    val mlpOutput = (mlpL2W * tanh((mlpL1W * concatenated) + mlpL1B)) 
+    // val concatenated = concatenate(new ExpressionVector(List(sourceFeature, targetFeature)))
+    // val mlpOutput = (mlpL2W * tanh((mlpL1W * concatenated) + mlpL1B))
 
     // mlpOutput
-    dist
+    // dist
     // -1.0 * dot_product(delta, delta)
-    // input(cg, 0.0f)
+    // input(computationGraph.cg, 0.0f)
+  }
+  
+  private def getAffineTransformData(matching: List[(Part, Part)],
+      preprocessing: MatchingPreprocessing): List[(Expression, Expression)] = {
+    for {
+      (t1, s1) <- matching
+      (t2, s2) <- matching if t2 != t1
+    } yield {
+      val t1ToT2 = preprocessing.targetFeatures(t2.ind).xy - preprocessing.targetFeatures(t1.ind).xy
+      val s1ToS2 = preprocessing.sourceFeatures(s2.ind).xy - preprocessing.sourceFeatures(s1.ind).xy
+      (t1ToT2, s1ToS2)
+    }
+  }
+  
+  private def getAffineTransformSse(matching: List[(Part, Part)],
+    compGraph: CompGraph, preprocessing: MatchingPreprocessing): Expression = {
+    val sourceTargetExpressions = getAffineTransformData(matching, preprocessing)
+    if (sourceTargetExpressions.size > 2) {
+      // Fit a linear regression that transforms the vectors between
+      // aligned source points to those of aligned target points.
+      val targetMatrix = transpose(concatenate_cols(new ExpressionVector(sourceTargetExpressions.map(_._1))))
+      val sourceMatrix = transpose(concatenate_cols(new ExpressionVector(sourceTargetExpressions.map(_._2))))
+          
+      val identity = input(compGraph.cg, Seq(2, 2), new FloatVector(Vector(1.0f, 0.0f, 0.0f, 1.0f)))
+      val l2Regularization = 0.1f
+      val regressionParams = inverse((transpose(sourceMatrix) * sourceMatrix)
+        + (identity * l2Regularization)) * (transpose(sourceMatrix) * targetMatrix)
+
+      val errors = square(targetMatrix - (sourceMatrix * regressionParams))
+      sum_rows(sqrt(sum_rows(errors)))
+    } else {
+      input(compGraph.cg, 0.0f)
+    }
   }
 
   private def getScores(targetPart: Part, remainingArray: Array[Part],
       currentMatching: List[(Part, Part)], compGraph: CompGraph,
       preprocessing: MatchingPreprocessing): Expression = {
     val unaryScores = remainingArray.map(x => preprocessing.getMatchScore(x, targetPart))
-    
-    val scores = if (binaryFactors) {
-      val curTargetFeatures = preprocessing.targetFeatures(targetPart.ind)
+
+    val currentMse = getAffineTransformSse(currentMatching, compGraph, preprocessing) 
+
+    val affineTransformScores = if (binaryFactors) {
+      val affineTransformParam = parameter(compGraph.cg, compGraph.getParameter(AFFINE_TRANSFORM_PARAM))
       
-      val binaryScores = for {
-        curSource <- remainingArray
-        curSourceFeatures = preprocessing.sourceFeatures(curSource.ind)
-      } yield {
-        val pairwiseScores = for {
-          (prevTarget, prevSource) <- currentMatching 
-        } yield {
-          // TODO: load these binary feature vectors from the
-          // diagram instead.
-          val prevTargetFeatures = preprocessing.targetFeatures(prevTarget.ind)
-          val prevSourceFeatures = preprocessing.sourceFeatures(prevSource.ind)
-          val prevToCurTarget = curTargetFeatures - prevTargetFeatures
-          val prevToCurSource = curSourceFeatures - prevSourceFeatures
-          scoreBinaryFactor(prevToCurSource, prevToCurTarget, compGraph)
-        }
-
-        pairwiseScores.foldLeft(input(compGraph.cg, 0))(_ + _)
+      remainingArray.map { curSource => 
+        val candidateMatching = (targetPart, curSource) :: currentMatching
+        val candidateMse = getAffineTransformSse(candidateMatching, compGraph, preprocessing)
+        affineTransformParam * (candidateMse - currentMse)
       }
-
-      unaryScores.zip(binaryScores).map(x => x._1 + x._2)
     } else {
-      unaryScores
+      remainingArray.map(x => input(compGraph.cg, 0.0f))
     }
 
+    val scores = unaryScores.zip(affineTransformScores).map(x => x._1 + x._2)
+
     concatenate(new ExpressionVector(scores.toVector))
-  }
-  
-  private def scoreBinaryFactor(prevToCurSource: Expression, prevToCurTarget: Expression,
-      compGraph: CompGraph) = {
-    val cg = compGraph.cg
-    val binaryDistanceWeights = parameter(cg,
-        compGraph.getParameter(BINARY_DISTANCE_WEIGHTS))
-    val binaryW = parameter(cg, compGraph.getParameter(BINARY_W))
-    val binaryB = parameter(cg, compGraph.getParameter(BINARY_B))
-    val binaryDistanceWeightsNonlinear = parameter(cg,
-        compGraph.getParameter(BINARY_HIDDEN_DIST))
-    
-    val prevToCurTargetNonlinear = tanh((binaryW * prevToCurTarget) + binaryB)
-    val prevToCurSourceNonlinear = tanh((binaryW * prevToCurSource) + binaryB)
-
-    /*
-    val delta = prevToCurTargetNonlinear - prevToCurSourceNonlinear
-    val dist = -1.0 * (transpose(delta) * binaryDistanceWeightsNonlinear * delta)
-    dist
-    */
-
-    // learn a distance metric (assuming binaryDistanceWeights is PSD)
-    val delta = prevToCurTarget - prevToCurSource
-    val dist = -1.0 * (transpose(delta) * binaryDistanceWeights * delta)
-    dist
-          
-    // val sim = dot_product(prevToCurTarget, prevToCurSource)
-          
-    // transpose(prevToCurTarget) * binaryDistanceWeights * prevToCurSource
-
-    /*
-    val delta = prevToCurTarget - prevToCurSource
-    val dist = -1.0 * dot_product(delta, delta)
-    dist
-    */
   }
 
   /**
@@ -184,7 +251,6 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
   }
   
   def save(saver: ModelSaver): Unit = {
-    saver.add_int(featureDim)
     saver.add_boolean(matchIndependent)
     saver.add_boolean(binaryFactors)
   }
@@ -194,8 +260,10 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
  * Stores the output of preprocessing and neural network
  * computations that can be shared across many choices.
  */
-class MatchingPreprocessing(val sourceFeatures: Array[Expression],
-    val targetFeatures: Array[Expression], val matchScores: Array[Array[Expression]]) {
+class MatchingPreprocessing(val sourceFeatures: Array[PointExpressions],
+    val targetFeatures: Array[PointExpressions], val matchScores: Array[Array[Expression]],
+    val binaryDistanceWeights: Expression, val binaryW: Expression, val binaryB: Expression,
+    val binaryDistanceWeightsNonlinear: Expression) {
   
   def getMatchScore(sourcePart: Part, targetPart: Part): Expression = {
     matchScores(sourcePart.ind)(targetPart.ind)
@@ -233,31 +301,68 @@ object MatchingModel {
   val MLP_L1_B = "mlpL1B"
   val MLP_L2_W = "mlpL2W"
   
+  val VGG_W1 = "vggW1"
+  val VGG_B1 = "vggB1"
+  val VGG_W2 = "vggW2"
+  
+  val MATCHING_W1 = "matchingW1"
+  val MATCHING_B1 = "matchingB1"
+  val MATCHING_W2 = "matchingW2"
+  val MATCHING_L = "matchingL"
+  
+  val MATCHING_OUTER_W1 = "matchingOuterW1"
+  val MATCHING_OUTER_B1 = "matchingOuterB1"
+  val MATCHING_OUTER_W2 = "matchingOuterW2"
+  val MATCHING_OUTER_L = "matchingOuterL"
+
+  val AFFINE_TRANSFORM_PARAM = "AFFINE_TRANSFORM_PARAM"
+
   /**
    * Create a MatchingModel and populate {@code model} with the
    * necessary neural network parameters.
    */
-  def create(featureDim: Int, matchIndependent: Boolean,
+  def create(xyFeatureDim: Int, matchingFeatureDim: Int,
+      vggFeatureDim: Int, matchIndependent: Boolean,
       binaryFactors: Boolean, model: PnpModel): MatchingModel = {
     val hiddenDim = 10
-    model.addParameter(DISTANCE_WEIGHTS, Seq(featureDim, featureDim))
-    model.addParameter(BINARY_DISTANCE_WEIGHTS, Seq(featureDim, featureDim))
-    model.addParameter(BINARY_W, Seq(hiddenDim, featureDim))
+    model.addParameter(DISTANCE_WEIGHTS, Seq(xyFeatureDim, xyFeatureDim))
+    model.addParameter(BINARY_DISTANCE_WEIGHTS, Seq(xyFeatureDim, xyFeatureDim))
+    model.addParameter(BINARY_W, Seq(hiddenDim, xyFeatureDim))
     model.addParameter(BINARY_B, Seq(hiddenDim))
     model.addParameter(BINARY_HIDDEN_DIST, Seq(hiddenDim, hiddenDim))
-    model.addParameter(MLP_L1_W, Seq(hiddenDim, featureDim * 2))
+    model.addParameter(MLP_L1_W, Seq(hiddenDim, xyFeatureDim * 2))
     model.addParameter(MLP_L1_B, Seq(hiddenDim))
     model.addParameter(MLP_L2_W, Seq(1, hiddenDim))
-    new MatchingModel(featureDim, matchIndependent, binaryFactors, model)
+    
+    // TODO: 512
+    val vggHiddenDim = 32
+    model.addParameter(VGG_W1, Seq(vggHiddenDim, vggFeatureDim))
+    model.addParameter(VGG_B1, Seq(vggHiddenDim))
+    model.addParameter(VGG_W2, Seq(1, vggHiddenDim))
+    
+    val matchingHiddenDim = 768
+    model.addParameter(MATCHING_W1, Seq(matchingHiddenDim, matchingFeatureDim))
+    model.addParameter(MATCHING_B1, Seq(matchingHiddenDim))
+    model.addParameter(MATCHING_W2, Seq(1, matchingHiddenDim))
+    model.addParameter(MATCHING_L, Seq(1, matchingFeatureDim))
+    
+    val matchingOuterDim = matchingFeatureDim * matchingFeatureDim
+    model.addParameter(MATCHING_OUTER_W1, Seq(matchingHiddenDim, matchingOuterDim))
+    model.addParameter(MATCHING_OUTER_B1, Seq(matchingHiddenDim))
+    model.addParameter(MATCHING_OUTER_W2, Seq(1, matchingHiddenDim))
+    model.addParameter(MATCHING_OUTER_L, Seq(1, matchingOuterDim))
+    
+    model.addParameter(AFFINE_TRANSFORM_PARAM, Seq(1))
+    
+    new MatchingModel(matchIndependent, binaryFactors, model)
   }
 
   /**
    * Load a serialized MatchingModel.
    */
   def load(loader: ModelLoader, model: PnpModel): MatchingModel = {
-    val featureDim = loader.load_int()
     val matchIndependent = loader.load_boolean()
     val binaryFactors = loader.load_boolean()
-    new MatchingModel(featureDim, matchIndependent, binaryFactors, model)
+    new MatchingModel(matchIndependent, binaryFactors, model)
   }
 }

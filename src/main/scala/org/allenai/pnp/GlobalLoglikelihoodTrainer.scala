@@ -5,6 +5,7 @@ import com.jayantkrish.jklol.training.LogFunction
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.dynet_swig._
+import scala.util.Random
 
 class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
     val maxSearchSteps: Int, val model: PnpModel, val trainer: Trainer,
@@ -17,7 +18,7 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
       var loss = 0.0
       var searchErrors = 0
       logFn.notifyIterationStart(i)
-      for (example <- examples) {
+      for (example <- Random.shuffle(examples)) {
         val cg = ComputationGraph.getNew
        
         val env = example.env
