@@ -72,8 +72,7 @@ class MatchingModel(var matchIndependent: Boolean,
   }
 
   private def scoreSourceTargetMatch(sourceFeature: PointExpressions,
-      targetFeature: PointExpressions,
-      distanceWeights: Expression, 
+      targetFeature: PointExpressions, distanceWeights: Expression, 
       matchingW1: Expression, matchingB1: Expression, matchingW2: Expression, matchingL: Expression,
       computationGraph: CompGraph): Expression = {
     // Learn a distance metric
@@ -82,19 +81,21 @@ class MatchingModel(var matchIndependent: Boolean,
     // dist
 
     // Matching MLP
-    val matchingDelta = sourceFeature.matching - targetFeature.matching
-    val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
-    val matchingAbsScore = matchingW2 * rectify((matchingW1 * matchingAbsDelta) + matchingB1)
-    matchingAbsScore
+    // val matchingDelta = sourceFeature.matching - targetFeature.matching
+    // val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
+    // val matchingAbsScore = matchingW2 * rectify((matchingW1 * matchingAbsDelta) + matchingB1)
+    // matchingAbsScore
 
     // Matching linear model
     // val matchingDelta = sourceFeature.matching - targetFeature.matching
     // val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
     // val matchingLinearScore = matchingL * matchingAbsDelta
     // matchingLinearScore
+    
+    // MLP scoring word / point match.
 
     // No score.
-    // input(computationGraph.cg, 0.0f)
+    input(computationGraph.cg, 0.0f)
   }
   
   /**

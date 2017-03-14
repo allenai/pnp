@@ -1,5 +1,5 @@
 #!/usr/local/bin/python3
-# Generate random feature vectors for each diagram part
+# Generate feature vectors for each diagram part
 
 import sys
 import json
