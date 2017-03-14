@@ -79,14 +79,14 @@ class TestMatchingCli extends AbstractCli {
     val losses = for {
       x <- examples
     } yield {
-      val pnp = matchingModel.apply(x.source, x.target)
+      val pnp = matchingModel.apply(x.source, x.sourceLabel, x.target)
       
       val cg = ComputationGraph.getNew
       val compGraph = matchingModel.model.getComputationGraph(cg)
       val dist = pnp.beamSearch(beamSize, -1, Env.init, null, compGraph)
 
       val predicted = dist.executions(0).value
-      val preprocessing = matchingModel.preprocess(x.source, x.target, compGraph)
+      val preprocessing = matchingModel.preprocess(x.source, x.sourceLabel, x.target, compGraph)
       println(x.source.id + " -> " + x.target.id)
       println(x.source.id)
       for ((p, e) <- x.source.parts.zip(preprocessing.sourceFeatures)) {

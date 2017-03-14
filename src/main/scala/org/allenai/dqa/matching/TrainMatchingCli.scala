@@ -73,10 +73,13 @@ class TrainMatchingCli extends AbstractCli {
     // Sample examples for training
     // val matchingExamples = TrainMatchingCli.sampleMatchingExamples(diagramsAndLabels, 10)
     println(matchingExamples.length + " training examples.")
+
+    val labelVocabulary = getLabelVocabulary(matchingExamples)
     
     val model = PnpModel.init(false)
     val matchingModel = MatchingModel.create(xyFeatureDim, matchingFeatureDim,
-        vggFeatureDim, options.has(matchIndependentOpt), options.has(binaryFactorsOpt), model) 
+        vggFeatureDim, options.has(matchIndependentOpt), options.has(binaryFactorsOpt),
+        labelVocabulary, model) 
 
     train(matchingExamples, matchingModel, options.valueOf(epochsOpt),
         options.valueOf(beamSizeOpt))
@@ -87,13 +90,30 @@ class TrainMatchingCli extends AbstractCli {
     matchingModel.save(saver)
     saver.done()
   }
+  
+  def getLabelVocabulary(examples: Seq[MatchingExample]): Vector[String] = {
+    val partLabels = for {
+      x <- examples
+      p <- x.sourceLabel.partLabels
+    } yield {
+      (p, x.label)
+    }
+
+    // Count the number of unique diagram labels each part
+    // label has occurred with.
+    val partLabelCounts = partLabels.groupBy(x => x._1).map(
+        p => (p._1, p._2.length))
+    
+    val countThreshold = 1
+    partLabelCounts.filter(p => p._2 > countThreshold).map(_._1).toVector
+  }
 
   def train(examples: Seq[MatchingExample], matchingModel: MatchingModel,
       epochs: Int, beamSize: Int): Unit = {
     val pnpExamples = for {
       x <- examples
     } yield {
-      val unconditional = matchingModel.apply(x.source, x.target)
+      val unconditional = matchingModel.apply(x.source, x.sourceLabel, x.target)
       val oracle = matchingModel.getMarginScore(x.label)
       PnpExample(unconditional, unconditional, Env.init, oracle) 
     }
@@ -131,6 +151,7 @@ class TrainMatchingCli extends AbstractCli {
     trainer.train(pnpExamples.toList)
 
     // Locally-normalized training
+    // (You also have to change the margin cost above to label cost.)
     /*
     model.locallyNormalized = true
     val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)

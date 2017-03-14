@@ -18,7 +18,10 @@ VGG_DIR=$DATA_DIR/vgg_features/dqa_matching_final_complete_working_crop_feat_fc2
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_gray400/
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_dist400_pool4_mm6_epoch21/
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_dist400_pool4_mm6/
-MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_dist400_pool4_mm6_epoch49_location/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_dist400_pool4_mm6_epoch49_location/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_61_no_context/
+MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_61_full_context_100/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_61_point_aware_context_100/
 FEATURE_OUTPUT=$DATA_DIR/diagram_features_xy.json
 
 UNSEEN_SAMPLE=$DATA_DIR/unseen_sample_trvats.json
