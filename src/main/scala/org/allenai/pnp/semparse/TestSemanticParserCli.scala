@@ -92,7 +92,7 @@ class TestSemanticParserCli extends AbstractCli() {
       val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
-      val results = dist.beamSearch(5, 75, Env.init, null,
+      val results = dist.beamSearch(5, 75, Env.init,
           parser.model.getComputationGraph(), new NullLogFunction())
           
       val beam = results.executions.slice(0, 10)

@@ -72,7 +72,7 @@ class TestMatchingCli extends AbstractCli {
       val pnp = matchingModel.apply(x.source, x.target)
       
       val compGraph = matchingModel.model.getComputationGraph()
-      val dist = pnp.beamSearch(beamSize, -1, Env.init, null, compGraph)
+      val dist = pnp.beamSearch(beamSize, -1, Env.init, compGraph)
 
       val predicted = dist.executions(0).value
       val preprocessing = matchingModel.preprocess(x.source, x.target, compGraph)

@@ -48,7 +48,7 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     ComputationGraph.renew()
     val graph = seq2seq.model.getComputationGraph()
 
-    val marginals = unconditional.beamSearch(10, 10, Env.init, null, graph, new NullLogFunction)
+    val marginals = unconditional.beamSearch(10, 10, Env.init, graph, new NullLogFunction)
     
     marginals.executions.size should be > 0
     /*

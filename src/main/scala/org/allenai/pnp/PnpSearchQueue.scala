@@ -5,28 +5,25 @@ import com.jayantkrish.jklol.util.KbestQueue
 
 trait PnpSearchQueue[A] {
   val graph: CompGraph
-  val stateCost: ExecutionScore
   val log: LogFunction
 
   def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any, choice: Any, myEnv: Env): Unit
 }
 
-class BeamPnpSearchQueue[A](size: Int, val stateCost: ExecutionScore,
-    val graph: CompGraph, val log: LogFunction) extends PnpSearchQueue[A] {
+class BeamPnpSearchQueue[A](size: Int, val graph: CompGraph, val log: LogFunction) extends PnpSearchQueue[A] {
 
   val queue = new KbestQueue(size, Array.empty[SearchState[A]])
 
   override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
-    val stateLogProb = stateCost(tag, choice, env) + logProb
+    val stateLogProb = Pnp.stateCost(tag, choice, env) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
-      queue.offer(SearchState(value, env, stateLogProb, tag, choice), logProb)
+      queue.offer(SearchState(value, env, stateLogProb, tag, choice), stateLogProb)
     }
   }
 }
 
 class EnumeratePnpSearchQueue[A] (
-    val stateCost: ExecutionScore,
     val graph: CompGraph, val log: LogFunction,
     val finished: PnpSearchQueue[A]
 ) extends PnpSearchQueue[A] {
@@ -35,10 +32,10 @@ class EnumeratePnpSearchQueue[A] (
   override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
     myEnv.pauseTimers()
-    val stateLogProb = stateCost(tag, choice, env) + logProb
+    val stateLogProb = Pnp.stateCost(tag, choice, env) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
       env.resumeTimers()
-      value.searchStep(env, logProb, endContinuation, this, finished)
+      value.searchStep(env, stateLogProb, endContinuation, this, finished)
       env.pauseTimers()
     }
     myEnv.resumeTimers()
@@ -51,7 +48,6 @@ class ContinuationPnpSearchQueue[A, B] (
 ) extends PnpSearchQueue[A] {
   
   val graph = queue.graph
-  val stateCost = queue.stateCost
   val log = queue.log
   
   override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,

@@ -103,7 +103,7 @@ class LabelingDqaCli extends AbstractCli {
     for (ex <- examples) {
       ComputationGraph.renew()
       val lfDist = parser.generateExpression(ex.tokenIds, ex.entityLinking)
-      val dist = lfDist.beamSearch(100, 100, Env.init, null, parser.model.getComputationGraph(), null)
+      val dist = lfDist.beamSearch(100, 100, Env.init, parser.model.getComputationGraph(), null)
       println(ex.ex.tokens.mkString(" "))
       for (x <- dist.executions) {
         println("  "  + x)
@@ -135,7 +135,7 @@ class LabelingDqaCli extends AbstractCli {
     for (ex <- examples) {
       ComputationGraph.renew()
       val pp = p3.exampleToPnpExample(ex).unconditional
-      val dist = pp.beamSearch(100, 100, Env.init, null, model.getComputationGraph(), null)
+      val dist = pp.beamSearch(100, 100, Env.init, model.getComputationGraph(), null)
 
       println(ex.ex.tokens.mkString(" "))
       println(ex.ex.answerOptions)

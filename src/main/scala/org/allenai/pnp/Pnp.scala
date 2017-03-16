@@ -56,17 +56,11 @@ trait Pnp[A] {
     * parameters referenced in the program.
     */
   def beamSearch(beamSize: Int = 1, maxIters: Int = -1, env: Env = Env.init,
-      stateCostArg: ExecutionScore = ExecutionScore.zero, graph: CompGraph = null,
+    graph: CompGraph = null,
       log: LogFunction = new NullLogFunction()): PnpBeamMarginals[A] = {
 
-    val stateCost = if (stateCostArg == null) {
-      ExecutionScore.zero
-    } else {
-      stateCostArg
-    }
-
-    val queue = new BeamPnpSearchQueue[A](beamSize, stateCost, graph, log)
-    val finished = new BeamPnpSearchQueue[A](beamSize, stateCost, graph, log)
+    val queue = new BeamPnpSearchQueue[A](beamSize, graph, log)
+    val finished = new BeamPnpSearchQueue[A](beamSize, graph, log)
     
     val endContinuation = new PnpEndContinuation[A]()
 
@@ -106,12 +100,6 @@ trait Pnp[A] {
     new PnpBeamMarginals(executions.toSeq, queue.graph, numIters)
   }
 
-  def beamSearchWithFilter(beamSize: Int, env: Env, keepState: Env => Boolean,
-    graph: CompGraph, log: LogFunction): PnpBeamMarginals[A] = {
-    val cost = ExecutionScore.fromFilter(keepState)
-    beamSearch(beamSize, -1, env, cost, graph, log)
-  }
-
   // Version of beam search for programs that don't have trainable
   // parameters
   
@@ -122,21 +110,11 @@ trait Pnp[A] {
   }
 
   def beamSearch(k: Int, env: Env): PnpBeamMarginals[A] = {
-    beamSearchWithFilter(k, env, (x: Env) => true)
+    beamSearch(k, env, null)
   }
 
   def beamSearch(k: Int, env: Env, cg: CompGraph): PnpBeamMarginals[A] = {
-    beamSearch(k, -1, env, ExecutionScore.zero, cg, new NullLogFunction())
-  }
-
-  def beamSearchWithFilter(
-    k: Int, env: Env, keepState: Env => Boolean, cg: CompGraph
-  ): PnpBeamMarginals[A] = {
-    beamSearchWithFilter(k, env, keepState, cg, new NullLogFunction())
-  }
-
-  def beamSearchWithFilter(k: Int, env: Env, keepState: Env => Boolean): PnpBeamMarginals[A] = {
-    beamSearchWithFilter(k, env, keepState, null, new NullLogFunction())
+    beamSearch(k, -1, env, cg, new NullLogFunction())
   }
 
   def inOneStep(): Pnp[A] = {
@@ -148,8 +126,8 @@ trait Pnp[A] {
       log: LogFunction = new NullLogFunction()): Execution[A] = {
 
     // TODO: make the cost interact with the sampling.
-    val queue = new BeamPnpSearchQueue[A](1, stateCost, graph, log)
-    val finished = new BeamPnpSearchQueue[A](1, stateCost, graph, log)
+    val queue = new BeamPnpSearchQueue[A](1, graph, log)
+    val finished = new BeamPnpSearchQueue[A](1, graph, log)
     
     val endContinuation = new PnpEndContinuation[A]()
     
@@ -307,7 +285,7 @@ case class CollapsedSearch[A](dist: Pnp[A]) extends Pnp[A] {
   override def searchStep[B](env: Env, logProb: Double, continuation: PnpContinuation[A, B],
     queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     val wrappedQueue = new ContinuationPnpSearchQueue(queue, continuation)
-    val nextQueue = new EnumeratePnpSearchQueue[A](queue.stateCost, queue.graph, queue.log, wrappedQueue)
+    val nextQueue = new EnumeratePnpSearchQueue[A](queue.graph, queue.log, wrappedQueue)
     val endContinuation = new PnpEndContinuation[A]()
 
     dist.searchStep(env, logProb, endContinuation, nextQueue, wrappedQueue)
@@ -595,5 +573,14 @@ object Pnp {
 
   def stopTimer(name: String): Pnp[Unit] = {
     StopTimerPnp(name)
+  }
+
+  private val activeScores = scala.collection.mutable.HashSet[ExecutionScore]()
+
+  def addScore(score: ExecutionScore) = activeScores.add(score)
+  def removeScore(score: ExecutionScore) = activeScores.remove(score)
+  def clearScores() = activeScores.clear()
+  def stateCost(tag: Any, choice: Any, env: Env) = {
+    activeScores.map(_(tag, choice, env)).sum
   }
 }

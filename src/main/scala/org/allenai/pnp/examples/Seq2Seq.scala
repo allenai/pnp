@@ -283,7 +283,7 @@ object Seq2Seq {
       // sequences, then run inference with the trained parameters
       // to get an approximate distribution over target sequences.
       val sourcePnp = seq2seq.apply(d._1)
-      val marginals = sourcePnp.beamSearch(beamSize, maxBeamSteps, Env.init, null, graph,
+      val marginals = sourcePnp.beamSearch(beamSize, maxBeamSteps, Env.init, graph,
           new NullLogFunction)
           
       println("Source: " + d._1)
