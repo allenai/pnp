@@ -34,7 +34,9 @@ import scala.util.Random
  */
 class MatchingModel(var matchIndependent: Boolean,
     val globalNn: Boolean, val matchingNetwork: Boolean, val partClassifier: Boolean,
-    val relativeAppearance: Boolean, val labelDict: IndexedList[String], val model: PnpModel) {
+    val relativeAppearance: Boolean,
+    val lstmEncode: Boolean, val forwardBuilder: LSTMBuilder, val backwardBuilder: LSTMBuilder,
+    val labelDict: IndexedList[String], val model: PnpModel) {
 
   import MatchingModel._
   
@@ -44,12 +46,19 @@ class MatchingModel(var matchIndependent: Boolean,
 
     for {
       cg <- computationGraph()
+      _ = initializeRnns(cg)
       preprocessing = preprocess(source, sourceLabel, target, cg)
       matching <- matchRemaining(Random.shuffle(targetParts.toList),
           sourceParts.toSet, List(), preprocessing)
     } yield {
       MatchingLabel(matching.map(x => (x._1.ind, x._2.ind)).toMap)
     }
+  }
+  
+  private def initializeRnns(computationGraph: CompGraph): Unit = {
+    val cg = computationGraph.cg
+    forwardBuilder.new_graph(cg)
+    backwardBuilder.new_graph(cg)
   }
 
   def preprocess(source: Diagram, sourceLabel: DiagramLabel, target: Diagram,
@@ -58,6 +67,9 @@ class MatchingModel(var matchIndependent: Boolean,
     val sourceFeatures = source.features.getFeatureMatrix(source.parts, cg)
     val sourceLabelEmbeddings = sourceLabel.partLabels.map(x => getLabelEmbedding(x, computationGraph))
     val targetFeatures = target.features.getFeatureMatrix(target.parts, cg)
+    
+    val sourceLstmEmbeddings = encodeFeatures(sourceFeatures, computationGraph)
+    val targetLstmEmbeddings = encodeFeatures(targetFeatures, computationGraph)
     
     val distanceWeights = parameter(cg, computationGraph.getParameter(DISTANCE_WEIGHTS))
     val matchingW1 = parameter(cg, computationGraph.getParameter(MATCHING_W1))
@@ -71,19 +83,50 @@ class MatchingModel(var matchIndependent: Boolean,
     val labelB2 = parameter(cg, computationGraph.getParameter(LABEL_B2))
     
     val matchScores = for {
-      (sourceFeature, sourceLabelEmbedding) <- sourceFeatures.zip(sourceLabelEmbeddings)
+      sourceIndex <- (0 until sourceFeatures.length).toArray
+      sourceFeature = sourceFeatures(sourceIndex)
+      sourceLabelEmbedding = sourceLabelEmbeddings(sourceIndex)
+      sourceLstmEmbedding = sourceLstmEmbeddings(sourceIndex)
     } yield {
       for {
-        targetFeature <- targetFeatures
+        targetIndex <- (0 until targetFeatures.length).toArray
+        targetFeature = targetFeatures(targetIndex)
+        targetLstmEmbedding = targetLstmEmbeddings(targetIndex)
       } yield {
-        scoreSourceTargetMatch(sourceFeature, sourceLabelEmbedding, targetFeature, distanceWeights,
+        scoreSourceTargetMatch(sourceFeature, sourceLabelEmbedding, sourceLstmEmbedding,
+            targetFeature, targetLstmEmbedding, distanceWeights,
             matchingW1, matchingB1, matchingW2, matchingL, labelW1, labelB1, labelW2, labelB2,
             computationGraph)
       }
     }
-    
+
     new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores)
   }
+  
+  private def encodeFeatures(features: Array[PointExpressions],
+      computationGraph: CompGraph): Array[Expression] = {
+    if (lstmEncode) {
+      forwardBuilder.start_new_sequence()
+      val forwardSourceEncodings = for {
+        sourceFeature <- features
+      } yield {
+        forwardBuilder.add_input(sourceFeature.matching)
+      }
+      
+      backwardBuilder.start_new_sequence()
+      val backwardSourceEncodings = for {
+        sourceFeature <- features.reverse
+      } yield {
+        backwardBuilder.add_input(sourceFeature.matching)
+      }
+
+      forwardSourceEncodings.zip(backwardSourceEncodings.reverse).map(x =>
+        concatenate(new ExpressionVector(List(x._1, x._2))))
+    } else {
+      features.map(x => input(computationGraph.cg, 0.0f))
+    }
+  }
+
   
   private def getLabelEmbedding(partLabel: String, computationGraph: CompGraph
       ): (Expression, Expression) = {
@@ -102,7 +145,8 @@ class MatchingModel(var matchIndependent: Boolean,
   }
 
   private def scoreSourceTargetMatch(sourceFeature: PointExpressions,
-      sourceLabelEmbedding: (Expression, Expression), targetFeature: PointExpressions,
+      sourceLabelEmbedding: (Expression, Expression), sourceLstmEmbedding: Expression,
+      targetFeature: PointExpressions, targetLstmEmbedding: Expression,
       distanceWeights: Expression,  matchingW1: Expression, matchingB1: Expression,
       matchingW2: Expression, matchingL: Expression, 
       labelW1: Expression, labelB1: Expression, labelW2: Expression, labelB2: Expression,
@@ -136,6 +180,12 @@ class MatchingModel(var matchIndependent: Boolean,
           targetFeature.matching)))
       val labelScore = (labelW2 * rectify(labelW1 * input + labelB1)) + sourceLabelBias
       score = score + labelScore
+    }
+    
+    if (lstmEncode) {
+      // TODO
+      val lstmScore = dot_product(sourceLstmEmbedding, targetLstmEmbedding)
+      score = score + lstmScore
     }
 
     score
@@ -347,6 +397,9 @@ class MatchingModel(var matchIndependent: Boolean,
     saver.add_boolean(matchingNetwork)
     saver.add_boolean(partClassifier)
     saver.add_boolean(relativeAppearance)
+    saver.add_boolean(lstmEncode)
+    saver.add_lstm_builder(forwardBuilder)
+    saver.add_lstm_builder(backwardBuilder)
     saver.add_object(labelDict)
   }
 }
@@ -381,6 +434,8 @@ case class MatchingExecutionScore(label: MatchingLabel) extends ExecutionScore {
     }
   }
 }
+
+case class ContextualPointExpressions(e: PointExpressions, lstm: Expression, label: Expression)
 
 object MatchingModel {
 
@@ -422,6 +477,8 @@ object MatchingModel {
   val labelDim = 32
   val labelHidden = 32
 
+  val lstmHiddenDim = 100
+  
   /**
    * Create a MatchingModel and populate {@code model} with the
    * necessary neural network parameters. {@code partLabels} is
@@ -430,7 +487,7 @@ object MatchingModel {
    */
   def create(xyFeatureDim: Int, matchingFeatureDim: Int,
       vggFeatureDim: Int, matchIndependent: Boolean,
-      globalNn: Boolean, matchingNetwork: Boolean, partClassifier: Boolean,
+      globalNn: Boolean, matchingNetwork: Boolean, lstmEncode: Boolean, partClassifier: Boolean,
       relativeAppearance: Boolean, partLabels: Seq[String], model: PnpModel): MatchingModel = {
     model.addParameter(DISTANCE_WEIGHTS, Seq(xyFeatureDim, xyFeatureDim))
 
@@ -463,8 +520,12 @@ object MatchingModel {
     // XXX: This parameter isn't used currently.
     model.addParameter(LABEL_B2, Seq(labelHidden))
     
+    // Forward and backward RNNs for encoding the parts.
+    val forwardBuilder = new LSTMBuilder(1, matchingFeatureDim, lstmHiddenDim, model.model)
+    val backwardBuilder = new LSTMBuilder(1, matchingFeatureDim, lstmHiddenDim, model.model)
+
     new MatchingModel(matchIndependent, globalNn, matchingNetwork, partClassifier, relativeAppearance,
-        labelDict, model)
+        lstmEncode, forwardBuilder, backwardBuilder, labelDict, model)
   }
 
   /**
@@ -476,10 +537,12 @@ object MatchingModel {
     val matchingNetwork = loader.load_boolean()
     val partClassifier = loader.load_boolean()
     val relativeAppearance = loader.load_boolean()
-
+    val lstmEncode = loader.load_boolean()
+    val forwardLstm = loader.load_lstm_builder()
+    val backwardLstm = loader.load_lstm_builder()
     val labelDict = loader.load_object(classOf[IndexedList[String]])
 
     new MatchingModel(matchIndependent, globalNn, matchingNetwork, partClassifier,
-        relativeAppearance, labelDict, model)
+        relativeAppearance, lstmEncode, forwardLstm, backwardLstm, labelDict, model)
   }
 }

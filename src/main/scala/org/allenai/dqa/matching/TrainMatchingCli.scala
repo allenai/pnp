@@ -37,6 +37,7 @@ class TrainMatchingCli extends AbstractCli {
   var matchingNetworkOpt: OptionSpec[Void] = null
   var partClassifierOpt: OptionSpec[Void] = null
   var relativeAppearanceOpt: OptionSpec[Void] = null
+  var lstmEncodeOpt: OptionSpec[Void] = null
 
   var loglikelihoodOpt: OptionSpec[Void] = null
   var pretrainOpt: OptionSpec[Void] = null
@@ -55,6 +56,7 @@ class TrainMatchingCli extends AbstractCli {
     matchingNetworkOpt = parser.accepts("matchingNetwork")
     partClassifierOpt = parser.accepts("partClassifier")
     relativeAppearanceOpt = parser.accepts("relativeAppearance")
+    lstmEncodeOpt = parser.accepts("lstmEncode")
 
     // Flags controlling training behavior.
     loglikelihoodOpt = parser.accepts("loglikelihood")
@@ -94,7 +96,8 @@ class TrainMatchingCli extends AbstractCli {
     val matchingModel = MatchingModel.create(xyFeatureDim, matchingFeatureDim,
         vggFeatureDim, options.has(matchIndependentOpt), options.has(structuralFactorOpt),
         options.has(matchingNetworkOpt), options.has(partClassifierOpt),
-        options.has(relativeAppearanceOpt), labelVocabulary, model) 
+        options.has(relativeAppearanceOpt), options.has(lstmEncodeOpt),
+        labelVocabulary, model) 
 
     if (options.has(pretrainOpt)) {
       val matchIndependent = matchingModel.matchIndependent
