@@ -31,9 +31,13 @@ class TrainMatchingCli extends AbstractCli {
   var diagramFeaturesOpt: OptionSpec[String] = null
   var examplesOpt: OptionSpec[String] = null
   var modelOutputOpt: OptionSpec[String] = null
-  var matchIndependentOpt: OptionSpec[Void] = null
-  var binaryFactorsOpt: OptionSpec[Void] = null
   
+  var matchIndependentOpt: OptionSpec[Void] = null
+  var structuralFactorOpt: OptionSpec[Void] = null
+  var matchingNetworkOpt: OptionSpec[Void] = null
+  var partClassifierOpt: OptionSpec[Void] = null
+  var relativeAppearanceOpt: OptionSpec[Void] = null
+
   var loglikelihoodOpt: OptionSpec[Void] = null
   var pretrainOpt: OptionSpec[Void] = null
   var epochsOpt: OptionSpec[Integer] = null
@@ -44,9 +48,15 @@ class TrainMatchingCli extends AbstractCli {
     diagramFeaturesOpt = parser.accepts("diagramFeatures").withRequiredArg().ofType(classOf[String]).required()
     examplesOpt = parser.accepts("examples").withRequiredArg().ofType(classOf[String]).required()
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
+    
+    // Flags controlling the model variant
     matchIndependentOpt = parser.accepts("matchIndependent")
-    binaryFactorsOpt = parser.accepts("binaryFactors")
-  
+    structuralFactorOpt = parser.accepts("structuralFactor")
+    matchingNetworkOpt = parser.accepts("matchingNetwork")
+    partClassifierOpt = parser.accepts("partClassifier")
+    relativeAppearanceOpt = parser.accepts("relativeAppearance")
+
+    // Flags controlling training behavior.
     loglikelihoodOpt = parser.accepts("loglikelihood")
     pretrainOpt = parser.accepts("pretrain")
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
@@ -82,8 +92,9 @@ class TrainMatchingCli extends AbstractCli {
     
     val model = PnpModel.init(false)
     val matchingModel = MatchingModel.create(xyFeatureDim, matchingFeatureDim,
-        vggFeatureDim, options.has(matchIndependentOpt), options.has(binaryFactorsOpt),
-        labelVocabulary, model) 
+        vggFeatureDim, options.has(matchIndependentOpt), options.has(structuralFactorOpt),
+        options.has(matchingNetworkOpt), options.has(partClassifierOpt),
+        options.has(relativeAppearanceOpt), labelVocabulary, model) 
 
     if (options.has(pretrainOpt)) {
       val matchIndependent = matchingModel.matchIndependent
