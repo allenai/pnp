@@ -34,6 +34,8 @@ class TrainMatchingCli extends AbstractCli {
   var matchIndependentOpt: OptionSpec[Void] = null
   var binaryFactorsOpt: OptionSpec[Void] = null
   
+  var loglikelihoodOpt: OptionSpec[Void] = null
+  var pretrainOpt: OptionSpec[Void] = null
   var epochsOpt: OptionSpec[Integer] = null
   var beamSizeOpt: OptionSpec[Integer] = null
   
@@ -44,7 +46,9 @@ class TrainMatchingCli extends AbstractCli {
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
     matchIndependentOpt = parser.accepts("matchIndependent")
     binaryFactorsOpt = parser.accepts("binaryFactors")
-    
+  
+    loglikelihoodOpt = parser.accepts("loglikelihood")
+    pretrainOpt = parser.accepts("pretrain")
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
   }
@@ -81,8 +85,21 @@ class TrainMatchingCli extends AbstractCli {
         vggFeatureDim, options.has(matchIndependentOpt), options.has(binaryFactorsOpt),
         labelVocabulary, model) 
 
+    if (options.has(pretrainOpt)) {
+      val matchIndependent = matchingModel.matchIndependent
+      val locallyNormalized = model.locallyNormalized
+      matchingModel.matchIndependent = true
+      model.locallyNormalized = true
+
+      train(matchingExamples, matchingModel, options.valueOf(epochsOpt),
+          options.valueOf(beamSizeOpt), true)
+
+      matchingModel.matchIndependent = matchIndependent
+      model.locallyNormalized = locallyNormalized
+    }
+        
     train(matchingExamples, matchingModel, options.valueOf(epochsOpt),
-        options.valueOf(beamSizeOpt))
+        options.valueOf(beamSizeOpt), options.has(loglikelihoodOpt))
     
     // Serialize model to disk.
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
@@ -109,12 +126,17 @@ class TrainMatchingCli extends AbstractCli {
   }
 
   def train(examples: Seq[MatchingExample], matchingModel: MatchingModel,
-      epochs: Int, beamSize: Int): Unit = {
+      epochs: Int, beamSize: Int, loglikelihood: Boolean): Unit = {
     val pnpExamples = for {
       x <- examples
     } yield {
       val unconditional = matchingModel.apply(x.source, x.sourceLabel, x.target)
-      val oracle = matchingModel.getMarginScore(x.label)
+      val oracle = if (loglikelihood) {
+        matchingModel.getLabelScore(x.label)
+      } else {
+        matchingModel.getMarginScore(x.label)
+      }
+      
       PnpExample(unconditional, unconditional, Env.init, oracle) 
     }
 
@@ -123,42 +145,21 @@ class TrainMatchingCli extends AbstractCli {
 
     val model = matchingModel.model
 
-    // Pretraining
-    /*
-    println("Pretraining with loglikelihood...")
-    // Save current model configuration then set it up for
-    // conditional loglikelihood training.
-    val matchIndependent = matchingModel.matchIndependent
-    val locallyNormalized = model.locallyNormalized
-    matchingModel.matchIndependent = true
-    model.locallyNormalized = true
-
-    // Pretrain with conditional loglikelihood.
-    val pretrainSgd = new SimpleSGDTrainer(model.model, learningRate, decay)
-    val pretrainer = new LoglikelihoodTrainer(1, 1, false, model, pretrainSgd,
-        new DefaultLogFunction())
-    pretrainer.train(pnpExamples)
-    
-    // Restore model configuration. 
-    matchingModel.matchIndependent = matchIndependent
-    model.locallyNormalized = locallyNormalized
-    */
-    
-    // Globally-normalized training
-    println("Training...")
-    val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)
-    val trainer = new BsoTrainer(epochs, beamSize, -1, model, sgd, new DefaultLogFunction())
-    trainer.train(pnpExamples.toList)
-
-    // Locally-normalized training
-    // (You also have to change the margin cost above to label cost.)
-    /*
-    model.locallyNormalized = true
-    val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)
-    val trainer = new LoglikelihoodTrainer(epochs, 1, false, model, sgd,
-        new DefaultLogFunction())
-    trainer.train(pnpExamples.toList)
-    */
+    if (loglikelihood) {
+      // Locally-normalized training
+      println("Loglikelihood training...")
+      model.locallyNormalized = true
+      val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)
+      val trainer = new LoglikelihoodTrainer(epochs, 1, false, model, sgd,
+          new DefaultLogFunction())
+      trainer.train(pnpExamples.toList)
+    } else {
+      // Globally-normalized training
+      println("LaSO training...")
+      val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)
+      val trainer = new BsoTrainer(epochs, beamSize, -1, model, sgd, new DefaultLogFunction())
+      trainer.train(pnpExamples.toList)
+    }
   }
 }
 

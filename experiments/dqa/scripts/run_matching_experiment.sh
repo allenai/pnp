@@ -11,7 +11,7 @@ TRAIN="$DATA_DIR/data_splits/$DATA_SPLIT/train.json"
 TEST="$DATA_DIR/data_splits/$DATA_SPLIT/validation.json"
 
 OUT_DIR="experiments/dqa_parts_v1/output/"
-EXPERIMENT_NAME="$DATA_SPLIT/dqa_61_full_context_100/partname_features_2/"
+EXPERIMENT_NAME="$DATA_SPLIT/dqa_210/partname_features_bias/"
 EXPERIMENT_DIR="$OUT_DIR/$EXPERIMENT_NAME/"
 
 MATCHING_MODEL="$EXPERIMENT_DIR/matching_model.ser"
@@ -20,18 +20,18 @@ BINARY_MATCHING_MODEL="$EXPERIMENT_DIR/binary_matching_model.ser"
 
 mkdir -p $EXPERIMENT_DIR
 
-echo "Training binary_matching model..."
-sbt "run-main org.allenai.dqa.matching.TrainMatchingCli --beamSize $TRAIN_BEAM --epochs $EPOCHS --binaryFactors --examples $TRAIN --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --modelOut $BINARY_MATCHING_MODEL" > $EXPERIMENT_DIR/binary_matching_train_log.txt
-
-echo "Testing binary_matching model..."
-sbt "run-main org.allenai.dqa.matching.TestMatchingCli --beamSize $TEST_BEAM --examples $TEST --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --model $BINARY_MATCHING_MODEL --lossJson $EXPERIMENT_DIR/binary_matching_loss.json"  > $EXPERIMENT_DIR/binary_matching_test_log.txt
-
-mkdir -p $EXPERIMENT_DIR/binary_matching_loss/
-python experiments/dqa/scripts/visualize_loss.py $EXPERIMENT_DIR/binary_matching_loss.json $EXPERIMENT_DIR/binary_matching_loss/
-tar cf $EXPERIMENT_DIR/binary_matching_loss.tar $EXPERIMENT_DIR/binary_matching_loss/
-gzip -f $EXPERIMENT_DIR/binary_matching_loss.tar
-
-# sbt "run-main org.allenai.dqa.matching.TestMatchingCli --beamSize $TEST_BEAM --examples $TRAIN --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --model $BINARY_MATCHING_MODEL --lossJson $EXPERIMENT_DIR/binary_matching_train_loss.json"  > $EXPERIMENT_DIR/binary_matching_trainloss_log.txt
+# echo "Training binary_matching model..."
+# sbt "run-main org.allenai.dqa.matching.TrainMatchingCli --beamSize $TRAIN_BEAM --epochs $EPOCHS --binaryFactors --examples $TRAIN --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --modelOut $BINARY_MATCHING_MODEL" > $EXPERIMENT_DIR/binary_matching_train_log.txt
+# 
+# echo "Testing binary_matching model..."
+# sbt "run-main org.allenai.dqa.matching.TestMatchingCli --beamSize $TEST_BEAM --examples $TEST --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --model $BINARY_MATCHING_MODEL --lossJson $EXPERIMENT_DIR/binary_matching_loss.json"  > $EXPERIMENT_DIR/binary_matching_test_log.txt
+# 
+# mkdir -p $EXPERIMENT_DIR/binary_matching_loss/
+# python experiments/dqa/scripts/visualize_loss.py $EXPERIMENT_DIR/binary_matching_loss.json $EXPERIMENT_DIR/binary_matching_loss/
+# tar cf $EXPERIMENT_DIR/binary_matching_loss.tar $EXPERIMENT_DIR/binary_matching_loss/
+# gzip -f $EXPERIMENT_DIR/binary_matching_loss.tar
+# 
+# # sbt "run-main org.allenai.dqa.matching.TestMatchingCli --beamSize $TEST_BEAM --examples $TRAIN --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --model $BINARY_MATCHING_MODEL --lossJson $EXPERIMENT_DIR/binary_matching_train_loss.json"  > $EXPERIMENT_DIR/binary_matching_trainloss_log.txt
 
 echo "Training matching model..."
 sbt "run-main org.allenai.dqa.matching.TrainMatchingCli --beamSize $TRAIN_BEAM --epochs $EPOCHS --examples $TRAIN --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --modelOut $MATCHING_MODEL" > $EXPERIMENT_DIR/matching_train_log.txt

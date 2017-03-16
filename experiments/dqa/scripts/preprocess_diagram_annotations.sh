@@ -20,7 +20,8 @@ VGG_DIR=$DATA_DIR/vgg_features/dqa_matching_final_complete_working_crop_feat_fc2
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_dist400_pool4_mm6/
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/inference_uc_dist400_pool4_mm6_epoch49_location/
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_61_no_context/
-MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_61_full_context_100/
+# MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_210/
+MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_310/
 # MATCHING_DIR=$DATA_DIR/matchingnet_features/dqa_61_point_aware_context_100/
 FEATURE_OUTPUT=$DATA_DIR/diagram_features_xy.json
 
@@ -39,9 +40,6 @@ UNSEEN_CATEGORY_TEST=$UNSEEN_C_DIR/test.json
 sips -g pixelHeight -g pixelWidth $IMAGE_DIR/**/*.png > $DIAGRAM_SIZE_OUTPUT
 ./experiments/dqa/scripts/preprocess_diagram_annotations.py $RAW_ANNOTATIONS $DIAGRAM_SIZE_OUTPUT $OUTPUT
 ./experiments/dqa/scripts/generate_diagram_feats.py $OUTPUT $VGG_DIR $MATCHING_DIR $FEATURE_OUTPUT
-
-# This takes a long time and doesn't need to be recomputed
-# python ./experiments/dqa/scripts/preprocess_ngrams.py $OUTPUT $SYNTACTIC_NGRAMS $NGRAM_OUTPUT
 
 # Generate data splits. Note that the sampling is seeded so as to be repeatable
 # (as long as the number of samples doesn't change.)

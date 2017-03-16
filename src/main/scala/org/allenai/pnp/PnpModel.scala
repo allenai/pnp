@@ -20,8 +20,21 @@ class PnpModel(var names: Map[String, Parameter], var lookupNames: Map[String, L
     param
   }
   
+  def addParameter(name: String, dim: Dim, init: ParameterInit): Parameter = {
+    val param = model.add_parameters(dim, init)
+    names += (name -> param)
+    param
+  }
+  
   def addLookupParameter(name: String, lookupNum: Long, dim: Dim): LookupParameter = {
     val param = model.add_lookup_parameters(lookupNum, dim)
+    lookupNames += (name -> param)
+    param
+  }
+
+  def addLookupParameter(name: String, lookupNum: Long, dim: Dim,
+      init: ParameterInit): LookupParameter = {
+    val param = model.add_lookup_parameters(lookupNum, dim, init)
     lookupNames += (name -> param)
     param
   }

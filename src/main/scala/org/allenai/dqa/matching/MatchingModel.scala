@@ -24,6 +24,7 @@ import edu.cmu.dynet.DyNetScalaHelpers.convertExpressionsToExpressions
 import edu.cmu.dynet.DyNetScalaHelpers.convertFloatsToFloats
 import edu.cmu.dynet.DyNetScalaHelpers.seqToDim
 import edu.cmu.dynet.dynet_swig._
+import scala.util.Random
 
 /**
  * Structured prediction model for diagram part matching.
@@ -43,7 +44,8 @@ class MatchingModel(var matchIndependent: Boolean,
     for {
       cg <- computationGraph()
       preprocessing = preprocess(source, sourceLabel, target, cg)
-      matching <- matchRemaining(targetParts.toList, sourceParts.toSet, List(), preprocessing)
+      matching <- matchRemaining(Random.shuffle(targetParts.toList),
+          sourceParts.toSet, List(), preprocessing)
     } yield {
       MatchingLabel(matching.map(x => (x._1.ind, x._2.ind)).toMap)
     }
@@ -82,20 +84,24 @@ class MatchingModel(var matchIndependent: Boolean,
     new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores)
   }
   
-  private def getLabelEmbedding(partLabel: String, computationGraph: CompGraph): Expression = {
+  private def getLabelEmbedding(partLabel: String, computationGraph: CompGraph
+      ): (Expression, Expression) = {
     val cg = computationGraph.cg
     val labelLookup = computationGraph.getLookupParameter(LABEL_EMBEDDINGS)
+    val labelBiasLookup = computationGraph.getLookupParameter(LABEL_BIAS_EMBEDDINGS)
     val index = if (labelDict.contains(partLabel)) {
       labelDict.getIndex(partLabel)
     } else {
       labelDict.getIndex(LABEL_UNK)
     }
     
-    lookup(cg, labelLookup, index)
+    val labelExpression = lookup(cg, labelLookup, index)
+    val labelBias = lookup(cg, labelBiasLookup, index)
+    (labelExpression, labelBias)
   }
 
   private def scoreSourceTargetMatch(sourceFeature: PointExpressions,
-      sourceLabelEmbedding: Expression, targetFeature: PointExpressions,
+      sourceLabelEmbedding: (Expression, Expression), targetFeature: PointExpressions,
       distanceWeights: Expression,  matchingW1: Expression, matchingB1: Expression,
       matchingW2: Expression, matchingL: Expression, 
       labelW1: Expression, labelB1: Expression, labelW2: Expression, labelB2: Expression,
@@ -106,26 +112,30 @@ class MatchingModel(var matchIndependent: Boolean,
     // dist
 
     // Matching MLP
-    val matchingDelta = sourceFeature.matching - targetFeature.matching
-    val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
-    val matchingAbsScore = matchingW2 * rectify((matchingW1 * matchingAbsDelta) + matchingB1)
-    
+    // val matchingDelta = sourceFeature.matching - targetFeature.matching
+    // val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
+    // val matchingAbsScore = matchingW2 * rectify((matchingW1 * matchingAbsDelta) + matchingB1)
+    // matchingAbsScore
+
     // Matching linear model
     // val matchingDelta = sourceFeature.matching - targetFeature.matching
     // val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
     // val matchingLinearScore = matchingL * matchingAbsDelta
     // matchingLinearScore
-    
+
     // MLP scoring word / point match.
-    val input = concatenate(new ExpressionVector(Seq(sourceLabelEmbedding,
-       targetFeature.matching)))
-    val labelScore = labelW2 * rectify(labelW1 * input + labelB1)
-    matchingAbsScore + labelScore
-    
+    // val sourceLabelClassifier = sourceLabelEmbedding._1
+    // val sourceLabelBias = sourceLabelEmbedding._2
+    // val input = concatenate(new ExpressionVector(Seq(sourceLabelClassifier,
+    //   targetFeature.matching)))
+    // val labelScore = (labelW2 * rectify(labelW1 * input + labelB1)) + sourceLabelBias
+    // matchingAbsScore + labelScore
+    // labelScore
+
     // No score.
-    // input(computationGraph.cg, 0.0f)
+    input(computationGraph.cg, 0.0f)
   }
-  
+
   /**
    * Gets pairs of vectors encoding the relationship between pairs of
    * parts on the source and target side of the matching. For example,
@@ -144,7 +154,7 @@ class MatchingModel(var matchIndependent: Boolean,
     }
   }
   
-  private def getAffineGlobalScore(matching: List[(Part, Part)],
+  def getAffineGlobalScore(matching: List[(Part, Part)],
     compGraph: CompGraph, preprocessing: MatchingPreprocessing): Expression = {
     val sourceTargetExpressions = getRelationVectors(matching, preprocessing)
     if (sourceTargetExpressions.size > 2) {
@@ -163,6 +173,17 @@ class MatchingModel(var matchIndependent: Boolean,
     } else {
       input(compGraph.cg, 0.0f)
     }
+  }
+  
+  def getNnGlobalScore(matching: List[(Part, Part)], 
+      compGraph: CompGraph, preprocessing: MatchingPreprocessing): Expression = {
+    val transformW2 = parameter(compGraph.cg, compGraph.getParameter(TRANSFORM_W1))
+    val deltaW1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_W1))
+    val deltaB1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_B1))
+    val deltaW2 = parameter(compGraph.cg, compGraph.getParameter(DELTA_W2))
+    val deltaB2 = parameter(compGraph.cg, compGraph.getParameter(DELTA_B2))
+    getNnGlobalScore(matching, compGraph, preprocessing,
+          transformW2, deltaW1, deltaB1, deltaW2, deltaB2)
   }
 
   private def getNnGlobalScore(matching: List[(Part, Part)], 
@@ -340,6 +361,7 @@ object MatchingModel {
   val DELTA_B2 = "deltaB2"
 
   val LABEL_EMBEDDINGS = "labelEmbeddings"
+  val LABEL_BIAS_EMBEDDINGS = "labelBiasEmbeddings"
   val LABEL_UNK = "<unk>"
   val LABEL_W1 = "labelW1"
   val LABEL_B1 = "labelB1"
@@ -348,7 +370,7 @@ object MatchingModel {
 
   // Neural net dimensionalities.
   // TODO: these should be configurable.
-  val matchingHiddenDim = 768
+  val matchingHiddenDim = 512
   val transformHiddenDim1 = 32
   val transformHiddenDim2 = 32
   val deltaDim = 4
@@ -370,7 +392,7 @@ object MatchingModel {
     model.addParameter(MATCHING_B1, Seq(matchingHiddenDim))
     model.addParameter(MATCHING_W2, Seq(1, matchingHiddenDim))
     model.addParameter(MATCHING_L, Seq(1, matchingFeatureDim))
-    
+
     model.addParameter(AFFINE_TRANSFORM_PARAM, Seq(1))
     
     model.addParameter(TRANSFORM_W1, Seq(1, transformHiddenDim2))
@@ -381,7 +403,8 @@ object MatchingModel {
 
     val labelDict = IndexedList.create(partLabels.asJava)
     labelDict.add(LABEL_UNK)
-    model.addLookupParameter(LABEL_EMBEDDINGS, labelDict.size, Seq(labelDim))    
+    model.addLookupParameter(LABEL_EMBEDDINGS, labelDict.size, Seq(labelDim))
+    model.addLookupParameter(LABEL_BIAS_EMBEDDINGS, labelDict.size, Seq(1))    
     model.addParameter(LABEL_W1, Seq(labelHidden, labelDim + matchingFeatureDim))
     model.addParameter(LABEL_B1, Seq(labelHidden))
     model.addParameter(LABEL_W2, Seq(1, labelHidden))

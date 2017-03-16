@@ -8,6 +8,7 @@ import spray.json.JsNumber
 import spray.json.JsObject
 import spray.json.deserializationError
 import spray.json.pimpString
+import scala.util.Random
 
 /**
  * A diagram marked with a collection of parts. Each
@@ -30,7 +31,7 @@ case class Point(x: Int, y: Int)
  * A label for a diagram. The label includes a type for
  * the entire diagram (e.g., "car") along with labels for
  * each part (e.g., "wheel"). The indexes of {@code partLabels}  
- * correspond to indexes of {@code parts}.
+ * correspond to {@code part.ind}.
  */
 case class DiagramLabel(diagramType: String, partLabels: Vector[String])
 
@@ -51,10 +52,11 @@ object Diagram {
     val width = js.fields("width").convertTo[Int]
     val height = js.fields("height").convertTo[Int]
     
-    val pointJsons = js.fields("points").asInstanceOf[JsArray]
-    
+    // val pointJsons = Random.shuffle(js.fields("points").asInstanceOf[JsArray].elements)
+    val pointJsons = js.fields("points").asInstanceOf[JsArray].elements
+
     val labeledParts = for {
-      (pointJson, i) <- pointJsons.elements.zipWithIndex
+      (pointJson, i) <- pointJsons.zipWithIndex
       p = pointJson.asJsObject
       id = p.fields("textId").convertTo[String]
       label = p.fields("label").convertTo[String]
@@ -67,8 +69,8 @@ object Diagram {
     }
 
     val f = features(imageId)
-    
+
     (Diagram(diagramId, imageId, width, height, labeledParts.map(_._1), f),
-        (DiagramLabel(diagramLabel, labeledParts.map(_._2)))) 
+        (DiagramLabel(diagramLabel, labeledParts.map(_._2))))
   }
 }
