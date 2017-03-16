@@ -56,9 +56,9 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     ComputationGraph.renew()
     val compGraph = parser.model.getComputationGraph()
 
-    Pnp.addScore(oracle)
-    val results = exprs.beamSearch(1, -1, Env.init, compGraph, new NullLogFunction()).executions
-    Pnp.removeScore(oracle)
+    val results = exprs.beamSearch(1, -1, Env.init.addScore(oracle),
+      compGraph, new NullLogFunction())
+        .executions
     for (result <- results) {
       println("  " + result)
     }

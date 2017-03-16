@@ -16,7 +16,7 @@ class BeamPnpSearchQueue[A](size: Int, val graph: CompGraph, val log: LogFunctio
 
   override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
-    val stateLogProb = Pnp.stateCost(tag, choice, env) + logProb
+    val stateLogProb = env.stateCost(tag, choice) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
       queue.offer(SearchState(value, env, stateLogProb, tag, choice), stateLogProb)
     }
@@ -32,7 +32,7 @@ class EnumeratePnpSearchQueue[A] (
   override def offer(value: Pnp[A], env: Env, logProb: Double, tag: Any,
       choice: Any, myEnv: Env): Unit = {
     myEnv.pauseTimers()
-    val stateLogProb = Pnp.stateCost(tag, choice, env) + logProb
+    val stateLogProb = env.stateCost(tag, choice) + logProb
     if (stateLogProb > Double.NegativeInfinity) {
       env.resumeTimers()
       value.searchStep(env, stateLogProb, endContinuation, this, finished)

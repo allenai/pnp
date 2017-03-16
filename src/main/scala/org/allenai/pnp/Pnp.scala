@@ -574,13 +574,4 @@ object Pnp {
   def stopTimer(name: String): Pnp[Unit] = {
     StopTimerPnp(name)
   }
-
-  private val activeScores = scala.collection.mutable.HashSet[ExecutionScore]()
-
-  def addScore(score: ExecutionScore) = activeScores.add(score)
-  def removeScore(score: ExecutionScore) = activeScores.remove(score)
-  def clearScores() = activeScores.clear()
-  def stateCost(tag: Any, choice: Any, env: Env) = {
-    activeScores.map(_(tag, choice, env)).sum
-  }
 }

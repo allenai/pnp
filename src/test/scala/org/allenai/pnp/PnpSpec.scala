@@ -18,15 +18,11 @@ import scala.collection.mutable.ListBuffer
 
 /** Test cases for the probabilistic programming monad.
   */
-class PnpSpec extends FlatSpec with Matchers with BeforeAndAfter {
+class PnpSpec extends FlatSpec with Matchers {
 
   Initialize.initialize()
 
   val TOLERANCE = 0.01
-
-  after {
-    Pnp.clearScores()
-  }
 
   "Pnp" should "perform inference on choices" in {
     val foo = Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)))

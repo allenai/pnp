@@ -21,9 +21,8 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
        
         // Compute the distribution over correct executions.
         logFn.startTimer("pp_loglikelihood/conditional")
-        Pnp.addScore(example.conditionalExecutionScore)
-        val conditional = example.conditional.beamSearch(beamSize, maxSearchSteps, env, graph, logFn)
-        Pnp.removeScore(example.conditionalExecutionScore)
+        val conditional = example.conditional.beamSearch(beamSize, maxSearchSteps,
+            env.addScore(example.conditionalExecutionScore), graph, logFn)
         val conditionalPartitionFunction = conditional.partitionFunction
         logFn.stopTimer("pp_loglikelihood/conditional")
 

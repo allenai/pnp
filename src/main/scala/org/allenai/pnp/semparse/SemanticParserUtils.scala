@@ -101,10 +101,8 @@ object SemanticParserUtils {
       if (oracleOpt.isDefined) {
         val oracle = oracleOpt.get
         ComputationGraph.renew()
-        Pnp.addScore(oracle)
-        val results = dist.beamSearch(1, 50, Env.init,
+        val results = dist.beamSearch(1, 50, Env.init.addScore(oracle),
             parser.model.getComputationGraph(), new NullLogFunction())
-        Pnp.removeScore(oracle)
         if (results.executions.size != 1) {
           println("ERROR: " + e + " " + results)
           println("  " + e.getSentence.getWords)
