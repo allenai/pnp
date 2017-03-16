@@ -122,8 +122,7 @@ trait Pnp[A] {
   }
   
   def sample(numSamples: Int = 1, env: Env = Env.init,
-      stateCost: ExecutionScore = ExecutionScore.zero, graph: CompGraph = null,
-      log: LogFunction = new NullLogFunction()): Execution[A] = {
+      graph: CompGraph = null, log: LogFunction = new NullLogFunction()): Execution[A] = {
 
     // TODO: make the cost interact with the sampling.
     val queue = new BeamPnpSearchQueue[A](1, graph, log)
@@ -175,7 +174,12 @@ case class CategoricalPnp[A](dist: Array[(A, Double)], tag: Any) extends Pnp[A] 
   override def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
     // TODO: This code assumes that the distribution is locally normalized.
-    val expDist = dist.map(x => (x._1, Math.exp(x._2)))
+    val expDist = dist.map {
+      case (value, logProb) => {
+        val score = logProb + env.stateCost(tag, value)
+        (value, Math.exp(score))
+      }
+    }
     val totalProb = expDist.map(_._2).sum
     val draw = Math.random() * totalProb
     
@@ -246,8 +250,14 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
     
     val (paramTensor, numTensorValues) = getTensor(queue.graph)
     val logScores = paramTensor.toSeq.toArray
+
     // TODO: This code assumes that the distribution is locally normalized.
-    val scores = logScores.map(Math.exp(_))
+    val scores = items.zip(logScores).map {
+      case (value, logProb) => {
+        // Add in the state cost
+        logProb + env.stateCost(tag, value)
+      }
+    }.map(Math.exp(_))
 
     val totalProb = scores.sum
     val draw = Math.random() * totalProb
