@@ -32,6 +32,7 @@ class TestMatchingCli extends AbstractCli {
   var lossJson: OptionSpec[String] = null
   
   var enforceMatching: OptionSpec[Void] = null
+  var globalNormalize: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
@@ -42,6 +43,7 @@ class TestMatchingCli extends AbstractCli {
     lossJson = parser.accepts("lossJson").withRequiredArg().ofType(classOf[String])
     
     enforceMatching = parser.accepts("enforceMatching")
+    globalNormalize = parser.accepts("globalNormalize")
   }
   
   override def run(options: OptionSet): Unit = {
@@ -68,6 +70,10 @@ class TestMatchingCli extends AbstractCli {
 
     if (options.has(enforceMatching)) {
       matchingModel.config.matchIndependent = false
+    }
+    
+    if (options.has(globalNormalize)) {
+      matchingModel.model.locallyNormalized = false
     }
 
     val losses = test(matchingExamples, matchingModel, options.valueOf(beamSizeOpt))

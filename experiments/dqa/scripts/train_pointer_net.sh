@@ -5,7 +5,7 @@ source "experiments/dqa/scripts/config.sh"
 MY_NAME=pointer_net3
 MY_DIR=$EXPERIMENT_DIR/$MY_NAME/
 MY_MODEL=$MY_DIR/model.ser
-MY_FLAGS="--pointerNet --loglikelihood"
+MY_FLAGS="--pointerNet --loglikelihood --matchIndependent"
 
 mkdir -p $MY_DIR
 

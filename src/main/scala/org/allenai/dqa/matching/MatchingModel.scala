@@ -431,15 +431,18 @@ class MatchingModel(var config: MatchingModelConfig,
       val pointerNetOutput = pointerNetOutputBuilder.add_input(pointerNetState, pointerNetInput)
       pointerNetNextState = pointerNetOutputBuilder.state()
       
-      // val attentionScores = remainingArray.map(x =>
-      // dot_product(preprocessing.pointerNetEmbeddings(x.ind), pointerNetOutput))
+      val attentionScores = remainingArray.map(x =>
+        dot_product(preprocessing.pointerNetEmbeddings(x.ind), pointerNetOutput))
+
+      /*
       val pnSourceW = parameter(compGraph.cg, compGraph.getParameter(POINTER_NET_SOURCE_W))
       val pnTargetW = parameter(compGraph.cg, compGraph.getParameter(POINTER_NET_TARGET_W))
       val pnV = parameter(compGraph.cg, compGraph.getParameter(POINTER_NET_V))
       
       val attentionScores = remainingArray.map(x =>
-        dot_product(pnV, (pnSourceW * preprocessing.pointerNetEmbeddings(x.ind)) + (pnTargetW * pointerNetOutput)))
-        
+        dot_product(pnV, tanh(pnSourceW * preprocessing.pointerNetEmbeddings(x.ind))
+            + (pnTargetW * pointerNetOutput)))
+      */
       scores = scores.zip(attentionScores).map(x => x._1 + x._2)
     }
 
@@ -554,7 +557,9 @@ class MatchingModelConfig() extends Serializable {
   var xyFeatureDim: Int = -1
   var matchingFeatureDim: Int = -1
   var vggFeatureDim: Int = -1
-  
+
+
+  // Neural net dimensionalities.  
   var matchingHiddenDim = 512
   var transformHiddenDim1 = 32
   var transformHiddenDim2 = 32
@@ -565,7 +570,7 @@ class MatchingModelConfig() extends Serializable {
   var lstmHiddenDim = 50
   
   var pointerNetHiddenDim = 100
-  var pointerNetLstmDim = 100
+  var pointerNetLstmDim = 64
 
   var matchIndependent: Boolean = false
   var structuralConsistency: Boolean = false
@@ -616,9 +621,6 @@ object MatchingModel {
   val POINTER_NET_SOURCE_W = "pointerNetSourceW"
   val POINTER_NET_TARGET_W = "pointerNetTargetW"
   val POINTER_NET_V = "pointerNetV"
-
-  // Neural net dimensionalities.
-  // TODO: these should be configurable.
   
   /**
    * Create a MatchingModel and populate {@code model} with the
