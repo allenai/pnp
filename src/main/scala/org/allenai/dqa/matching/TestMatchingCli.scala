@@ -30,6 +30,8 @@ class TestMatchingCli extends AbstractCli {
   var modelOpt: OptionSpec[String] = null
   var beamSizeOpt: OptionSpec[Integer] = null
   var lossJson: OptionSpec[String] = null
+  
+  var enforceMatching: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
@@ -38,6 +40,8 @@ class TestMatchingCli extends AbstractCli {
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     lossJson = parser.accepts("lossJson").withRequiredArg().ofType(classOf[String])
+    
+    enforceMatching = parser.accepts("enforceMatching")
   }
   
   override def run(options: OptionSet): Unit = {
@@ -61,6 +65,10 @@ class TestMatchingCli extends AbstractCli {
     val model = PnpModel.load(loader)
     val matchingModel = MatchingModel.load(loader, model)
     loader.done()
+
+    if (options.has(enforceMatching)) {
+      matchingModel.matchIndependent = false
+    }
 
     val losses = test(matchingExamples, matchingModel, options.valueOf(beamSizeOpt))
 
