@@ -48,11 +48,10 @@ class MatchingModel(var config: MatchingModelConfig,
     for {
       cg <- computationGraph()
       preprocessing = preprocess(source, sourceLabel, target, targetParts, cg)
-      pointerNetInitialInput = parameter(cg.cg, cg.getParameter(POINTER_NET_INIT))
+      // pointerNetInitialInput = parameter(cg.cg, cg.getParameter(POINTER_NET_INIT))
       
       matching <- matchRemaining(targetParts.toList,
-          sourceParts.toSet, List(), preprocessing, preprocessing.pointerNetStartState,
-          pointerNetInitialInput)
+          sourceParts.toSet, List(), preprocessing, preprocessing.pointerNetStartState)
     } yield {
       MatchingLabel(matching.map(x => (x._1.ind, x._2.ind)).toMap)
     }
@@ -159,7 +158,7 @@ class MatchingModel(var config: MatchingModelConfig,
       val forwardEmbeddings = for {
         (part, feature) <- shuffled
       } yield {
-        val embedding = forwardBuilder.add_input(feature.matching)
+        val embedding = forwardBuilder.add_input(concatenate(new ExpressionVector(List(feature.matching, feature.xy))))
         (part, embedding)
       }
       
@@ -167,7 +166,7 @@ class MatchingModel(var config: MatchingModelConfig,
       val backwardEmbeddings = for {
         (part, feature) <- shuffled.reverse
       } yield {
-        val embedding = backwardBuilder.add_input(feature.matching)
+        val embedding = backwardBuilder.add_input(concatenate(new ExpressionVector(List(feature.matching, feature.xy))))
         (part, embedding)
       }
 
@@ -186,11 +185,13 @@ class MatchingModel(var config: MatchingModelConfig,
   private def encodePointerNetwork(sourceInputs: Seq[Expression], targetInputsInTestOrder: Seq[Expression]): (Array[Expression], Int) = {
     // Encode target points
     pointerNetInputBuilder.start_new_sequence()
+    /*
     val targetEmbeddings = for {
       targetInput <- targetInputsInTestOrder
     } yield {
       pointerNetInputBuilder.add_input(targetInput)
     }
+    */
 
     val sourceEmbeddings = for {
       sourceInput <- sourceInputs 
@@ -451,7 +452,7 @@ class MatchingModel(var config: MatchingModelConfig,
    */
   private def matchRemaining(targetParts: List[Part], remainingSourceParts: Set[Part],
       previousMatching: List[(Part, Part)], preprocessing: MatchingPreprocessing,
-      pointerNetState: Int, pointerNetInput: Expression): Pnp[List[(Part, Part)]] = {
+      pointerNetState: Int): Pnp[List[(Part, Part)]] = {
     if (targetParts.length == 0) {
       Pnp.value(previousMatching)
     } else {
@@ -461,7 +462,8 @@ class MatchingModel(var config: MatchingModelConfig,
       for {
         cg <- computationGraph()
         (scoresExpression, nextPointerNetState) = getScores(targetPart, remainingArray,
-            previousMatching, cg, preprocessing, pointerNetState, pointerNetInput)
+            previousMatching, cg, preprocessing, pointerNetState,
+            preprocessing.targetFeatures(targetPart.ind).matching)
         chosenSourcePart <- Pnp.choose(remainingArray, scoresExpression, targetPart)
         nextSourceParts = if (config.matchIndependent) {
           remainingSourceParts
@@ -477,7 +479,7 @@ class MatchingModel(var config: MatchingModelConfig,
         }
 
         rest <- matchRemaining(targetParts.tail, nextSourceParts, matching, preprocessing,
-            nextPointerNetState, nextPointerNetInput)
+            nextPointerNetState)
       } yield {
         rest
       }
@@ -562,7 +564,8 @@ class MatchingModelConfig() extends Serializable {
 
   var lstmHiddenDim = 50
   
-  var pointerNetHiddenDim = 50
+  var pointerNetHiddenDim = 100
+  var pointerNetLstmDim = 100
 
   var matchIndependent: Boolean = false
   var structuralConsistency: Boolean = false
@@ -657,8 +660,8 @@ object MatchingModel {
     model.addParameter(LABEL_B2, Seq(c.labelHidden))
     
     // Forward and backward RNNs for encoding the parts.
-    val forwardBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.lstmHiddenDim, model.model)
-    val backwardBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.lstmHiddenDim, model.model)
+    val forwardBuilder = new LSTMBuilder(1, c.matchingFeatureDim + c.xyFeatureDim, c.lstmHiddenDim, model.model)
+    val backwardBuilder = new LSTMBuilder(1, c.matchingFeatureDim + c.xyFeatureDim, c.lstmHiddenDim, model.model)
     
     // TODO: Set this parameter properly
     model.addParameter(CONTEXTUAL_LSTM_INIT, Seq(c.labelHidden))
@@ -666,13 +669,13 @@ object MatchingModel {
     
     // Parameters for pointer network.
     model.addParameter(POINTER_NET_INIT, Seq(c.matchingFeatureDim))
-    model.addParameter(POINTER_NET_SOURCE_W, Seq(c.pointerNetHiddenDim, c.matchingFeatureDim))
-    model.addParameter(POINTER_NET_TARGET_W, Seq(c.pointerNetHiddenDim, c.matchingFeatureDim))
+    model.addParameter(POINTER_NET_SOURCE_W, Seq(c.pointerNetHiddenDim, c.pointerNetLstmDim))
+    model.addParameter(POINTER_NET_TARGET_W, Seq(c.pointerNetHiddenDim, c.pointerNetLstmDim))
     model.addParameter(POINTER_NET_V, Seq(c.pointerNetHiddenDim))
-      
-    val pointerNetInputBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.matchingFeatureDim,
+
+    val pointerNetInputBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.pointerNetLstmDim,
         model.model)
-    val pointerNetOutputBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.matchingFeatureDim,
+    val pointerNetOutputBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.pointerNetLstmDim,
         model.model) 
 
     new MatchingModel(c, forwardBuilder, backwardBuilder, contextualBuilder, 
