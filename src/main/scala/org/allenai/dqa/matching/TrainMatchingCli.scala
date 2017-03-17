@@ -40,6 +40,7 @@ class TrainMatchingCli extends AbstractCli {
   var lstmEncodeOpt: OptionSpec[Void] = null
   var contextualLstmOpt: OptionSpec[Void] = null
   var nearestNeighborOpt: OptionSpec[Void] = null
+  var pointerNetOpt: OptionSpec[Void] = null
 
   var loglikelihoodOpt: OptionSpec[Void] = null
   var pretrainOpt: OptionSpec[Void] = null
@@ -61,6 +62,7 @@ class TrainMatchingCli extends AbstractCli {
     lstmEncodeOpt = parser.accepts("lstmEncode")
     contextualLstmOpt = parser.accepts("contextualLstm")
     nearestNeighborOpt = parser.accepts("nearestNeighbor")
+    pointerNetOpt = parser.accepts("pointerNet")
 
     // Flags controlling training behavior.
     loglikelihoodOpt = parser.accepts("loglikelihood")
@@ -97,23 +99,34 @@ class TrainMatchingCli extends AbstractCli {
     val labelVocabulary = getLabelVocabulary(matchingExamples)
     
     val model = PnpModel.init(false)
-    val matchingModel = MatchingModel.create(xyFeatureDim, matchingFeatureDim,
-        vggFeatureDim, options.has(matchIndependentOpt), options.has(structuralFactorOpt),
-        options.has(matchingNetworkOpt), options.has(partClassifierOpt),
-        options.has(relativeAppearanceOpt), options.has(lstmEncodeOpt),
-        options.has(contextualLstmOpt), options.has(nearestNeighborOpt),
-        labelVocabulary, model)
+
+    // Configure matching model.
+    val config = new MatchingModelConfig()
+    config.xyFeatureDim = xyFeatureDim
+    config.matchingFeatureDim = matchingFeatureDim
+    config.vggFeatureDim = vggFeatureDim
+    config.matchIndependent = options.has(matchIndependentOpt)
+    config.structuralConsistency = options.has(structuralFactorOpt)
+    config.matchingNetwork = options.has(matchingNetworkOpt)
+    config.partClassifier = options.has(partClassifierOpt)
+    config.relativeAppearance = options.has(relativeAppearanceOpt)
+    config.lstmEncode = options.has(lstmEncodeOpt)
+    config.contextualLstm = options.has(contextualLstmOpt)
+    config.nearestNeighbor = options.has(nearestNeighborOpt)
+    config.pointerNet = options.has(pointerNetOpt)
+    
+    val matchingModel = MatchingModel.create(config, labelVocabulary, model)
 
     if (options.has(pretrainOpt)) {
-      val matchIndependent = matchingModel.matchIndependent
+      val matchIndependent = matchingModel.config.matchIndependent
       val locallyNormalized = model.locallyNormalized
-      matchingModel.matchIndependent = true
+      matchingModel.config.matchIndependent = true
       model.locallyNormalized = true
 
       train(matchingExamples, matchingModel, options.valueOf(epochsOpt),
           options.valueOf(beamSizeOpt), true)
 
-      matchingModel.matchIndependent = matchIndependent
+      matchingModel.config.matchIndependent = matchIndependent
       model.locallyNormalized = locallyNormalized
     }
         

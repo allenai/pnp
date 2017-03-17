@@ -133,7 +133,8 @@ class VisualizeMatchingCli extends AbstractCli {
 
     val computationGraph = ComputationGraph.getNew
     val cg = model.model.getComputationGraph(computationGraph)
-    val preprocessing = model.preprocess(source, sourceLabel, augmentedTarget, cg)
+    val preprocessing = model.preprocess(source, sourceLabel, augmentedTarget,
+        augmentedTarget.parts, cg)
 
     val matchingList = matching.toList
     val matchingScore = model.getNnGlobalScore(matchingList, cg, preprocessing)

@@ -67,7 +67,7 @@ class TestMatchingCli extends AbstractCli {
     loader.done()
 
     if (options.has(enforceMatching)) {
-      matchingModel.matchIndependent = false
+      matchingModel.config.matchIndependent = false
     }
 
     val losses = test(matchingExamples, matchingModel, options.valueOf(beamSizeOpt))
@@ -95,7 +95,8 @@ class TestMatchingCli extends AbstractCli {
       val dist = pnp.beamSearch(beamSize, -1, Env.init, null, compGraph)
 
       val predicted = dist.executions(0).value
-      val preprocessing = matchingModel.preprocess(x.source, x.sourceLabel, x.target, compGraph)
+      val preprocessing = matchingModel.preprocess(x.source, x.sourceLabel, x.target,
+          x.target.parts, compGraph)
       println(x.source.id + " -> " + x.target.id)
       println(x.source.id)
       for ((p, e) <- x.source.parts.zip(preprocessing.sourceFeatures)) {

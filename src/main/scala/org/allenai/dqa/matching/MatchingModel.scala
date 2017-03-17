@@ -33,23 +33,26 @@ import org.allenai.dqa.labeling.DiagramFeatures
  * distribution over matchings between the two sets of
  * parts. 
  */
-class MatchingModel(var matchIndependent: Boolean,
-    val globalNn: Boolean, val matchingNetwork: Boolean, val partClassifier: Boolean,
-    val relativeAppearance: Boolean,
-    val lstmEncode: Boolean, val contextualLstm: Boolean, val nearestNeighbor: Boolean,
+class MatchingModel(var config: MatchingModelConfig,
     val forwardBuilder: LSTMBuilder, val backwardBuilder: LSTMBuilder,
-    val contextBuilder: LSTMBuilder, val labelDict: IndexedList[String], val model: PnpModel) {
+    val contextBuilder: LSTMBuilder,
+    val pointerNetInputBuilder: LSTMBuilder, val pointerNetOutputBuilder: LSTMBuilder,
+    val labelDict: IndexedList[String], val model: PnpModel) {
 
   import MatchingModel._
   
   def apply(source: Diagram, sourceLabel: DiagramLabel, target: Diagram): Pnp[MatchingLabel] = {
     val sourceParts = source.parts
+    val targetParts = Random.shuffle(target.parts)
 
     for {
       cg <- computationGraph()
-      preprocessing = preprocess(source, sourceLabel, target, cg)
-      matching <- matchRemaining(Random.shuffle(target.parts).toList,
-          sourceParts.toSet, List(), preprocessing)
+      preprocessing = preprocess(source, sourceLabel, target, targetParts, cg)
+      pointerNetInitialInput = parameter(cg.cg, cg.getParameter(POINTER_NET_INIT))
+      
+      matching <- matchRemaining(targetParts.toList,
+          sourceParts.toSet, List(), preprocessing, preprocessing.pointerNetStartState,
+          pointerNetInitialInput)
     } yield {
       MatchingLabel(matching.map(x => (x._1.ind, x._2.ind)).toMap)
     }
@@ -59,10 +62,13 @@ class MatchingModel(var matchIndependent: Boolean,
     val cg = computationGraph.cg
     forwardBuilder.new_graph(cg)
     backwardBuilder.new_graph(cg)
+    contextBuilder.new_graph(cg)
+    pointerNetInputBuilder.new_graph(cg)
+    pointerNetOutputBuilder.new_graph(cg)
   }
 
   def preprocess(source: Diagram, sourceLabel: DiagramLabel, target: Diagram,
-      computationGraph: CompGraph): MatchingPreprocessing = {
+      targetPartsInTestOrder: Seq[Part], computationGraph: CompGraph): MatchingPreprocessing = {
     initializeRnns(computationGraph)
     
     val cg = computationGraph.cg
@@ -131,15 +137,24 @@ class MatchingModel(var matchIndependent: Boolean,
       targetSourceScores
     }
 
-    new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores)
+    val (pointerNetEmbeddings, pointerNetState) = if (config.pointerNet) {
+      encodePointerNetwork(sourceFeatures.map(x => x.matching),
+          targetPartsInTestOrder.map(x => targetFeatures(x.ind).matching))
+    } else {
+      (null, -1)
+    }
+
+
+    new MatchingPreprocessing(sourceFeatures, targetFeatures, matchScores,
+        pointerNetEmbeddings, pointerNetState)
   }
 
   private def encodeFeatures(parts: Vector[Part], features: Array[PointExpressions],
       computationGraph: CompGraph): Array[Expression] = {
-    
+
     val shuffled = Random.shuffle(parts.zip(features))
     
-    if (lstmEncode || contextualLstm) {
+    if (config.lstmEncode || config.contextualLstm) {
       forwardBuilder.start_new_sequence()
       val forwardEmbeddings = for {
         (part, feature) <- shuffled
@@ -168,6 +183,24 @@ class MatchingModel(var matchIndependent: Boolean,
     }
   }
 
+  private def encodePointerNetwork(sourceInputs: Seq[Expression], targetInputsInTestOrder: Seq[Expression]): (Array[Expression], Int) = {
+    // Encode target points
+    pointerNetInputBuilder.start_new_sequence()
+    val targetEmbeddings = for {
+      targetInput <- targetInputsInTestOrder
+    } yield {
+      pointerNetInputBuilder.add_input(targetInput)
+    }
+
+    val sourceEmbeddings = for {
+      sourceInput <- sourceInputs 
+    } yield {
+      pointerNetInputBuilder.add_input(sourceInput)
+    }
+
+    pointerNetOutputBuilder.start_new_sequence(forwardBuilder.final_s())
+    (sourceEmbeddings.toArray, pointerNetOutputBuilder.state())
+  }
   
   private def getLabelEmbedding(partLabel: String, computationGraph: CompGraph
       ): (Expression, Expression) = {
@@ -201,7 +234,7 @@ class MatchingModel(var matchIndependent: Boolean,
     // dist
 
     // Matching MLP
-    if (matchingNetwork) {
+    if (config.matchingNetwork) {
       val matchingDelta = sourceFeature.matching - targetFeature.matching
       val matchingAbsDelta = rectify(matchingDelta) + rectify(-1 * matchingDelta)
       val matchingAbsScore = matchingW2 * rectify((matchingW1 * matchingAbsDelta) + matchingB1)
@@ -215,7 +248,7 @@ class MatchingModel(var matchIndependent: Boolean,
     // matchingLinearScore
 
     // MLP scoring word / point match.
-    if (partClassifier) {
+    if (config.partClassifier) {
       val sourceLabelClassifier = sourceLabelEmbedding._1
       val sourceLabelBias = sourceLabelEmbedding._2
       val input = concatenate(new ExpressionVector(Seq(sourceLabelClassifier,
@@ -224,18 +257,18 @@ class MatchingModel(var matchIndependent: Boolean,
       score = score + labelScore
     }
     
-    if (lstmEncode) {
+    if (config.lstmEncode) {
       val lstmScore = dot_product(sourceLstmEmbedding, targetLstmEmbedding)
       score = score + lstmScore
     }
 
-    if (contextualLstm) {
+    if (config.contextualLstm) {
       // TODO
       val contextualLstmScore = dot_product(sourceLstmEmbedding, contextualTargetLstmEmbedding)
       score = score + contextualLstmScore
     }
 
-    if (nearestNeighbor) {
+    if (config.nearestNeighbor) {
       val sourceNorm = sqrt(dot_product(sourceFeature.matching, sourceFeature.matching))
       val targetNorm = sqrt(dot_product(targetFeature.matching, targetFeature.matching))
       val sim = cdiv(dot_product(sourceFeature.matching, targetFeature.matching), (sourceNorm * targetNorm))
@@ -335,8 +368,8 @@ class MatchingModel(var matchIndependent: Boolean,
       remainingArray.map(x => input(compGraph.cg, 0.0f))
     }
     */
-    
-    if (globalNn) {
+       
+    if (config.structuralConsistency) {
       val transformW1 = parameter(compGraph.cg, compGraph.getParameter(TRANSFORM_W1))
       val deltaW1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_W1))
       val deltaB1 = parameter(compGraph.cg, compGraph.getParameter(DELTA_B1))
@@ -355,7 +388,7 @@ class MatchingModel(var matchIndependent: Boolean,
       scoreArray = scoreArray.zip(nnScores).map(x => x._1 + x._2)
     }
     
-    if (relativeAppearance) {
+    if (config.relativeAppearance) {
       val appearanceW1 = parameter(compGraph.cg, compGraph.getParameter(APPEARANCE_W1))
       val appearanceDeltaW1 = parameter(compGraph.cg, compGraph.getParameter(APPEARANCE_DELTA_W1))
       val appearanceDeltaB1 = parameter(compGraph.cg, compGraph.getParameter(APPEARANCE_DELTA_B1))
@@ -384,14 +417,32 @@ class MatchingModel(var matchIndependent: Boolean,
    */
   private def getScores(targetPart: Part, remainingArray: Array[Part],
       currentMatching: List[(Part, Part)], compGraph: CompGraph,
-      preprocessing: MatchingPreprocessing): Expression = {
+      preprocessing: MatchingPreprocessing,
+      pointerNetState: Int, pointerNetInput: Expression): (Expression, Int) = {
     val unaryScores = remainingArray.map(x => preprocessing.getMatchScore(x, targetPart))
 
     val globalScores = getGlobalScores(targetPart, remainingArray, currentMatching, compGraph,
         preprocessing)
-    val scores = unaryScores.zip(globalScores).map(x => x._1 + x._2)
+    var scores = unaryScores.zip(globalScores).map(x => x._1 + x._2)
+    
+    var pointerNetNextState = -1
+    if (config.pointerNet) {
+      val pointerNetOutput = pointerNetOutputBuilder.add_input(pointerNetState, pointerNetInput)
+      pointerNetNextState = pointerNetOutputBuilder.state()
+      
+      // val attentionScores = remainingArray.map(x =>
+      // dot_product(preprocessing.pointerNetEmbeddings(x.ind), pointerNetOutput))
+      val pnSourceW = parameter(compGraph.cg, compGraph.getParameter(POINTER_NET_SOURCE_W))
+      val pnTargetW = parameter(compGraph.cg, compGraph.getParameter(POINTER_NET_TARGET_W))
+      val pnV = parameter(compGraph.cg, compGraph.getParameter(POINTER_NET_V))
+      
+      val attentionScores = remainingArray.map(x =>
+        dot_product(pnV, (pnSourceW * preprocessing.pointerNetEmbeddings(x.ind)) + (pnTargetW * pointerNetOutput)))
+        
+      scores = scores.zip(attentionScores).map(x => x._1 + x._2)
+    }
 
-    concatenate(new ExpressionVector(scores.toVector))
+    (concatenate(new ExpressionVector(scores.toVector)), pointerNetNextState)
   }
 
   /**
@@ -399,7 +450,8 @@ class MatchingModel(var matchIndependent: Boolean,
    * remainingSourceParts. 
    */
   private def matchRemaining(targetParts: List[Part], remainingSourceParts: Set[Part],
-      previousMatching: List[(Part, Part)], preprocessing: MatchingPreprocessing): Pnp[List[(Part, Part)]] = {
+      previousMatching: List[(Part, Part)], preprocessing: MatchingPreprocessing,
+      pointerNetState: Int, pointerNetInput: Expression): Pnp[List[(Part, Part)]] = {
     if (targetParts.length == 0) {
       Pnp.value(previousMatching)
     } else {
@@ -408,17 +460,24 @@ class MatchingModel(var matchIndependent: Boolean,
 
       for {
         cg <- computationGraph()
-        scoresExpression = getScores(targetPart, remainingArray, previousMatching,
-            cg, preprocessing)
+        (scoresExpression, nextPointerNetState) = getScores(targetPart, remainingArray,
+            previousMatching, cg, preprocessing, pointerNetState, pointerNetInput)
         chosenSourcePart <- Pnp.choose(remainingArray, scoresExpression, targetPart)
-        nextSourceParts = if (matchIndependent) {
+        nextSourceParts = if (config.matchIndependent) {
           remainingSourceParts
         } else {
           remainingSourceParts - chosenSourcePart
         }
         matching = (targetPart, chosenSourcePart) :: previousMatching
         
-        rest <- matchRemaining(targetParts.tail, nextSourceParts, matching, preprocessing)
+        nextPointerNetInput = if (config.pointerNet) {
+          preprocessing.sourceFeatures(chosenSourcePart.ind).matching
+        } else {
+          null
+        }
+
+        rest <- matchRemaining(targetParts.tail, nextSourceParts, matching, preprocessing,
+            nextPointerNetState, nextPointerNetInput)
       } yield {
         rest
       }
@@ -445,17 +504,12 @@ class MatchingModel(var matchIndependent: Boolean,
   }
 
   def save(saver: ModelSaver): Unit = {
-    saver.add_boolean(matchIndependent)
-    saver.add_boolean(globalNn)
-    saver.add_boolean(matchingNetwork)
-    saver.add_boolean(partClassifier)
-    saver.add_boolean(relativeAppearance)
-    saver.add_boolean(lstmEncode)
-    saver.add_boolean(contextualLstm)
-    saver.add_boolean(nearestNeighbor)
+    saver.add_object(config)
     saver.add_lstm_builder(forwardBuilder)
     saver.add_lstm_builder(backwardBuilder)
     saver.add_lstm_builder(contextBuilder)
+    saver.add_lstm_builder(pointerNetInputBuilder)
+    saver.add_lstm_builder(pointerNetOutputBuilder)
     saver.add_object(labelDict)
   }
 }
@@ -465,7 +519,8 @@ class MatchingModel(var matchIndependent: Boolean,
  * computations that can be shared across many choices.
  */
 class MatchingPreprocessing(val sourceFeatures: Array[PointExpressions],
-    val targetFeatures: Array[PointExpressions], val matchScores: Array[Array[Expression]]) {
+    val targetFeatures: Array[PointExpressions], val matchScores: Array[Array[Expression]],
+    val pointerNetEmbeddings: Array[Expression], val pointerNetStartState: Int) {
   
   def getMatchScore(sourcePart: Part, targetPart: Part): Expression = {
     matchScores(sourcePart.ind)(targetPart.ind)
@@ -492,6 +547,34 @@ case class MatchingExecutionScore(label: MatchingLabel) extends ExecutionScore {
 }
 
 case class ContextualPointExpressions(e: PointExpressions, lstm: Expression, label: Expression)
+
+class MatchingModelConfig() extends Serializable {
+  var xyFeatureDim: Int = -1
+  var matchingFeatureDim: Int = -1
+  var vggFeatureDim: Int = -1
+  
+  var matchingHiddenDim = 512
+  var transformHiddenDim1 = 32
+  var transformHiddenDim2 = 32
+  var deltaDim = 4
+  var labelDim = 32
+  var labelHidden = 32
+
+  var lstmHiddenDim = 50
+  
+  var pointerNetHiddenDim = 50
+
+  var matchIndependent: Boolean = false
+  var structuralConsistency: Boolean = false
+  var matchingNetwork: Boolean = false
+  var partClassifier: Boolean = false
+  var relativeAppearance: Boolean = false
+  var lstmEncode: Boolean = false
+  var contextualLstm: Boolean = false
+  var nearestNeighbor: Boolean = false
+  var pointerNet: Boolean = false
+}
+
 
 object MatchingModel {
 
@@ -525,17 +608,14 @@ object MatchingModel {
   val LABEL_B2 = "labelB2"
   
   val CONTEXTUAL_LSTM_INIT = "contextualLstmInit"
+  
+  val POINTER_NET_INIT = "pointerNetInit"
+  val POINTER_NET_SOURCE_W = "pointerNetSourceW"
+  val POINTER_NET_TARGET_W = "pointerNetTargetW"
+  val POINTER_NET_V = "pointerNetV"
 
   // Neural net dimensionalities.
   // TODO: these should be configurable.
-  val matchingHiddenDim = 512
-  val transformHiddenDim1 = 32
-  val transformHiddenDim2 = 32
-  val deltaDim = 4
-  val labelDim = 32
-  val labelHidden = 32
-
-  val lstmHiddenDim = 50
   
   /**
    * Create a MatchingModel and populate {@code model} with the
@@ -543,74 +623,79 @@ object MatchingModel {
    * the set of labels that will have their own parameters in the
    * model.
    */
-  def create(xyFeatureDim: Int, matchingFeatureDim: Int,
-      vggFeatureDim: Int, matchIndependent: Boolean,
-      globalNn: Boolean, matchingNetwork: Boolean, partClassifier: Boolean,
-      relativeAppearance: Boolean, lstmEncode: Boolean, contextualLstm: Boolean,
-      nearestNeighbors: Boolean, partLabels: Seq[String], model: PnpModel): MatchingModel = {
-    model.addParameter(DISTANCE_WEIGHTS, Seq(xyFeatureDim, xyFeatureDim))
+  def create(c: MatchingModelConfig, partLabels: Seq[String],
+      model: PnpModel): MatchingModel = {
+    model.addParameter(DISTANCE_WEIGHTS, Seq(c.xyFeatureDim, c.xyFeatureDim))
 
-    model.addParameter(MATCHING_W1, Seq(matchingHiddenDim, matchingFeatureDim))
-    model.addParameter(MATCHING_B1, Seq(matchingHiddenDim))
-    model.addParameter(MATCHING_W2, Seq(1, matchingHiddenDim))
-    model.addParameter(MATCHING_L, Seq(1, matchingFeatureDim))
+    model.addParameter(MATCHING_W1, Seq(c.matchingHiddenDim, c.matchingFeatureDim))
+    model.addParameter(MATCHING_B1, Seq(c.matchingHiddenDim))
+    model.addParameter(MATCHING_W2, Seq(1, c.matchingHiddenDim))
+    model.addParameter(MATCHING_L, Seq(1, c.matchingFeatureDim))
 
     model.addParameter(AFFINE_TRANSFORM_PARAM, Seq(1))
     
-    model.addParameter(TRANSFORM_W1, Seq(1, transformHiddenDim2))
-    model.addParameter(DELTA_W1, Seq(transformHiddenDim1, deltaDim))
-    model.addParameter(DELTA_B1, Seq(transformHiddenDim1))
-    model.addParameter(DELTA_W2, Seq(transformHiddenDim2, transformHiddenDim1))
-    model.addParameter(DELTA_B2, Seq(transformHiddenDim2))
+    model.addParameter(TRANSFORM_W1, Seq(1, c.transformHiddenDim2))
+    model.addParameter(DELTA_W1, Seq(c.transformHiddenDim1, c.deltaDim))
+    model.addParameter(DELTA_B1, Seq(c.transformHiddenDim1))
+    model.addParameter(DELTA_W2, Seq(c.transformHiddenDim2, c.transformHiddenDim1))
+    model.addParameter(DELTA_B2, Seq(c.transformHiddenDim2))
     
-    model.addParameter(APPEARANCE_W1, Seq(1, transformHiddenDim2))
-    model.addParameter(APPEARANCE_DELTA_W1, Seq(transformHiddenDim1, matchingFeatureDim * 2))
-    model.addParameter(APPEARANCE_DELTA_B1, Seq(transformHiddenDim1))
-    model.addParameter(APPEARANCE_DELTA_W2, Seq(transformHiddenDim2, transformHiddenDim1))
-    model.addParameter(APPEARANCE_DELTA_B2, Seq(transformHiddenDim2))
+    model.addParameter(APPEARANCE_W1, Seq(1, c.transformHiddenDim2))
+    model.addParameter(APPEARANCE_DELTA_W1, Seq(c.transformHiddenDim1, c.matchingFeatureDim * 2))
+    model.addParameter(APPEARANCE_DELTA_B1, Seq(c.transformHiddenDim1))
+    model.addParameter(APPEARANCE_DELTA_W2, Seq(c.transformHiddenDim2, c.transformHiddenDim1))
+    model.addParameter(APPEARANCE_DELTA_B2, Seq(c.transformHiddenDim2))
 
     val labelDict = IndexedList.create(partLabels.asJava)
     labelDict.add(LABEL_UNK)
-    model.addLookupParameter(LABEL_EMBEDDINGS, labelDict.size, Seq(labelDim))
+    model.addLookupParameter(LABEL_EMBEDDINGS, labelDict.size, Seq(c.labelDim))
     model.addLookupParameter(LABEL_BIAS_EMBEDDINGS, labelDict.size, Seq(1))    
-    model.addParameter(LABEL_W1, Seq(labelHidden, labelDim + matchingFeatureDim))
-    model.addParameter(LABEL_B1, Seq(labelHidden))
-    model.addParameter(LABEL_W2, Seq(1, labelHidden))
+    model.addParameter(LABEL_W1, Seq(c.labelHidden, c.labelDim + c.matchingFeatureDim))
+    model.addParameter(LABEL_B1, Seq(c.labelHidden))
+    model.addParameter(LABEL_W2, Seq(1, c.labelHidden))
     // XXX: This parameter isn't used currently.
-    model.addParameter(LABEL_B2, Seq(labelHidden))
+    model.addParameter(LABEL_B2, Seq(c.labelHidden))
     
     // Forward and backward RNNs for encoding the parts.
-    val forwardBuilder = new LSTMBuilder(1, matchingFeatureDim, lstmHiddenDim, model.model)
-    val backwardBuilder = new LSTMBuilder(1, matchingFeatureDim, lstmHiddenDim, model.model)
+    val forwardBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.lstmHiddenDim, model.model)
+    val backwardBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.lstmHiddenDim, model.model)
     
     // TODO: Set this parameter properly
-    model.addParameter(CONTEXTUAL_LSTM_INIT, Seq(labelHidden))
-    val contextualBuilder = new LSTMBuilder(1, matchingFeatureDim, lstmHiddenDim, model.model)
+    model.addParameter(CONTEXTUAL_LSTM_INIT, Seq(c.labelHidden))
+    val contextualBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.lstmHiddenDim, model.model)
+    
+    // Parameters for pointer network.
+    model.addParameter(POINTER_NET_INIT, Seq(c.matchingFeatureDim))
+    model.addParameter(POINTER_NET_SOURCE_W, Seq(c.pointerNetHiddenDim, c.matchingFeatureDim))
+    model.addParameter(POINTER_NET_TARGET_W, Seq(c.pointerNetHiddenDim, c.matchingFeatureDim))
+    model.addParameter(POINTER_NET_V, Seq(c.pointerNetHiddenDim))
+      
+    val pointerNetInputBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.matchingFeatureDim,
+        model.model)
+    val pointerNetOutputBuilder = new LSTMBuilder(1, c.matchingFeatureDim, c.matchingFeatureDim,
+        model.model) 
 
-    new MatchingModel(matchIndependent, globalNn, matchingNetwork, partClassifier, relativeAppearance,
-        lstmEncode, contextualLstm, nearestNeighbors,
-        forwardBuilder, backwardBuilder, contextualBuilder, labelDict, model)
+    new MatchingModel(c, forwardBuilder, backwardBuilder, contextualBuilder, 
+        pointerNetInputBuilder, pointerNetOutputBuilder,
+        labelDict, model)
   }
 
   /**
    * Load a serialized MatchingModel.
    */
   def load(loader: ModelLoader, model: PnpModel): MatchingModel = {
-    val matchIndependent = loader.load_boolean()
-    val globalNn = loader.load_boolean()
-    val matchingNetwork = loader.load_boolean()
-    val partClassifier = loader.load_boolean()
-    val relativeAppearance = loader.load_boolean()
-    val lstmEncode = loader.load_boolean()
-    val contextualLstm = loader.load_boolean()
-    val nearestNeighbor = loader.load_boolean()
+    val config = loader.load_object(classOf[MatchingModelConfig])
+
     val forwardLstm = loader.load_lstm_builder()
     val backwardLstm = loader.load_lstm_builder()
     val contextualBuilder = loader.load_lstm_builder()
+    val pointerNetInputBuilder = loader.load_lstm_builder()
+    val pointerNetOutputBuilder = loader.load_lstm_builder()
+    
     val labelDict = loader.load_object(classOf[IndexedList[String]])
 
-    new MatchingModel(matchIndependent, globalNn, matchingNetwork, partClassifier,
-        relativeAppearance, lstmEncode, contextualLstm, nearestNeighbor, forwardLstm, backwardLstm,
-        contextualBuilder, labelDict, model)
+    new MatchingModel(config, forwardLstm, backwardLstm,
+        contextualBuilder, pointerNetInputBuilder, pointerNetOutputBuilder,
+        labelDict, model)
   }
 }
