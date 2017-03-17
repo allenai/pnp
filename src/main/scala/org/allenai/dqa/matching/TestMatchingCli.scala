@@ -83,6 +83,7 @@ class TestMatchingCli extends AbstractCli {
     var numElementsCorrect = 0
     var numElements = 0
     var numDiagramsCorrect = 0
+    var numInvalidMatchings = 0
     
     val losses = for {
       x <- examples
@@ -125,6 +126,11 @@ class TestMatchingCli extends AbstractCli {
       numElementsCorrect += intersection.size
       numElements += predicted.targetToSourcePartMap.size
       
+      val valueSet = predicted.targetToSourcePartMap.values.toSet
+      if (valueSet.size < predicted.targetToSourcePartMap.size) {
+        numInvalidMatchings += 1
+      }
+      
       // TODO: Compute confusion matrix
 
       val sourceDims = Point(x.source.width, x.source.height)
@@ -134,6 +140,8 @@ class TestMatchingCli extends AbstractCli {
           predicted.targetToSourcePartMap.toList)
     }
 
+    val invalidMatchings = numInvalidMatchings.toDouble / examples.size
+    println("Invalid matchings: " + invalidMatchings + " ( " + numInvalidMatchings + " / " +  examples.size + " )")
     val diagramAccuracy = numDiagramsCorrect.toDouble / examples.size
     println("Diagram accuracy: " + diagramAccuracy + " ( " + numDiagramsCorrect + " / " +  examples.size + " )")
     val partAccuracy = numElementsCorrect.toDouble / numElements

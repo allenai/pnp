@@ -2,7 +2,7 @@
 
 source "experiments/dqa/scripts/config.sh"
 
-MY_NAME=ssmn_norelativeappearance
+MY_NAME=ssmn_norelativeappearance2
 MY_DIR=$EXPERIMENT_DIR/$MY_NAME/
 MY_MODEL=$MY_DIR/model.ser
 
