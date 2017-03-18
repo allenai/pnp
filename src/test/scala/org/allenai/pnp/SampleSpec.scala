@@ -32,8 +32,9 @@ class SampleSpec extends FlatSpec with Matchers {
       }
     }
 
-    val env = Env.init.addScore(score)
-    val samples = for (i <- 1 to 10000) yield flip.sample(env=env)
+    val env = Env.init
+    val inferenceState = PnpInferenceState.init.addExecutionScore(score)
+    val samples = for (i <- 1 to 10000) yield flip.sample(env=env, inferenceState=inferenceState)
 
     // This is how the probabilities should work out.
     val aProb = math.E / (1 + math.E)
@@ -64,9 +65,10 @@ class SampleSpec extends FlatSpec with Matchers {
 
     val model = new Model()
     val cg = CompGraph.empty(model)
-    val env = Env.init.addScore(score)
+    val inferenceState = PnpInferenceState.init(cg).addExecutionScore(score)
+    val env = Env.init
 
-    val samples = for (i <- 1 to 10000) yield flip.sample(env=env, graph=cg)
+    val samples = for (i <- 1 to 10000) yield flip.sample(env=env, inferenceState=inferenceState)
 
     // This is how the probabilities should work out.
     val aProb = math.E / (1 + math.E)
@@ -123,14 +125,14 @@ class SampleSpec extends FlatSpec with Matchers {
 
   type Pdf = () => Float
   class Distribution(pdf: Pdf) extends Pnp[Float] {
-    override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Float, C],
+    override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Float, C],
         queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = ???
 
     /** Implements a single step of forward sampling.
       */
-    override def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Float, C],
+    override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Float, C],
         queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-      continuation.sampleStep(pdf(), env, logProb, queue, finished)
+      continuation.sampleStep(pdf(), env, inferenceState, queue, finished)
     }
   }
 

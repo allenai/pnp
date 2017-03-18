@@ -1,17 +1,14 @@
 package org.allenai.dqa.matching
 
 import scala.collection.JavaConverters._
-
 import org.allenai.dqa.labeling.Diagram
 import org.allenai.dqa.labeling.DiagramFeatures
 import org.allenai.dqa.labeling.Part
 import org.allenai.dqa.labeling.Point
-import org.allenai.pnp.Env
-import org.allenai.pnp.PnpModel
+import org.allenai.pnp.{Env, PnpInferenceState, PnpModel}
 
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.util.IoUtils
-
 import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
@@ -72,7 +69,8 @@ class TestMatchingCli extends AbstractCli {
       val pnp = matchingModel.apply(x.source, x.target)
       
       val compGraph = matchingModel.model.getComputationGraph()
-      val dist = pnp.beamSearch(beamSize, -1, Env.init, compGraph)
+      val inferenceState = PnpInferenceState.init(compGraph)
+      val dist = pnp.beamSearch(beamSize, -1, Env.init, inferenceState)
 
       val predicted = dist.executions(0).value
       val preprocessing = matchingModel.preprocess(x.source, x.target, compGraph)

@@ -22,12 +22,12 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         ComputationGraph.renew()
 
         val env = example.env
-        val graph = model.getComputationGraph()
+        val inferenceState = PnpInferenceState.init(model)
 
         // Compute the distribution over correct executions.
         log.startTimer("pp_loglikelihood/forward")
         val conditional = example.conditional.beamSearch(beamSize, -1,
-          env.addScore(example.conditionalExecutionScore), graph, log)
+          env, inferenceState.addExecutionScore(example.conditionalExecutionScore), log)
         log.stopTimer("pp_loglikelihood/forward")
         
         log.startTimer("pp_loglikelihood/build_loss")

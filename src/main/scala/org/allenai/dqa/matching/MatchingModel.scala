@@ -3,7 +3,6 @@ package org.allenai.dqa.matching
 import org.allenai.dqa.labeling.Diagram
 import org.allenai.dqa.labeling.Part
 import org.allenai.pnp.Pnp
-import org.allenai.pnp.Pnp.computationGraph
 import org.allenai.pnp.PnpModel
 
 import edu.cmu.dynet._
@@ -30,7 +29,7 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
     val targetParts = target.parts
 
     for {
-      cg <- computationGraph()
+      cg <- Pnp.computationGraph()
       preprocessing = preprocess(source, target, cg)
       matching <- matchRemaining(targetParts.toList, sourceParts.toSet, List(), preprocessing)
     } yield {
@@ -162,9 +161,9 @@ class MatchingModel(val featureDim: Int, val matchIndependent: Boolean,
       val remainingArray = remainingSourceParts.toArray
 
       for {
-        cg <- computationGraph()
-        scoresExpression = getScores(targetPart, remainingArray, previousMatching,
-            cg, preprocessing)
+        cg <- Pnp.computationGraph()
+        scoresExpression = getScores(targetPart, remainingArray, previousMatching, cg, preprocessing)
+
         chosenSourcePart <- Pnp.choose(remainingArray, scoresExpression, targetPart)
         nextSourceParts = if (matchIndependent) {
           remainingSourceParts

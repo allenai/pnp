@@ -2,21 +2,13 @@ package org.allenai.pnp.examples
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
-import org.allenai.pnp.CompGraph
-import org.allenai.pnp.Env
-import org.allenai.pnp.ExecutionScore
-import org.allenai.pnp.Pnp
+import org.allenai.pnp._
 import org.allenai.pnp.Pnp._
-import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.cmu.dynet._
-import org.allenai.pnp.PnpExample
 import com.jayantkrish.jklol.training.NullLogFunction
-import org.allenai.pnp.BsoTrainer
 
 /**
  * Basic sequence-to-sequence model. This model encodes
@@ -41,15 +33,16 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
    */
   def applyEncoded(sourceTokens: Seq[Int]): Pnp[List[Int]] = {
     for {
-      cg <- computationGraph()
+      cg <- Pnp.computationGraph()
       // Initialize the source and target LSTMs on this computation
       // graph and encode the source tokens.
       _ = initializeRnns(cg)
       inputEncoding = rnnEncode(cg, sourceTokens)
-      
+
       // Initialize the output LSTM
       _ = outputBuilder.startNewSequence(inputEncoding)
       startRnnState = outputBuilder.state()
+
       startInput <- param(TARGET_START_INPUT)
 
       // Generate target sequence. output represents a single
@@ -107,10 +100,11 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
    * given the current token's index and an LSTM state and input. 
    */
   private def generateTargetTokens(tokenIndex: Int, state: Int, curInput: Expression): Pnp[List[Int]] = {
-    // Run one step of the LSTM to get the next state and output. 
+    // Run one step of the LSTM to get the next state and output.
+
     val lstmOutput = outputBuilder.addInput(state, curInput)
     val nextState = outputBuilder.state
-    
+
     for {
       // Select an action as a linear function on top of the LSTM's
       // output. outputWeights has one row per word in the target vocab.
@@ -124,7 +118,7 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
       
       // Get the LSTM input associated with the chosen target token, which
       // is necessary to generate the next target.
-      cg <- computationGraph()
+      cg <- Pnp.computationGraph()
       outputTokenLookups = cg.getLookupParameter(TARGET_EMBEDDINGS)
       outputTokenEmbedding = Expression.lookup(outputTokenLookups, targetTokenIndex)
       
@@ -277,13 +271,13 @@ object Seq2Seq {
     // 4. Apply the trained model to new data.
     for (d <- testDataTokenized) {
       ComputationGraph.renew()
-      val graph = seq2seq.model.getComputationGraph()
+      val inferenceState = PnpInferenceState.init(seq2seq.model)
 
       // Generate the probabilistic neural program over target
       // sequences, then run inference with the trained parameters
       // to get an approximate distribution over target sequences.
       val sourcePnp = seq2seq.apply(d._1)
-      val marginals = sourcePnp.beamSearch(beamSize, maxBeamSteps, Env.init, graph,
+      val marginals = sourcePnp.beamSearch(beamSize, maxBeamSteps, Env.init, inferenceState,
           new NullLogFunction)
           
       println("Source: " + d._1)

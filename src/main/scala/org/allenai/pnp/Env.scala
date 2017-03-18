@@ -16,8 +16,7 @@ import edu.cmu.dynet._
   */
 class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     varnames: IndexedList[String], vars: Array[AnyRef],
-    val activeTimers: Set[String], val log: LogFunction,
-    val activeScores: Set[ExecutionScore]) {
+    val activeTimers: Set[String], val log: LogFunction) {
 
   /** Get the value of the named variable as an instance
     * of type A.
@@ -47,7 +46,7 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     val index = nextVarNames.getIndex(name)
     nextVars(index) = value
 
-    new Env(labels, labelNodeIds, nextVarNames, nextVars, activeTimers, log, activeScores)
+    new Env(labels, labelNodeIds, nextVarNames, nextVars, activeTimers, log)
   }
 
   def setVar(nameInt: Int, value: AnyRef): Env = {
@@ -55,7 +54,7 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     Array.copy(vars, 0, nextVars, 0, vars.size)
     nextVars(nameInt) = value
 
-    new Env(labels, labelNodeIds, varnames, nextVars, activeTimers, log, activeScores)
+    new Env(labels, labelNodeIds, varnames, nextVars, activeTimers, log)
   }
 
   def isVarBound(name: String): Boolean = {
@@ -66,7 +65,7 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     * execution.
     */
   def addLabel(param: Expression, index: Int): Env = {
-    new Env(index :: labels, param :: labelNodeIds, varnames, vars, activeTimers, log, activeScores)
+    new Env(index :: labels, param :: labelNodeIds, varnames, vars, activeTimers, log)
   }
   
   /** Get a scalar-valued expression that evaluates to the
@@ -90,17 +89,17 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
   }
 
   def setLog(newLog: LogFunction): Env = {
-    new Env(labels, labelNodeIds, varnames, vars, activeTimers, newLog, activeScores)
+    new Env(labels, labelNodeIds, varnames, vars, activeTimers, newLog)
   }
 
   def startTimer(name: String): Env = {
     // log.startTimer(name)
-    new Env(labels, labelNodeIds, varnames, vars, activeTimers + name, log, activeScores)
+    new Env(labels, labelNodeIds, varnames, vars, activeTimers + name, log)
   }
 
   def stopTimer(name: String): Env = {
     // log.stopTimer(name)
-    new Env(labels, labelNodeIds, varnames, vars, activeTimers - name, log, activeScores)
+    new Env(labels, labelNodeIds, varnames, vars, activeTimers - name, log)
   }
 
   def pauseTimers(): Unit = {
@@ -114,25 +113,11 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
       log.startTimer(t)
     }
   }
-
-  def addScore(score: ExecutionScore) = {
-    val newScores = activeScores + score
-    new Env(labels, labelNodeIds, varnames, vars, activeTimers, log, newScores)
-  }
-
-  def removeScore(score: ExecutionScore) = {
-    val newScores = activeScores - score
-    new Env(labels, labelNodeIds, varnames, vars, activeTimers, log, newScores)
-  }
-
-  def stateCost(tag: Any, choice: Any) = {
-    activeScores.map(_(tag, choice, this)).sum
-  }
 }
 
 object Env {
   def init: Env = {
     new Env(List.empty, List.empty, IndexedList.create(), Array(),
-      Set(), new NullLogFunction(), Set.empty)
+      Set(), new NullLogFunction())
   }
 }

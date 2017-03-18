@@ -37,12 +37,12 @@ trait Pnp[A] {
   
   /** Implements a single search step of beam search.
    */
-  def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
+  def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit
 
   /** Implements a single step of forward sampling.
     */
-  def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
+  def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit
     
   // Methods that do not need to be overriden
@@ -56,16 +56,16 @@ trait Pnp[A] {
     * parameters referenced in the program.
     */
   def beamSearch(beamSize: Int = 1, maxIters: Int = -1, env: Env = Env.init,
-    graph: CompGraph = null,
+      inferenceState: PnpInferenceState = PnpInferenceState.init,
       log: LogFunction = new NullLogFunction()): PnpBeamMarginals[A] = {
 
-    val queue = new BeamPnpSearchQueue[A](beamSize, graph, log)
-    val finished = new BeamPnpSearchQueue[A](beamSize, graph, log)
+    val queue = new BeamPnpSearchQueue[A](beamSize, log)
+    val finished = new BeamPnpSearchQueue[A](beamSize, log)
     
     val endContinuation = new PnpEndContinuation[A]()
 
     val startEnv = env.setLog(log)
-    queue.offer(this, env, 0.0, null, null, env)
+    queue.offer(this, env, inferenceState, null, null, env)
 
     val beam = new Array[SearchState[A]](beamSize)
     var numIters = 0
@@ -80,7 +80,7 @@ trait Pnp[A] {
       for (i <- 0 until beamSize) {
         val state = beam(i)
         // println(state.value)
-        state.value.searchStep(state.env, state.logProb, endContinuation, queue, finished)
+        state.value.searchStep(state.env, state.inferenceState, endContinuation, queue, finished)
         
         // state.value.lastSearchStep(state.env, state.logProb, queue, finished)
       }
@@ -97,7 +97,7 @@ trait Pnp[A] {
       x => new Execution(x._1.value.asInstanceOf[ValuePnp[A]].value, x._1.env, x._2)
     )
 
-    new PnpBeamMarginals(executions.toSeq, queue.graph, numIters)
+    new PnpBeamMarginals(executions.toSeq, numIters)
   }
 
   // Version of beam search for programs that don't have trainable
@@ -105,32 +105,32 @@ trait Pnp[A] {
   
   def beamSearch(k: Int, model: PnpModel): PnpBeamMarginals[A] = {
     ComputationGraph.renew()
-    val cg = model.getComputationGraph()
-    beamSearch(k, Env.init, cg)
+    val inferenceState = PnpInferenceState.init(model)
+    beamSearch(k, Env.init, inferenceState)
   }
 
   def beamSearch(k: Int, env: Env): PnpBeamMarginals[A] = {
-    beamSearch(k, env, null)
+    beamSearch(k, env, PnpInferenceState.init)
   }
 
-  def beamSearch(k: Int, env: Env, cg: CompGraph): PnpBeamMarginals[A] = {
-    beamSearch(k, -1, env, cg, new NullLogFunction())
+  def beamSearch(k: Int, env: Env, inferenceState: PnpInferenceState): PnpBeamMarginals[A] = {
+    beamSearch(k, -1, env, inferenceState, new NullLogFunction())
   }
 
   def inOneStep(): Pnp[A] = {
     CollapsedSearch(this)
   }
   
-  def sample(numSamples: Int = 1, env: Env = Env.init,
-      graph: CompGraph = null, log: LogFunction = new NullLogFunction()): Execution[A] = {
+  def sample(numSamples: Int = 1, env: Env = Env.init, inferenceState: PnpInferenceState = PnpInferenceState.init,
+      log: LogFunction = new NullLogFunction()): Execution[A] = {
 
     // TODO: make the cost interact with the sampling.
-    val queue = new BeamPnpSearchQueue[A](1, graph, log)
-    val finished = new BeamPnpSearchQueue[A](1, graph, log)
+    val queue = new BeamPnpSearchQueue[A](1, log)
+    val finished = new BeamPnpSearchQueue[A](1, log)
     
     val endContinuation = new PnpEndContinuation[A]()
     
-    sampleStep(env, 0.0, endContinuation, queue, finished)
+    sampleStep(env, inferenceState, endContinuation, queue, finished)
     
     val numFinished = finished.queue.size
     val finishedItems = finished.queue.getItems.slice(0, numFinished)
@@ -148,14 +148,14 @@ trait Pnp[A] {
 case class BindPnp[A, C](b: Pnp[C], f: PnpContinuation[C, A]) extends Pnp[A] {
   override def flatMap[B](g: A => Pnp[B]) = BindPnp(b, f.append(g))
   
-  override def searchStep[D](env: Env, logProb: Double, continuation: PnpContinuation[A,D],
+  override def searchStep[D](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,D],
     queue: PnpSearchQueue[D], finished: PnpSearchQueue[D]): Unit = {
-    b.searchStep(env, logProb, f.append(continuation), queue, finished)
+    b.searchStep(env, inferenceState, f.append(continuation), queue, finished)
   }
   
-  override def sampleStep[D](env: Env, logProb: Double, continuation: PnpContinuation[A,D],
+  override def sampleStep[D](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,D],
     queue: PnpSearchQueue[D], finished: PnpSearchQueue[D]): Unit = {
-    b.sampleStep(env, logProb, f.append(continuation), queue, finished) 
+    b.sampleStep(env, inferenceState, f.append(continuation), queue, finished)
   }
 }
 
@@ -165,18 +165,19 @@ case class BindPnp[A, C](b: Pnp[C], f: PnpContinuation[C, A]) extends Pnp[A] {
   */
 case class CategoricalPnp[A](dist: Array[(A, Double)], tag: Any) extends Pnp[A] {
   
-  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
+  override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    dist.foreach(x => queue.offer(BindPnp(ValuePnp(x._1), continuation), env, logProb + x._2,
-        tag, x._1, env))
+    dist.foreach(x => queue.offer(BindPnp(ValuePnp(x._1), continuation), env,
+      inferenceState.withLogProb(inferenceState.logProb + x._2),
+      tag, x._1, env))
   }
   
-  override def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
+  override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
     // TODO: This code assumes that the distribution is locally normalized.
     val expDist = dist.map {
       case (value, logProb) => {
-        val score = logProb + env.stateCost(tag, value)
+        val score = logProb + inferenceState.computeScore(tag, value, env)
         (value, Math.exp(score))
       }
     }
@@ -193,7 +194,10 @@ case class CategoricalPnp[A](dist: Array[(A, Double)], tag: Any) extends Pnp[A] 
     }
     
     val (value, choiceLogProb) = dist(choice)
-    ValuePnp(value).sampleStep(env, logProb + choiceLogProb, continuation, queue, finished)
+    // TODO (check me)
+    val newInferenceState = inferenceState.withLogProb(inferenceState.logProb + choiceLogProb)
+    ValuePnp(value).sampleStep(env, newInferenceState, continuation, queue,
+      finished)
   }
 }
 
@@ -233,29 +237,30 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
     (paramTensor, size) 
   }
 
-  override def searchStep[B](env: Env, logProb: Double,
+  override def searchStep[B](env: Env, inferenceState: PnpInferenceState,
       continuation: PnpContinuation[A, B], queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
       
-    val (paramTensor, numTensorValues) = getTensor(queue.graph)
+    val (paramTensor, numTensorValues) = getTensor(inferenceState.compGraph)
+    val logProb = inferenceState.logProb
     val v = paramTensor.toVector
     for (i <- 0 until numTensorValues) {
       val nextEnv = env.addLabel(parameter, i)
-      queue.offer(BindPnp(ValuePnp(items(i)), continuation), nextEnv, logProb + v(i),
-          tag, items(i), env)
+      val nextInferenceState = inferenceState.withLogProb(logProb + v(i))
+      queue.offer(BindPnp(ValuePnp(items(i)), continuation), nextEnv, nextInferenceState, tag, items(i), env)
     }
   }
   
-  override def sampleStep[D](env: Env, logProb: Double, continuation: PnpContinuation[A,D],
+  override def sampleStep[D](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,D],
     queue: PnpSearchQueue[D], finished: PnpSearchQueue[D]): Unit = {
     
-    val (paramTensor, numTensorValues) = getTensor(queue.graph)
+    val (paramTensor, numTensorValues) = getTensor(inferenceState.compGraph)
     val logScores = paramTensor.toSeq.toArray
 
     // TODO: This code assumes that the distribution is locally normalized.
     val scores = items.zip(logScores).map {
       case (value, logProb) => {
         // Add in the state cost
-        logProb + env.stateCost(tag, value)
+        logProb + inferenceState.computeScore(tag, value, env)
       }
     }.map(Math.exp(_))
 
@@ -272,19 +277,22 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
     }
 
     val value = items(choice)
+    val logProb = inferenceState.logProb
     val choiceLogProb = scores(choice)
     val nextEnv = env.addLabel(parameter, choice)
-    ValuePnp(value).sampleStep(nextEnv, logProb + choiceLogProb, continuation, queue, finished)
+    val nextInferenceState = inferenceState.withLogProb(logProb + choiceLogProb)
+    ValuePnp(value).sampleStep(nextEnv, nextInferenceState, continuation, queue, finished)
   }
 }
 
 case class ScorePnp(score: Double) extends Pnp[Unit] {
-  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Unit,C],
+  override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Unit,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.searchStep((), env, logProb + Math.log(score), queue, finished)
+    val nextInferenceState = inferenceState.withLogProb(inferenceState.logProb + Math.log(score))
+    continuation.searchStep((), env, nextInferenceState, queue, finished)
   }
   
-  override def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Unit,C],
+  override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Unit,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
     throw new UnsupportedOperationException("Sampling with score functions is not implemented.")
   }
@@ -292,94 +300,94 @@ case class ScorePnp(score: Double) extends Pnp[Unit] {
 
 // Class for collapsing out multiple choices into a single choice
 case class CollapsedSearch[A](dist: Pnp[A]) extends Pnp[A] {
-  override def searchStep[B](env: Env, logProb: Double, continuation: PnpContinuation[A, B],
+  override def searchStep[B](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A, B],
     queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     val wrappedQueue = new ContinuationPnpSearchQueue(queue, continuation)
-    val nextQueue = new EnumeratePnpSearchQueue[A](queue.graph, queue.log, wrappedQueue)
+    val nextQueue = new EnumeratePnpSearchQueue[A](queue.log, wrappedQueue)
     val endContinuation = new PnpEndContinuation[A]()
 
-    dist.searchStep(env, logProb, endContinuation, nextQueue, wrappedQueue)
+    dist.searchStep(env, inferenceState, endContinuation, nextQueue, wrappedQueue)
   }
   
-  override def sampleStep[B](env: Env, logProb: Double, continuation: PnpContinuation[A,B],
+  override def sampleStep[B](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,B],
     queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]): Unit = {
-    dist.sampleStep(env, logProb, continuation, queue, finished)
+    dist.sampleStep(env, inferenceState, continuation, queue, finished)
   }
 }
 
 case class ValuePnp[A](value: A) extends Pnp[A] {
-  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
+  override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.searchStep(value, env, logProb, queue, finished)
+    continuation.searchStep(value, env, inferenceState, queue, finished)
   }
   
-  override def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[A,C],
+  override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[A,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.sampleStep(value, env, logProb, queue, finished)
+    continuation.sampleStep(value, env, inferenceState, queue, finished)
   }
 }
 
 case class GetEnv() extends Pnp[Env] {
-  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Env,C],
+  override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Env,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.searchStep(env, env, logProb, queue, finished)
+    continuation.searchStep(env, env, inferenceState, queue, finished)
   }
   
-  override def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Env,C],
+  override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Env,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.sampleStep(env, env, logProb, queue, finished)
+    continuation.sampleStep(env, env, inferenceState, queue, finished)
   }
 }
 
 case class SetEnv(nextEnv: Env) extends Pnp[Unit] {
-  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Unit,C],
+  override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Unit,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.searchStep((), nextEnv, logProb, queue, finished)
+    continuation.searchStep((), nextEnv, inferenceState, queue, finished)
   }
   
-  override def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[Unit,C],
+  override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Unit,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.sampleStep((), nextEnv, logProb, queue, finished)
+    continuation.sampleStep((), nextEnv, inferenceState, queue, finished)
   }
 }
 
 // Classes for representing computation graph elements.
-
 case class ComputationGraphPnp() extends Pnp[CompGraph] {
-  override def searchStep[C](env: Env, logProb: Double, continuation: PnpContinuation[CompGraph,C],
+  override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[CompGraph,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.searchStep(queue.graph, env, logProb, queue, finished)
+    continuation.searchStep(inferenceState.compGraph, env, inferenceState, queue, finished)
   }
   
-  override def sampleStep[C](env: Env, logProb: Double, continuation: PnpContinuation[CompGraph,C],
+  override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[CompGraph,C],
     queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-    continuation.sampleStep(queue.graph, env, logProb, queue, finished)
+    continuation.sampleStep(inferenceState.compGraph, env, inferenceState, queue, finished)
   }
 }
 
 case class StartTimerPnp(timerName: String) extends Pnp[Unit] {
-  override def searchStep[B](env: Env, logProb: Double, continuation: PnpContinuation[Unit, B],
+  override def searchStep[B](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Unit, B],
       queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
-    queue.offer(BindPnp(ValuePnp(()), continuation), env.startTimer(timerName), logProb, null, null, env)
+    queue.offer(BindPnp(ValuePnp(()), continuation), env.startTimer(timerName), inferenceState,
+      null, null, env)
   }
   
-  override def sampleStep[B](env: Env, logProb: Double, continuation: PnpContinuation[Unit, B],
+  override def sampleStep[B](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Unit, B],
       queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     // TODO: figure out how timers should work with sampling.
-    continuation.sampleStep((), env, logProb, queue, finished)
+    continuation.sampleStep((), env, inferenceState, queue, finished)
   }
 }
 
 case class StopTimerPnp(timerName: String) extends Pnp[Unit] {
-  override def searchStep[B](env: Env, logProb: Double,
+  override def searchStep[B](env: Env, inferenceState: PnpInferenceState,
       continuation: PnpContinuation[Unit, B], queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
-    queue.offer(BindPnp(ValuePnp(()), continuation), env.stopTimer(timerName), logProb, null, null, env)
+    queue.offer(BindPnp(ValuePnp(()), continuation), env.stopTimer(timerName), inferenceState, null, null, env)
   }
   
-  override def sampleStep[B](env: Env, logProb: Double, continuation: PnpContinuation[Unit, B],
+  override def sampleStep[B](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Unit, B],
       queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
     // TODO: figure out how timers should work with sampling.
-    continuation.sampleStep((), env, logProb, queue, finished)
+    continuation.sampleStep((), env, inferenceState, queue, finished)
   }
 }
 
@@ -391,8 +399,7 @@ class Execution[A](val value: A, val env: Env, val logProb: Double) {
   }
 }
 
-class PnpBeamMarginals[A](val executions: Seq[Execution[A]], val graph: CompGraph,
-    val searchSteps: Int) {
+class PnpBeamMarginals[A](val executions: Seq[Execution[A]], val searchSteps: Int) {
 
   def logPartitionFunction(): Double = {
     if (executions.length > 0) {
@@ -423,7 +430,7 @@ class PnpBeamMarginals[A](val executions: Seq[Execution[A]], val graph: CompGrap
   }
 
   def condition(pred: (A, Env) => Boolean): PnpBeamMarginals[A] = {
-    return new PnpBeamMarginals(executions.filter(x => pred(x.value, x.env)), graph, searchSteps)
+    return new PnpBeamMarginals(executions.filter(x => pred(x.value, x.env)), searchSteps)
   }
 }
 
@@ -537,9 +544,9 @@ object Pnp {
 
   /** Get a neural network parameter by name.
     */
-  def param(name: String): Pnp[Expression] = { 
+  def param(name: String): Pnp[Expression] = {
     for {
-      cg <- computationGraph()
+      cg <- Pnp.computationGraph()
     } yield {
       Expression.parameter(cg.getParameter(name))
     }
@@ -547,12 +554,8 @@ object Pnp {
 
   /** Add a FloatVector to the computation graph as a constant.
     */
-  def constant(dims: Dim, vector: FloatVector): Pnp[Expression] = { 
-    for {
-      cg <- computationGraph()
-    } yield {
-      Expression.input(dims, vector)
-    }
+  def constant(dims: Dim, vector: FloatVector): Pnp[Expression] = {
+    for { _ <- ValuePnp(()) } yield Expression.input(dims, vector)
   }
 
   /** Chooses an item. The ith item's score is the

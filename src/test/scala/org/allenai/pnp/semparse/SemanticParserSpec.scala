@@ -1,7 +1,7 @@
 package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
-import org.allenai.pnp.{Env, Pnp, PnpModel}
+import org.allenai.pnp.{Env, Pnp, PnpInferenceState, PnpModel}
 
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
@@ -54,10 +54,9 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)), entityLinking)
 
     ComputationGraph.renew()
-    val compGraph = parser.model.getComputationGraph()
+    val inferenceState = PnpInferenceState.init(model).addExecutionScore(oracle)
 
-    val results = exprs.beamSearch(1, -1, Env.init.addScore(oracle),
-      compGraph, new NullLogFunction())
+    val results = exprs.beamSearch(1, -1, Env.init, inferenceState, new NullLogFunction())
         .executions
     for (result <- results) {
       println("  " + result)

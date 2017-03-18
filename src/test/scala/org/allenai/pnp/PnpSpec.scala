@@ -23,7 +23,7 @@ class PnpSpec extends FlatSpec with Matchers {
   Initialize.initialize()
 
   val TOLERANCE = 0.01
-
+  
   "Pnp" should "perform inference on choices" in {
     val foo = Pnp.chooseMap(Seq((1, 1.0), (2, 2.0)))
 
@@ -232,16 +232,16 @@ class PnpSpec extends FlatSpec with Matchers {
     flipParam.zero()
     
     val env = Env.init
-    val cg = model.getComputationGraph()
+    val inferenceState = PnpInferenceState.init(model)
 
-    val values = foo(1).beamSearch(100, env, cg).executions
+    val values = foo(1).beamSearch(100, env, inferenceState).executions
     values.length should be(2)
     values(0).value should be(List(2))
     val labels = values(0).env.labels
     labels.length should be(1)
     labels(0) should be(1)
 
-    val values2 = foo(2).beamSearch(100, env, cg).executions
+    val values2 = foo(2).beamSearch(100, env, inferenceState).executions
     values2.length should be(4)
     values2(0).value should be(List(2, 2))
     val labels2 = values2(0).env.labels

@@ -3,7 +3,7 @@ package org.allenai.pnp.semparse
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.mutable.{Map => MutableMap}
-import org.allenai.pnp.{Env, Pnp}
+import org.allenai.pnp.{Env, Pnp, PnpInferenceState}
 
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -101,8 +101,9 @@ object SemanticParserUtils {
       if (oracleOpt.isDefined) {
         val oracle = oracleOpt.get
         ComputationGraph.renew()
-        val results = dist.beamSearch(1, 50, Env.init.addScore(oracle),
-            parser.model.getComputationGraph(), new NullLogFunction())
+        val inferenceState = PnpInferenceState.init(parser.model).addExecutionScore(oracle)
+        val results = dist.beamSearch(1, 50, Env.init,
+            inferenceState, new NullLogFunction())
         if (results.executions.size != 1) {
           println("ERROR: " + e + " " + results)
           println("  " + e.getSentence.getWords)
