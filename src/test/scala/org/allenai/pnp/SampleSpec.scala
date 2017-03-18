@@ -123,8 +123,8 @@ class SampleSpec extends FlatSpec with Matchers {
     counts(5) should be < 4520
   }
 
-  type Pdf = () => Float
-  class Distribution(pdf: Pdf) extends Pnp[Float] {
+  type RandomVariable[T] = () => T
+  class Distribution(rv: RandomVariable[Float]) extends Pnp[Float] {
     override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Float, C],
         queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = ???
 
@@ -132,7 +132,7 @@ class SampleSpec extends FlatSpec with Matchers {
       */
     override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Float, C],
         queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-      continuation.sampleStep(pdf(), env, inferenceState, queue, finished)
+      continuation.sampleStep(rv(), env, inferenceState, queue, finished)
     }
   }
 
