@@ -88,7 +88,7 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
       label <- permittedLabels
     } yield {
       val params = parameter(cg.getParameter(PART_PREFIX + label))
-      val featureVector = input(Dim(partFeatureDim), diagram.features.getFeatures(part))
+      val featureVector = input(Dim(partFeatureDim), diagram.features.getFeatures(part).matching)
       dotProduct(params, featureVector)
     }
 

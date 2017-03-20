@@ -48,7 +48,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     Preconditions.checkArgument(example.conditionalExecutionScore != null,
         "BsoTrainer requires an execution score".asInstanceOf[AnyRef])
     val stateCost = example.conditionalExecutionScore
-    val graph = model.getComputationGraph(cg)
+    val graph = model.getComputationGraph()
 
     val queue = new BsoPnpQueue[A](beamSize, stateCost, graph, log)
     val finished = new BsoPnpQueue[A](beamSize, stateCost, graph, log)

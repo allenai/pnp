@@ -12,8 +12,6 @@ import org.allenai.pnp.PnpModel
 import com.jayantkrish.jklol.cli.AbstractCli
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
-import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
@@ -46,7 +44,7 @@ class VisualizeMatchingCli extends AbstractCli {
   }
   
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
+    Initialize.initialize()
 
     // Read and preprocess data
     val diagramFeatures = DiagramFeatures.fromJsonFile(options.valueOf(diagramFeaturesOpt)).map(
@@ -131,8 +129,8 @@ class VisualizeMatchingCli extends AbstractCli {
     val augmentedTarget = augmentDiagramParts(target, numGridPoints)
     val gridParts = augmentedTarget.parts.drop(target.parts.length)
 
-    val computationGraph = ComputationGraph.getNew
-    val cg = model.model.getComputationGraph(computationGraph)
+    val computationGraph = ComputationGraph.renew()
+    val cg = model.model.getComputationGraph()
     val preprocessing = model.preprocess(source, sourceLabel, augmentedTarget,
         augmentedTarget.parts, cg)
 
@@ -144,7 +142,7 @@ class VisualizeMatchingCli extends AbstractCli {
       val candidateMatching = (part, sourcePart) :: matchingList
       val candidateScore = model.getNnGlobalScore(candidateMatching, cg, preprocessing)
       
-      val scoreDelta = as_scalar(cg.cg.incremental_forward(candidateScore - matchingScore))
+      val scoreDelta = ComputationGraph.incrementalForward(candidateScore - matchingScore).toFloat
       (part.coords, scoreDelta)
     }
 

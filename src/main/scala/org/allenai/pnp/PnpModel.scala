@@ -21,7 +21,7 @@ class PnpModel(var names: Map[String, Parameter], var lookupNames: Map[String, L
   }
   
   def addParameter(name: String, dim: Dim, init: ParameterInit): Parameter = {
-    val param = model.add_parameters(dim, init)
+    val param = model.addParameters(dim, init)
     names += (name -> param)
     param
   }
@@ -34,7 +34,7 @@ class PnpModel(var names: Map[String, Parameter], var lookupNames: Map[String, L
 
   def addLookupParameter(name: String, lookupNum: Long, dim: Dim,
       init: ParameterInit): LookupParameter = {
-    val param = model.add_lookup_parameters(lookupNum, dim, init)
+    val param = model.addLookupParameters(lookupNum, dim, init)
     lookupNames += (name -> param)
     param
   }
