@@ -355,20 +355,18 @@ class MatchingModel(var config: MatchingModelConfig,
     
     var scoreArray = remainingArray.map(x => input(compGraph.cg, 0.0f))
 
-    /*
-    val globalScores = if (binaryFactors) {
+    if (config.affineTransformScore) {
       val currentMse = getAffineGlobalScore(currentMatching, compGraph, preprocessing)
       val affineTransformParam = parameter(compGraph.cg, compGraph.getParameter(AFFINE_TRANSFORM_PARAM))
       
-      remainingArray.map { curSource => 
+      val affineScores = remainingArray.map { curSource => 
         val candidateMatching = (targetPart, curSource) :: currentMatching
         val candidateMse = getAffineGlobalScore(candidateMatching, compGraph, preprocessing)
         affineTransformParam * (candidateMse - currentMse)
       }
-    } else {
-      remainingArray.map(x => input(compGraph.cg, 0.0f))
+
+      scoreArray = scoreArray.zip(affineScores).map(x => x._1 + x._2)
     }
-    */
        
     if (config.structuralConsistency) {
       val transformW1 = parameter(compGraph.cg, compGraph.getParameter(TRANSFORM_W1))
@@ -573,6 +571,7 @@ class MatchingModelConfig() extends Serializable {
   var pointerNetLstmDim = 64
 
   var matchIndependent: Boolean = false
+  var affineTransformScore: Boolean = false
   var structuralConsistency: Boolean = false
   var matchingNetwork: Boolean = false
   var partClassifier: Boolean = false
