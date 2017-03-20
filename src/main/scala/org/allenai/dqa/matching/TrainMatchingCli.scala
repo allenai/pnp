@@ -130,7 +130,7 @@ class TrainMatchingCli extends AbstractCli {
       matchingModel.config.matchIndependent = matchIndependent
       model.locallyNormalized = locallyNormalized
     }
-        
+
     train(matchingExamples, matchingModel, options.valueOf(epochsOpt),
         options.valueOf(beamSizeOpt), options.has(loglikelihoodOpt))
     
