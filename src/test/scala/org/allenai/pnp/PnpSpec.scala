@@ -232,16 +232,16 @@ class PnpSpec extends FlatSpec with Matchers {
     flipParam.zero()
     
     val env = Env.init
-    val inferenceState = PnpInferenceState.init(model)
+    val context = PnpInferenceContext.init(model)
 
-    val values = foo(1).beamSearch(100, env, inferenceState).executions
+    val values = foo(1).beamSearch(100, env, context).executions
     values.length should be(2)
     values(0).value should be(List(2))
     val labels = values(0).env.labels
     labels.length should be(1)
     labels(0) should be(1)
 
-    val values2 = foo(2).beamSearch(100, env, inferenceState).executions
+    val values2 = foo(2).beamSearch(100, env, context).executions
     values2.length should be(4)
     values2(0).value should be(List(2, 2))
     val labels2 = values2(0).env.labels

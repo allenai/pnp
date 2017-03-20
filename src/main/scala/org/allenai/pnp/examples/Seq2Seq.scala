@@ -271,14 +271,13 @@ object Seq2Seq {
     // 4. Apply the trained model to new data.
     for (d <- testDataTokenized) {
       ComputationGraph.renew()
-      val inferenceState = PnpInferenceState.init(seq2seq.model)
+      val context = PnpInferenceContext.init(seq2seq.model)
 
       // Generate the probabilistic neural program over target
       // sequences, then run inference with the trained parameters
       // to get an approximate distribution over target sequences.
       val sourcePnp = seq2seq.apply(d._1)
-      val marginals = sourcePnp.beamSearch(beamSize, maxBeamSteps, Env.init, inferenceState,
-          new NullLogFunction)
+      val marginals = sourcePnp.beamSearch(beamSize, maxBeamSteps, Env.init, context)
           
       println("Source: " + d._1)
       for (ex <- marginals.executions) {

@@ -15,8 +15,7 @@ import edu.cmu.dynet._
   * Env is immutable.
   */
 class Env(val labels: List[Int], val labelNodeIds: List[Expression],
-    varnames: IndexedList[String], vars: Array[AnyRef],
-    val activeTimers: Set[String], val log: LogFunction) {
+    varnames: IndexedList[String], vars: Array[AnyRef]) {
 
   /** Get the value of the named variable as an instance
     * of type A.
@@ -46,7 +45,7 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     val index = nextVarNames.getIndex(name)
     nextVars(index) = value
 
-    new Env(labels, labelNodeIds, nextVarNames, nextVars, activeTimers, log)
+    new Env(labels, labelNodeIds, nextVarNames, nextVars)
   }
 
   def setVar(nameInt: Int, value: AnyRef): Env = {
@@ -54,7 +53,7 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     Array.copy(vars, 0, nextVars, 0, vars.size)
     nextVars(nameInt) = value
 
-    new Env(labels, labelNodeIds, varnames, nextVars, activeTimers, log)
+    new Env(labels, labelNodeIds, varnames, nextVars)
   }
 
   def isVarBound(name: String): Boolean = {
@@ -65,7 +64,7 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     * execution.
     */
   def addLabel(param: Expression, index: Int): Env = {
-    new Env(index :: labels, param :: labelNodeIds, varnames, vars, activeTimers, log)
+    new Env(index :: labels, param :: labelNodeIds, varnames, vars)
   }
   
   /** Get a scalar-valued expression that evaluates to the
@@ -87,37 +86,10 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     }
     exScore
   }
-
-  def setLog(newLog: LogFunction): Env = {
-    new Env(labels, labelNodeIds, varnames, vars, activeTimers, newLog)
-  }
-
-  def startTimer(name: String): Env = {
-    // log.startTimer(name)
-    new Env(labels, labelNodeIds, varnames, vars, activeTimers + name, log)
-  }
-
-  def stopTimer(name: String): Env = {
-    // log.stopTimer(name)
-    new Env(labels, labelNodeIds, varnames, vars, activeTimers - name, log)
-  }
-
-  def pauseTimers(): Unit = {
-    for (t <- activeTimers) {
-      log.stopTimer(t)
-    }
-  }
-
-  def resumeTimers(): Unit = {
-    for (t <- activeTimers) {
-      log.startTimer(t)
-    }
-  }
 }
 
 object Env {
   def init: Env = {
-    new Env(List.empty, List.empty, IndexedList.create(), Array(),
-      Set(), new NullLogFunction())
+    new Env(List.empty, List.empty, IndexedList.create(), Array())
   }
 }

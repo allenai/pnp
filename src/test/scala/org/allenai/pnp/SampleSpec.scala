@@ -33,8 +33,8 @@ class SampleSpec extends FlatSpec with Matchers {
     }
 
     val env = Env.init
-    val inferenceState = PnpInferenceState.init.addExecutionScore(score)
-    val samples = for (i <- 1 to 10000) yield flip.sample(env=env, inferenceState=inferenceState)
+    val context = PnpInferenceContext.init.addExecutionScore(score)
+    val samples = for (i <- 1 to 10000) yield flip.sample(env=env, context=context)
 
     // This is how the probabilities should work out.
     val aProb = math.E / (1 + math.E)
@@ -65,10 +65,10 @@ class SampleSpec extends FlatSpec with Matchers {
 
     val model = new Model()
     val cg = CompGraph.empty(model)
-    val inferenceState = PnpInferenceState.init(cg).addExecutionScore(score)
+    val context = PnpInferenceContext.init(cg).addExecutionScore(score)
     val env = Env.init
 
-    val samples = for (i <- 1 to 10000) yield flip.sample(env=env, inferenceState=inferenceState)
+    val samples = for (i <- 1 to 10000) yield flip.sample(env=env, context=context)
 
     // This is how the probabilities should work out.
     val aProb = math.E / (1 + math.E)
@@ -125,14 +125,14 @@ class SampleSpec extends FlatSpec with Matchers {
 
   type RandomVariable[T] = () => T
   class Distribution(rv: RandomVariable[Float]) extends Pnp[Float] {
-    override def searchStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Float, C],
-        queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = ???
+    override def searchStep[C](env: Env, logProb: Double, context: PnpInferenceContext,
+        continuation: PnpContinuation[Float, C], queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = ???
 
     /** Implements a single step of forward sampling.
       */
-    override def sampleStep[C](env: Env, inferenceState: PnpInferenceState, continuation: PnpContinuation[Float, C],
-        queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
-      continuation.sampleStep(rv(), env, inferenceState, queue, finished)
+    override def sampleStep[C](env: Env, logProb: Double, context: PnpInferenceContext,
+        continuation: PnpContinuation[Float, C], queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
+      continuation.sampleStep(rv(), env, logProb, context, queue, finished)
     }
   }
 

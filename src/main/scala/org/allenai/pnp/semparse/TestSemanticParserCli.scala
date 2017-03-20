@@ -2,7 +2,7 @@ package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-import org.allenai.pnp.{Env, PnpInferenceState, PnpModel}
+import org.allenai.pnp.{Env, PnpInferenceContext, PnpModel}
 
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.cli.TrainSemanticParser
@@ -80,7 +80,7 @@ class TestSemanticParserCli extends AbstractCli() {
     var numCorrectAt10 = 0
     for (e <- examples) {
       ComputationGraph.renew()
-      val inferenceState = PnpInferenceState.init(parser.model)
+      val context = PnpInferenceContext.init(parser.model)
 
       println(e.getSentence.getWords.asScala.mkString(" "))
       println(e.getSentence.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
@@ -90,8 +90,7 @@ class TestSemanticParserCli extends AbstractCli() {
       val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
-      val results = dist.beamSearch(5, 75, Env.init,
-          inferenceState, new NullLogFunction())
+      val results = dist.beamSearch(5, 75, Env.init, context)
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>

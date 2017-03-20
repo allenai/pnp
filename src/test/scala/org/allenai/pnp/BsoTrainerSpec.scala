@@ -46,9 +46,9 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     val unconditional = seq2seq.applyEncoded(inputIndexes)
 
     ComputationGraph.renew()
-    val inferenceState = PnpInferenceState.init(seq2seq.model)
+    val context = PnpInferenceContext.init(seq2seq.model)
 
-    val marginals = unconditional.beamSearch(10, 10, Env.init, inferenceState, new NullLogFunction)
+    val marginals = unconditional.beamSearch(10, 10, Env.init, context)
     
     marginals.executions.size should be > 0
     /*

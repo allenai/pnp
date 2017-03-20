@@ -19,7 +19,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     val model = fooModel()
     val env = Env.init
     ComputationGraph.renew()
-    val inferenceState = PnpInferenceState.init(model)
+    val context = PnpInferenceContext.init(model)
 
     val examples = List(
         PnpExample.fromDistributions(foo(2, null), foo(2, List(1, 0))),
@@ -31,7 +31,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     trainer.train(examples)
 
 
-    val marginals = foo(1, null).beamSearch(100, env, inferenceState)
+    val marginals = foo(1, null).beamSearch(100, env, context)
     val values = marginals.executions
     val partitionFunction = marginals.partitionFunction
     values.length should be(2)
@@ -71,8 +71,8 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     for (ex <- data) {
       val env = Env.init
       ComputationGraph.renew()
-      val inferenceState = PnpInferenceState.init(model)
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, inferenceState)
+      val context = PnpInferenceContext.init(model)
+      val marginals = xor(ex._1, ex._2).beamSearch(100, env, context)
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
@@ -121,9 +121,9 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     for (ex <- data) {
       val env = Env.init
       ComputationGraph.renew()
-      val inferenceState = PnpInferenceState.init(model)
+      val context = PnpInferenceContext.init(model)
 
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, inferenceState)
+      val marginals = xor(ex._1, ex._2).beamSearch(100, env, context)
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 

@@ -47,15 +47,17 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       example.conditionalExecutionScore
     }
 
-    val queue = new BsoPnpQueue[A](beamSize, stateCost, log)
-    val finished = new BsoPnpQueue[A](beamSize, stateCost, log)
+    val queue = new BsoPnpQueue[A](beamSize, stateCost)
+    val finished = new BsoPnpQueue[A](beamSize, stateCost)
     val endContinuation = new PnpEndContinuation[A]()
 
-    val startEnv = env.setLog(log)
+    val startEnv = env
     // TODO(is this right?)
-    val inferenceState = PnpInferenceState.init(model).addExecutionScore(stateCost)
+    val context = PnpInferenceContext.init(model)
+        .addExecutionScore(stateCost)
+        .setLog(log)
 
-    queue.offer(example.unconditional, env, inferenceState, null, null, env)
+    queue.offer(example.unconditional, env, 0.0, context, null, null)
 
     log.startTimer("bso/beam_search")
     val beam = new Array[SearchState[A]](beamSize)
@@ -127,7 +129,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       log.startTimer("bso/beam_search/search_step")
       for (i <- 0 until nextBeamSize) {
         val state = beam(i)
-        state.value.searchStep(state.env, state.inferenceState, endContinuation, queue, finished)
+        state.value.searchStep(state.env, state.logProb, context, endContinuation, queue, finished)
       }
       log.stopTimer("bso/beam_search/search_step")
 
@@ -181,7 +183,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
   }
 }
 
-class BsoPnpQueue[A](size: Int, val stateCost: ExecutionScore, val log: LogFunction) extends PnpSearchQueue[A] {
+class BsoPnpQueue[A](size: Int, val stateCost: ExecutionScore) extends PnpSearchQueue[A] {
 
   val queue = new KbestQueue(size, Array.empty[(SearchState[A], Double)])
   val correctQueue = new KbestQueue(size, Array.empty[SearchState[A]])
@@ -189,13 +191,9 @@ class BsoPnpQueue[A](size: Int, val stateCost: ExecutionScore, val log: LogFunct
   
   val EXECUTION_INCORRECT_VAR_NAME = "**bso_execution_incorrect**"
 
-  override def offer(value: Pnp[A], env: Env, inferenceState: PnpInferenceState, tag: Any,
-      choice: Any, myEnv: Env): Unit = {
-    val logProb = inferenceState.logProb
+  override def offer(value: Pnp[A], env: Env, logProb: Double, context: PnpInferenceContext, tag: Any, choice: Any): Unit = {
     if (logProb > Double.NegativeInfinity) {
-      log.startTimer("bso/beam_search/search_step/eval_cost")
       val cost = stateCost(tag, choice, env)
-      log.stopTimer("bso/beam_search/search_step/eval_cost")
 
       val nextEnv = if (cost != 0.0) {
         env.setVar(EXECUTION_INCORRECT_VAR_NAME, null)
@@ -204,7 +202,7 @@ class BsoPnpQueue[A](size: Int, val stateCost: ExecutionScore, val log: LogFunct
       }
 
       // TODO(joelgrus) is this right?
-      val state = SearchState(value, nextEnv, inferenceState, tag, choice)
+      val state = SearchState(value, nextEnv, logProb, tag, choice)
       queue.offer((state, cost), logProb)
 
       if (nextEnv.isVarBound(EXECUTION_INCORRECT_VAR_NAME)) {
