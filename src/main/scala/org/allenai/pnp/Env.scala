@@ -4,7 +4,6 @@ import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 
 /** Mutable global state of a neural probabilistic program
   * execution. Env also tracks the chosen values for any
@@ -19,8 +18,6 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     varnames: IndexedList[String], vars: Array[Any],
     val activeTimers: Set[String], val log: LogFunction) {
 
-  import DyNetScalaHelpers._
-  
   /** Get the value of the named variable as an instance
     * of type A.
     */
@@ -94,13 +91,13 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     * the score is computed by summing the negative log-softmax
     * scores of each choice.
     */
-  def getScore(normalize: Boolean, cg: ComputationGraph): Expression = {
-    var exScore = input(cg, 0)
+  def getScore(normalize: Boolean): Expression = {
+    var exScore = Expression.input(0)
     for ((expr, labelInd) <- labelNodeIds.zip(labels)) {
       val decisionScore = if (normalize) {
-        pickneglogsoftmax(expr, labelInd)
+        Expression.pickNegLogSoftmax(expr, labelInd)
       } else {
-        pick(expr, labelInd)
+        Expression.pick(expr, labelInd)
       }
       exScore = exScore + decisionScore
     }

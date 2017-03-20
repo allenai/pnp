@@ -7,13 +7,13 @@ import org.scalatest.Matchers
 import com.jayantkrish.jklol.training.NullLogFunction
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers.RichExpression
-import edu.cmu.dynet.DyNetScalaHelpers.seqToDim
-import edu.cmu.dynet.dynet_swig._
+import com.jayantkrish.jklol.util.IndexedList
+import com.jayantkrish.jklol.training.NullLogFunction
+import scala.collection.mutable.ListBuffer
 
 class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   
-  initialize(new DynetParams())
+  Initialize.initialize()
 
   val TOLERANCE = 0.01
   
@@ -31,8 +31,8 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     trainer.train(examples)
 
     val env = Env.init
-    val computationGraph = ComputationGraph.getNew
-    val marginals = foo(1, null).beamSearch(100, env, model.getComputationGraph(computationGraph))
+    ComputationGraph.renew()
+    val marginals = foo(1, null).beamSearch(100, env, model.getComputationGraph())
     val values = marginals.executions
     val partitionFunction = marginals.partitionFunction
     values.length should be(2)
@@ -66,13 +66,14 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     // Train model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(1000, 100, false, model, sgd, new NullLogFunction())
+    println("about to train")
     trainer.train(examples)
 
     // Check that training error is zero.
     for (ex <- data) {
       val env = Env.init
-      val cg = ComputationGraph.getNew
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph(cg))
+      ComputationGraph.renew()
+      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph())
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
@@ -80,7 +81,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
       (values(0).prob / partitionFunction) should be(1.0 +- 0.1)
     }
   }
-  
+
   it should "learn with multiple correct labels" in {
     val model = xorModel()
 
@@ -120,8 +121,9 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     // Check that training error is zero.
     for (ex <- data) {
       val env = Env.init
-      val cg = ComputationGraph.getNew
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph(cg))
+      ComputationGraph.renew()
+
+      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph())
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
@@ -162,7 +164,7 @@ object LoglikelihoodTrainerSpec {
   
   def fooModel(): PnpModel = {
     val model = PnpModel.init(true)
-    model.addParameter("flip", Seq(2))
+    model.addParameter("flip", Dim(2))
     model
   }
   
@@ -172,16 +174,16 @@ object LoglikelihoodTrainerSpec {
     values(0) = if (left) { 1 } else { 0 }
     values(1) = if (right) { 1 } else { 0 }
     val featureVector = new FloatVector(2)
-    featureVector.set(0, values(0))
-    featureVector.set(1, values(1))
+    featureVector.update(0, values(0))
+    featureVector.update(1, values(1))
     
     for {
       // Build a 2 layer neural network with a tanh
       // nonlinearity.
       params <- Pnp.param("params")
       bias <- Pnp.param("bias")
-      featureVectorExpression <- Pnp.constant(Seq(2), featureVector)
-      hidden = tanh((params * featureVectorExpression) + bias)
+      featureVectorExpression <- Pnp.constant(Dim(2), featureVector)
+      hidden = Expression.tanh((params * featureVectorExpression) + bias)
       params2 <- Pnp.param("params2")
       bias2 <- Pnp.param("bias2")
       dist = (params2 * hidden) + bias2
@@ -201,10 +203,10 @@ object LoglikelihoodTrainerSpec {
   def xorModel(): PnpModel = {
     // Initialize model parameters.
     val model = PnpModel.init(true)
-    model.addParameter("params", Seq(8, 2))
-    model.addParameter("bias", Seq(8))
-    model.addParameter("params2", Seq(2, 8))
-    model.addParameter("bias2", Seq(2))
+    model.addParameter("params", Dim(8, 2))
+    model.addParameter("bias", Dim(8))
+    model.addParameter("params2", Dim(2, 8))
+    model.addParameter("bias2", Dim(2))
 
     model
   }

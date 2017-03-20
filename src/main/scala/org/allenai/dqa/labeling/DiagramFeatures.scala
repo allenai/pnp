@@ -3,8 +3,6 @@ package org.allenai.dqa.labeling
 import scala.io.Source
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
-import edu.cmu.dynet.dynet_swig._
 import spray.json._
 import spray.json.DefaultJsonProtocol._
 
@@ -17,17 +15,17 @@ case class DiagramFeatures(imageId: String, pointFeatures: Map[Point, PointFeatu
     pointFeatures(part.coords)
   }
 
-  def getFeatureMatrix(parts: Seq[Part], cg: ComputationGraph): Array[PointExpressions] = {
+  def getFeatureMatrix(parts: Seq[Part]): Array[PointExpressions] = {
     val expressions = for {
       part <- parts
     } yield {
       val features = pointFeatures(part.coords)
-      val xy = input(cg, Seq(features.xy.size().asInstanceOf[Int]), features.xy)
-      val matching = input(cg, Seq(features.matching.size().asInstanceOf[Int]), features.matching)
-      val vgg0 = input(cg, Seq(features.vgg0.size().asInstanceOf[Int]), features.vgg0)
-      val vgg1 = input(cg, Seq(features.vgg1.size().asInstanceOf[Int]), features.vgg1)
-      val vgg2 = input(cg, Seq(features.vgg2.size().asInstanceOf[Int]), features.vgg2)
-      val vggAll = input(cg, Seq(features.vggAll.size().asInstanceOf[Int]), features.vggAll)
+      val xy = Expression.input(Dim(features.xy.size), features.xy)
+      val matching = Expression.input(Dim(features.matching.size), features.matching)
+      val vgg0 = Expression.input(Dim(features.vgg0.size), features.vgg0)
+      val vgg1 = Expression.input(Dim(features.vgg1.size), features.vgg1)
+      val vgg2 = Expression.input(Dim(features.vgg2.size), features.vgg2)
+      val vggAll = Expression.input(Dim(features.vggAll.size), features.vggAll)
       PointExpressions(xy, matching, vgg0, vgg1, vgg2, vggAll)
     }
     expressions.toArray
@@ -62,11 +60,16 @@ object DiagramFeatures {
         case _ => deserializationError("Array of x/y coordinates expected")
       }
       
-      xyVec = new FloatVector(p.fields("xy_vec").asInstanceOf[JsArray].elements.map(x => x.convertTo[Float]))
-      matchingVec = new FloatVector(p.fields("matching_vec").asInstanceOf[JsArray].elements.map(x => x.convertTo[Float]))
-      vgg0Vec = new FloatVector(p.fields("vgg_0_vec").asInstanceOf[JsArray].elements.map(x => x.convertTo[Float]))
-      vgg1Vec = new FloatVector(p.fields("vgg_1_vec").asInstanceOf[JsArray].elements.map(x => x.convertTo[Float]))
-      vgg2Vec = new FloatVector(p.fields("vgg_2_vec").asInstanceOf[JsArray].elements.map(x => x.convertTo[Float]))
+      xyVec = new FloatVector(p.fields("xy_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      matchingVec = new FloatVector(p.fields("matching_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      vgg0Vec = new FloatVector(p.fields("vgg_0_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      vgg1Vec = new FloatVector(p.fields("vgg_1_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      vgg2Vec = new FloatVector(p.fields("vgg_2_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
       vggAll = new FloatVector(vgg0Vec.toSeq ++ vgg1Vec.toSeq ++ vgg2Vec.toSeq)
     } yield {
       (xy, PointFeatures(xyVec, matchingVec, vgg0Vec, vgg1Vec, vgg2Vec, vggAll))

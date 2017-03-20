@@ -10,12 +10,11 @@ import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import com.jayantkrish.jklol.training.DefaultLogFunction
 
 class BsoTrainerSpec extends FlatSpec with Matchers {
   
-  initialize(new DynetParams())
+  Initialize.initialize()
   
   val TOLERANCE = 0.01
 
@@ -45,9 +44,9 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     val inputIndexes = input.split(" ").map(x => sourceVocab.getIndex(x)).toArray
     val expectedIndexes = expected.split(" ").map(x => targetVocab.getIndex(x)).toArray
     val unconditional = seq2seq.applyEncoded(inputIndexes)
-      
-    val cg = ComputationGraph.getNew
-    val graph = seq2seq.model.getComputationGraph(cg)
+
+    ComputationGraph.renew()
+    val graph = seq2seq.model.getComputationGraph()
 
     val marginals = unconditional.beamSearch(10, 10, Env.init, null, graph, new NullLogFunction)
     

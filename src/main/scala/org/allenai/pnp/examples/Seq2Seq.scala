@@ -14,8 +14,6 @@ import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
-import edu.cmu.dynet.dynet_swig._
 import org.allenai.pnp.PnpExample
 import com.jayantkrish.jklol.training.NullLogFunction
 import org.allenai.pnp.BsoTrainer
@@ -30,7 +28,7 @@ import org.allenai.pnp.LoglikelihoodTrainer
  * from the source LSTM. 
  */
 class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedList[T],
-    val endTokenIndex: Int, forwardBuilder: LSTMBuilder, outputBuilder: LSTMBuilder,
+    val endTokenIndex: Int, forwardBuilder: LstmBuilder, outputBuilder: LstmBuilder,
     val model: PnpModel) {
 
   var dropoutProb = -1.0
@@ -53,7 +51,7 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
       inputEncoding = rnnEncode(cg, sourceTokens)
       
       // Initialize the output LSTM
-      _ = outputBuilder.start_new_sequence(inputEncoding)
+      _ = outputBuilder.startNewSequence(inputEncoding)
       startRnnState = outputBuilder.state()
       startInput <- param(TARGET_START_INPUT)
 
@@ -80,9 +78,8 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
   }
 
   private def initializeRnns(computationGraph: CompGraph): Unit = {
-    val cg = computationGraph.cg
-    forwardBuilder.new_graph(cg)
-    outputBuilder.new_graph(cg)
+    forwardBuilder.newGraph()
+    outputBuilder.newGraph()
   }
 
   /**
@@ -90,24 +87,22 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
    * the LSTM's state.  
    */
   private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int]): ExpressionVector = {
-    val cg = computationGraph.cg
-    
     val wordEmbeddings = computationGraph.getLookupParameter(SOURCE_EMBEDDINGS)
-    val inputEmbeddings = tokens.map(x => lookup(cg, wordEmbeddings, x)).toArray
+    val inputEmbeddings = tokens.map(x => Expression.lookup(wordEmbeddings, x)).toArray
     
-    forwardBuilder.start_new_sequence()
+    forwardBuilder.startNewSequence()
     val fwOutputs = ListBuffer[Expression]()
     for (inputEmbedding <- inputEmbeddings) {
-      val fwOutput = forwardBuilder.add_input(inputEmbedding)
+      val fwOutput = forwardBuilder.addInput(inputEmbedding)
       val fwOutputDropout = if (dropoutProb > 0.0) {
-        dropout(fwOutput, dropoutProb.asInstanceOf[Float])
+        Expression.dropout(fwOutput, dropoutProb.asInstanceOf[Float])
       } else {
         fwOutput
       }
       fwOutputs += fwOutputDropout
     }
     
-    return forwardBuilder.final_s
+    return forwardBuilder.finalS
   }
 
   /**
@@ -116,7 +111,7 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
    */
   private def generateTargetTokens(tokenIndex: Int, state: Int, curInput: Expression): Pnp[List[Int]] = {
     // Run one step of the LSTM to get the next state and output. 
-    val lstmOutput = outputBuilder.add_input(state, curInput)
+    val lstmOutput = outputBuilder.addInput(state, curInput)
     val nextState = outputBuilder.state
     
     for {
@@ -134,7 +129,7 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
       // is necessary to generate the next target.
       cg <- computationGraph()
       outputTokenLookups = cg.getLookupParameter(TARGET_EMBEDDINGS)
-      outputTokenEmbedding = lookup(cg.cg, outputTokenLookups, targetTokenIndex)
+      outputTokenEmbedding = Expression.lookup(outputTokenLookups, targetTokenIndex)
       
       v <- if (targetTokenIndex == endTokenIndex) {
         // If we chose the end of sequence token, we're done.
@@ -211,14 +206,14 @@ object Seq2Seq {
     val hiddenDim = 100
     val targetDim = 100
     
-    model.addLookupParameter(SOURCE_EMBEDDINGS, sourceVocab.size, Seq(sourceDim))
-    model.addLookupParameter(TARGET_EMBEDDINGS, targetVocab.size, Seq(targetDim))
+    model.addLookupParameter(SOURCE_EMBEDDINGS, sourceVocab.size, Dim(sourceDim))
+    model.addLookupParameter(TARGET_EMBEDDINGS, targetVocab.size, Dim(targetDim))
     
-    model.addParameter(TARGET_START_INPUT, Seq(targetDim))
-    model.addParameter(TARGET_WEIGHTS, Seq(targetVocab.size, hiddenDim))
+    model.addParameter(TARGET_START_INPUT, Dim(targetDim))
+    model.addParameter(TARGET_WEIGHTS, Dim(targetVocab.size, hiddenDim))
     
-    val sourceBuilder = new LSTMBuilder(1, sourceDim, hiddenDim, model.model)
-    val targetBuilder = new LSTMBuilder(1, targetDim, hiddenDim, model.model)
+    val sourceBuilder = new LstmBuilder(1, sourceDim, hiddenDim, model.model)
+    val targetBuilder = new LstmBuilder(1, targetDim, hiddenDim, model.model)
     
     new Seq2Seq(sourceVocab, targetVocab, endTokenIndex, sourceBuilder, targetBuilder, model) 
   }
@@ -228,7 +223,7 @@ object Seq2Seq {
     // sequence-to-sequence
     
     // Initialize dynet
-    initialize(new DynetParams())
+    Initialize.initialize()
     
     // Random parameters here
     val beamSize = 5
@@ -302,8 +297,8 @@ object Seq2Seq {
     
     // 4. Apply the trained model to new data.
     for (d <- testDataTokenized) {
-      val cg = ComputationGraph.getNew
-      val graph = seq2seq.model.getComputationGraph(cg)
+      ComputationGraph.renew()
+      val graph = seq2seq.model.getComputationGraph()
 
       // Generate the probabilistic neural program over target
       // sequences, then run inference with the trained parameters
