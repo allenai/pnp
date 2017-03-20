@@ -193,8 +193,9 @@ class BsoPnpQueue[A](size: Int, val stateCost: ExecutionScore) extends PnpSearch
 
   override def offer(value: Pnp[A], env: Env, logProb: Double, context: PnpInferenceContext, tag: Any, choice: Any): Unit = {
     if (logProb > Double.NegativeInfinity) {
+      context.log.startTimer("bso/beam_search/search_step/eval_cost")
       val cost = stateCost(tag, choice, env)
-
+      context.log.stopTimer("bso/beam_search/search_step/eval_cost")
       val nextEnv = if (cost != 0.0) {
         env.setVar(EXECUTION_INCORRECT_VAR_NAME, null)
       } else {
