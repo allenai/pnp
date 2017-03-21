@@ -52,9 +52,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     val endContinuation = new PnpEndContinuation[A]()
 
     val startEnv = env
-    // TODO(is this right?)
     val context = PnpInferenceContext.init(model)
-        .addExecutionScore(stateCost)
         .setLog(log)
 
     queue.offer(example.unconditional, env, 0.0, context, null, null)
