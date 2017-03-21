@@ -368,7 +368,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         currentScope.getVariableTemplates(curType) ++
         entityLinking.getEntitiesWithType(curType).map(_.template)
       val matches = templates.filter(_.matches(expIndex, exp, typeMap))
-      if (matches.size != 1) {
+      if (matches.size < 1) {
         println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) +
             " : "  + curType + " (expected 1)")
         return None
