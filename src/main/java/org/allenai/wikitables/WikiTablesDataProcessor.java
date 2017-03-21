@@ -10,7 +10,6 @@ import edu.stanford.nlp.sempre.FuzzyMatchFn.FuzzyMatchFnMode;
 import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph;
 import edu.stanford.nlp.sempre.tables.StringNormalizationUtils;
 import edu.stanford.nlp.sempre.tables.dpd.DPDParser;
-import edu.stanford.nlp.sempre.tables.lambdadcs.LambdaDCSExecutor;
 import edu.stanford.nlp.sempre.tables.test.*;
 import edu.stanford.nlp.sempre.tables.match.*;
 import fig.basic.*;
@@ -18,7 +17,7 @@ import fig.basic.*;
 public class WikiTablesDataProcessor {
   public static List<CustomExample> getDataset(String path, boolean inSempreFormat,
                                                boolean includeDerivations, String derivationsPath,
-                                               int beamSize) {
+                                               int beamSize, int numDerivationsLimit) {
     CustomExample.opts.allowNoAnnotation = true;
     TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions";
     LanguageAnalyzer.opts.languageAnalyzer = "corenlp.CoreNLPAnalyzer";
@@ -58,6 +57,10 @@ public class WikiTablesDataProcessor {
         computeDerivations(dataset, beamSize);
       else
         addDerivations(dataset, derivationsPath);
+      if (numDerivationsLimit != -1) {
+        System.out.println("Limiting number of derivations per example to " + numDerivationsLimit);
+        dataset = removeLongDerivations(dataset, numDerivationsLimit);
+      }
       int maxNumFormulas = 0;
       int minNumFormulas = (int) Double.POSITIVE_INFINITY;
       int totalNumFormulas = 0;
@@ -80,8 +83,24 @@ public class WikiTablesDataProcessor {
     return dataset;
   }
 
+  static List<CustomExample> removeLongDerivations(List<CustomExample> dataset, int numDerivationsLimit) {
+    /*
+    Sort the derivations of each example by length and remove long derivations such that numDerivationsLimit
+    number of derivations remain.
+     */
+    List<CustomExample> prunedDataset = new ArrayList<>();
+    for (CustomExample ex : dataset) {
+      if (ex.alternativeFormulas.size() > numDerivationsLimit) {
+        List<Formula> derivations = ex.alternativeFormulas;
+        derivations.sort(new DerivationLengthComparator());
+        ex.alternativeFormulas = derivations.subList(0, numDerivationsLimit - 1);
+      }
+      prunedDataset.add(ex);
+    }
+    return prunedDataset;
+  }
+
   public static List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(CustomExample ex) {
-    // TODO: Return and EntityLinking object.
     List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = new ArrayList<>();
     List<String> exTokens = ex.getTokens();
     EditDistanceFuzzyMatcher.opts.expandAbbreviations = true;
@@ -228,7 +247,7 @@ public class WikiTablesDataProcessor {
     //String path = "data/wikitables/wikitables_sample_small.examples";
     String derivationsPath = "data/WikiTableQuestions/all_lfs";
     String path = "data/WikiTableQuestions/data/training-before300.examples";
-    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, true, derivationsPath, 50);
+    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, true, derivationsPath, 50, -1);
     for (int i = 0; i < dataset.size(); i++) {
       CustomExample ex = dataset.get(i);
       System.out.println("Utterance: " + ex.utterance);
@@ -242,5 +261,13 @@ public class WikiTablesDataProcessor {
           System.out.println("Linked entity: " + p.getFirst().getFirst() + " " + p.getFirst().getSecond() + " " + p.getSecond());
       }
     }
+  }
+}
+
+class DerivationLengthComparator implements Comparator<Formula> {
+
+  @Override
+  public int compare(Formula o1, Formula o2) {
+    return Integer.compare(o1.toString().length(), o2.toString().length());
   }
 }
