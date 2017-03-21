@@ -3,17 +3,12 @@ package org.allenai.pnp.semparse
 import scala.collection.JavaConverters._
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.ListBuffer
-import scala.collection.mutable.{ Map => MutableMap }
+import scala.collection.mutable.{Map => MutableMap}
 import scala.collection.mutable.MultiMap
-import scala.collection.mutable.{ Set => MutableSet }
+import scala.collection.mutable.{Set => MutableSet}
 import scala.collection.mutable.SetBuilder
-
-import org.allenai.pnp.CompGraph
-import org.allenai.pnp.Env
-import org.allenai.pnp.ExecutionScore
-import org.allenai.pnp.Pnp
+import org.allenai.pnp._
 import org.allenai.pnp.Pnp._
-import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -21,7 +16,6 @@ import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.cmu.dynet._
 
 /** A parser mapping token sequences to a distribution over
@@ -44,12 +38,13 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   /** Compute the input encoding of a list of tokens
     */
   def encode(tokens: Array[Int], entityLinking: EntityLinking): Pnp[InputEncoding] = {
+
     for {
-      compGraph <- computationGraph()
+      compGraph <- Pnp.computationGraph()
       _ = initializeRnns(compGraph)
       inputEncoding = rnnEncode(compGraph, tokens)
       entityEncoding = encodeEntities(compGraph, entityLinking, tokens)
-      // entityEncoding = null
+      //entityEncoding = null
     } yield {
       InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
           inputEncoding._4, entityEncoding)
@@ -168,7 +163,6 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       // Recursively generate a logical form using an LSTM to
       // select logical form templates to expand on typed holes
       // in the partially-generated logical form.  
-      cg <- computationGraph()
       expr <- parse(input, actionBuilder, state.addRootType(rootType))
     } yield {
       expr
@@ -180,7 +174,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     // Initialize the output LSTM before generating the logical form.
     builder.startNewSequence(input.rnnState)
     val startRnnState = builder.state()
-    
+
     for {
       beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS + startState.unfilledHoleIds(0).t)
       e <- parse(input, builder, beginActionsParam, startRnnState, startState)
@@ -291,7 +285,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
         // Get the LSTM input parameters associated with the chosen
         // template.
-        cg <- computationGraph()
+        cg <- Pnp.computationGraph()
         actionLookup = cg.getLookupParameter(SemanticParser.ACTION_LOOKUP_PARAM + hole.t)
         entityLookup = cg.getLookupParameter(SemanticParser.ENTITY_LOOKUP_PARAM + hole.t)
         index = templateTuple._2

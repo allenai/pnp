@@ -17,6 +17,10 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
 
   "LoglikelihoodTrainer" should "train sequence models" in {
     val model = fooModel()
+    val env = Env.init
+    ComputationGraph.renew()
+    val context = PnpInferenceContext.init(model)
+
     val examples = List(
         PnpExample.fromDistributions(foo(2, null), foo(2, List(1, 0))),
         PnpExample.fromDistributions(foo(3, null), foo(3, List(1, 1, 1)))
@@ -26,9 +30,8 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     val trainer = new LoglikelihoodTrainer(1000, 100, false, model, sgd, new NullLogFunction())
     trainer.train(examples)
 
-    val env = Env.init
-    ComputationGraph.renew()
-    val marginals = foo(1, null).beamSearch(100, env, model.getComputationGraph())
+
+    val marginals = foo(1, null).beamSearch(100, env, context)
     val values = marginals.executions
     val partitionFunction = marginals.partitionFunction
     values.length should be(2)
@@ -62,14 +65,14 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     // Train model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new LoglikelihoodTrainer(1000, 100, false, model, sgd, new NullLogFunction())
-    println("about to train")
     trainer.train(examples)
 
     // Check that training error is zero.
     for (ex <- data) {
       val env = Env.init
       ComputationGraph.renew()
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph())
+      val context = PnpInferenceContext.init(model)
+      val marginals = xor(ex._1, ex._2).beamSearch(100, env, context)
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
@@ -118,8 +121,9 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
     for (ex <- data) {
       val env = Env.init
       ComputationGraph.renew()
+      val context = PnpInferenceContext.init(model)
 
-      val marginals = xor(ex._1, ex._2).beamSearch(100, env, model.getComputationGraph())
+      val marginals = xor(ex._1, ex._2).beamSearch(100, env, context)
       val values = marginals.executions
       val partitionFunction = marginals.partitionFunction
 
@@ -172,7 +176,7 @@ object LoglikelihoodTrainerSpec {
     val featureVector = new FloatVector(2)
     featureVector.update(0, values(0))
     featureVector.update(1, values(1))
-    
+
     for {
       // Build a 2 layer neural network with a tanh
       // nonlinearity.

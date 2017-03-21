@@ -12,9 +12,15 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
 
   val TOLERANCE = 0.01
 
+
+
   "GlobalLoglikelihoodTrainer" should "train" in {
     val vocab = Array(0,1,2)
-    
+
+    val model = PnpModel.init(false)
+    val startParam = model.addParameter("start", Dim(vocab.length))
+    val transitionParam = model.addParameter("transition", Dim(vocab.length * vocab.length))
+
     def lm(k: Int): Pnp[Array[Int]] = {
       if (k == 1) {
         for {
@@ -58,9 +64,6 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
       }
     }
     
-    val model = PnpModel.init(false)
-    val startParam = model.addParameter("start", Dim(vocab.length))
-    val transitionParam = model.addParameter("transition", Dim(vocab.length * vocab.length))
 
     val examples = List(
         PnpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,0))),

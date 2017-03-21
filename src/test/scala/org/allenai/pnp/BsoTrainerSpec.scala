@@ -46,9 +46,9 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     val unconditional = seq2seq.applyEncoded(inputIndexes)
 
     ComputationGraph.renew()
-    val graph = seq2seq.model.getComputationGraph()
+    val context = PnpInferenceContext.init(seq2seq.model)
 
-    val marginals = unconditional.beamSearch(10, 10, Env.init, null, graph, new NullLogFunction)
+    val marginals = unconditional.beamSearch(10, 10, Env.init, context)
     
     marginals.executions.size should be > 0
     /*
@@ -60,10 +60,11 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     marginals.executions(0).value.toList should be (expectedIndexes.toList)
   }
 
+
   "BsoTrainerSpec" should "train seq2seq models" in {
     val seq2seq = getSeq2Seq()
     val model = seq2seq.model
-    
+
     val examples = for {
       d <- indexedData
     } yield {
@@ -71,11 +72,11 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
       val oracle = seq2seq.generateLabelCostEncoded(d._2)
       PnpExample(unconditional, unconditional, Env.init, oracle)
     }
-    
+
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new BsoTrainer(50, 2, 10, model, sgd, new NullLogFunction())
     trainer.train(examples)
-    
+
     for (d <- rawData) {
       runTest(seq2seq, d._1, d._2)
     }

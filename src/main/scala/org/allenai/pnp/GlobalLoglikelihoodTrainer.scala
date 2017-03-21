@@ -17,12 +17,12 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
       for (example <- examples) {
         ComputationGraph.renew()
         val env = example.env
-        val graph = model.getComputationGraph()
-       
+        val context = PnpInferenceContext.init(model).setLog(logFn)
+
         // Compute the distribution over correct executions.
         logFn.startTimer("pp_loglikelihood/conditional")
-        val conditional = example.conditional.beamSearch(beamSize, maxSearchSteps, env,
-            example.conditionalExecutionScore, graph, logFn)
+        val conditional = example.conditional.beamSearch(beamSize, maxSearchSteps,
+            env, context.addExecutionScore(example.conditionalExecutionScore))
         val conditionalPartitionFunction = conditional.partitionFunction
         logFn.stopTimer("pp_loglikelihood/conditional")
 
@@ -31,8 +31,7 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
         // Compute the unconditional distribution over 
         // all executions.
         logFn.startTimer("pp_loglikelihood/unconditional")
-        val unconditional = example.unconditional.beamSearch(beamSize, maxSearchSteps,
-            env, null, graph, logFn)
+        val unconditional = example.unconditional.beamSearch(beamSize, maxSearchSteps, env, context)
         val unconditionalPartitionFunction = unconditional.partitionFunction
         logFn.stopTimer("pp_loglikelihood/unconditional")
 
