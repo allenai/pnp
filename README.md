@@ -31,8 +31,8 @@ the following commands from the `pnp` root directory:
 
 ```
 cd lib
-ln -s <PATH_TO_DYNET>/build/swig/dynet_swigJNI_scala.jar .
-ln -s <PATH_TO_DYNET>/build/swig/dynet_swigJNI_dylib.jar .
+ln -s <PATH_TO_DYNET>/build/contrib/swig/dynet_swigJNI_scala.jar .
+ln -s <PATH_TO_DYNET>/build/contrib/swig/dynet_swigJNI_dylib.jar .
 ```
 
 That's it! Verify that your installation works by running `sbt test`
