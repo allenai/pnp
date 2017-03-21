@@ -16,6 +16,7 @@ public class WikiTablesTypeDeclaration extends AbstractTypeDeclaration {
   public static final Type ENTITY_TYPE = Type.createAtomic("e");
   public static final Type CELL_TYPE = Type.createAtomic("c");
   public static final Type PART_TYPE = Type.createAtomic("p");
+  public static final Type VAR_TYPE = Type.createAtomic("v");
 
   private static final String[][] FUNCTION_TYPES = {
     // Atomic types
@@ -45,7 +46,7 @@ public class WikiTablesTypeDeclaration extends AbstractTypeDeclaration {
 
     {"number", "<i,i>"},
     {"date", "<i,<i,<i,d>>>"},
-    {"var", "<#1,#1>"},
+    //{"var", "<#1,#1>"},
 
     // Quantifiers.
     // TODO: only dates and numbers (i.e., comparable things) can be bound to #2
