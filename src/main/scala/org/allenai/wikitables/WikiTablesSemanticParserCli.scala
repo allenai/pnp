@@ -35,12 +35,12 @@ import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.ActionSpace
+import org.allenai.pnp.PnpInferenceContext
 
 /** Command line program for training a semantic parser 
   * on the WikiTables data set.  
@@ -59,9 +59,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   }
   
   override def run(options: OptionSet): Unit = {
-    val dynetParams = new DynetParams()
-    dynetParams.setMem_descriptor("2048")
-    initialize(dynetParams)
+    Initialize.initialize(Map("dynet-mem" -> "2048"))
 
     // Initialize expression processing for Wikitables logical forms. 
     val simplifier = ExpressionSimplifier.lambdaCalculus()
@@ -320,9 +318,10 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
-      val cg = ComputationGraph.getNew
-      val results = dist.beamSearch(10, 75, Env.init, null,
-          model.getComputationGraph(cg), new NullLogFunction())
+      
+      ComputationGraph.renew()
+      val context = PnpInferenceContext.init(model)
+      val results = dist.beamSearch(10, 75, Env.init, context)
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
@@ -349,13 +348,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       val attentions = state.getAttentions
       val tokens = e.getSentence.getWords.asScala.toArray
       for (i <- 0 until templates.length) {
-        val floatVector = as_vector(cg.get_value(attentions(i)))
-        val values = for {
-          j <- 0 until floatVector.size().asInstanceOf[Int]
-        } yield {
-          floatVector.get(j)
-        }
-        
+        val values = ComputationGraph.incrementalForward(attentions(i)).toSeq()
+
         val maxIndex = values.zipWithIndex.max._2
         
         val tokenStrings = for {
