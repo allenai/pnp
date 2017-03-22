@@ -11,7 +11,7 @@ TRAIN_OPTS=""
 TRAIN="$DATA_DIR/data_splits/$DATA_SPLIT/train.json"
 TEST="$DATA_DIR/data_splits/$DATA_SPLIT/validation.json"
 
-OUT_DIR="experiments/dqa_parts_v1/output/"
+OUT_DIR="experiments/dipart/output/"
 EXPERIMENT_NAME="$DATA_SPLIT/dqa_310/pnp_update/"
 EXPERIMENT_DIR="$OUT_DIR/$EXPERIMENT_NAME/"
 
