@@ -1,5 +1,6 @@
 #!/bin/bash -e
 
+SCRIPT_DIR="experiments/dipart/scripts/"
 DATA_DIR="data/dqa_parts_v1"
 DIAGRAMS="$DATA_DIR/diagrams.json"
 DIAGRAM_FEATURES="$DATA_DIR/diagram_features_xy.json"

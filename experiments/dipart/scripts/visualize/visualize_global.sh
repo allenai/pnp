@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-source "experiments/dqa/scripts/config.sh"
+source "experiments/dipart/scripts/config.sh"
 
 EXPERIMENT_NAME="$DATA_SPLIT/dqa_310/final1_laso/"
 EXPERIMENT_DIR="$OUT_DIR/$EXPERIMENT_NAME/"
