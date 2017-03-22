@@ -43,7 +43,7 @@ public class WikiTablesExample {
     // Sempre represents lambda expressions differently. We changed them when reading the examples. Changing
     // them back for execution.
     System.out.println("Before conversion: " + pnpFormula.toString());
-    String expressionString = toSempreLambdaForm(pnpFormula.toString());
+    String expressionString = WikiTablesUtil.toSempreLogicalForm(pnpFormula.toString());
     System.out.println("After conversion: " + expressionString);
     try {
       Formula sempreFormula = Formula.fromString(expressionString);
@@ -62,27 +62,7 @@ public class WikiTablesExample {
     return sentence + " [\n" + String.join(" ", logicalFormStrings) + "\n]";
   }
 
-  public static String toPnpLambdaForm(String expression) {
-    /*
-    Sempre's lambda expressions are written differently from what pnp expects. We make the following change
-    (lambda x ((reverse fb:cell.cell.number) (var x))) -> (lambda (x) ((reverse fb:cell.cell.number) x))
-     */
-    // Sempre's lambda expressions have only one free variable, I think.
-    expression = expression.replaceAll("lambda x", "lambda (x)");
-    expression = expression.replaceAll("(var x)", "x");
-    return expression;
-  }
-
-  public static String toSempreLambdaForm(String expression) {
-    // TODO: Properly de-canonicalize variable names, to work with multiple variables.
-    expression = expression.replaceAll("lambda \\(\\$0\\)", "lambda x");
-    // Remove single sub-expressions within parens. Eg: (fb:type.object.type (fb:type.row)) -> (fb:type.object.type fb:type.row)
-    expression = expression.replaceAll("\\(([^ ]*)\\)", "$1");
-    expression = expression.replaceAll("\\$0", "(var x)");
-    return expression;
-  }
-
   public static void main(String[] args) {
-    System.out.println(toSempreLambdaForm("((reverse fb:cell.cell.number) ((reverse fb:row.row.round_2) (fb:type.object.type (fb:type.row))))"));
+    System.out.println(WikiTablesUtil.toSempreLogicalForm("((reverse fb:cell.cell.number) ((reverse fb:row.row.round_2) (fb:type.object.type (fb:type.row))))"));
   }
 }

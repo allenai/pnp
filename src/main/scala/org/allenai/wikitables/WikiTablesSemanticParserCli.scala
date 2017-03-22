@@ -2,7 +2,6 @@ package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
 import java.util.HashSet
 
 import org.allenai.pnp.Env
@@ -17,7 +16,6 @@ import org.allenai.pnp.semparse.SemanticParser
 import org.allenai.pnp.semparse.SemanticParserLoss
 import org.allenai.pnp.semparse.SemanticParserUtils
 import org.allenai.pnp.semparse.Span
-
 import com.google.common.collect.Maps
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
@@ -33,7 +31,6 @@ import com.jayantkrish.jklol.training.DefaultLogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.cmu.dynet._
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import joptsimple.OptionParser
@@ -249,7 +246,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Sempre's logical forms do not have parens around x in lambda expressions. Fixing that.
     // TODO: This is fragile.
 
-    val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => WikiTablesExample.toPnpLambdaForm(x.toString)}
+    val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => WikiTablesUtil.toPnpLogicalForm(x)}
     val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(lfParser.parse(x))}
     new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
                           ex.context, ex.targetValue);
