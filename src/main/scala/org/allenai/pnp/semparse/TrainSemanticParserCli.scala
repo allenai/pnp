@@ -101,7 +101,8 @@ class TrainSemanticParserCli extends AbstractCli() {
     // println(actionSpace.typeTemplateMap)
     
     val model = PnpModel.init(true)
-    val parser = SemanticParser.create(actionSpace, vocab, model)
+    val config = new SemanticParserConfig()
+    val parser = SemanticParser.create(actionSpace, vocab, config, model)
     
     println("*** Validating types ***")
     SemanticParserUtils.validateTypes(trainPreprocessed, typeDeclaration)

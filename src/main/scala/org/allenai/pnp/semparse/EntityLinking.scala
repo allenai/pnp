@@ -8,7 +8,7 @@ import scala.collection.mutable.ListBuffer
 
 case class EntityLinking(matches: List[(Option[Span], Entity, List[Int], Double)]) {
   // Some matches may have null span. They correspond to floating rules.
-  val entities: List[Entity] = matches.map(_._2)
+  val entities: List[Entity] = matches.map(_._2).toSet.toList
   val linkedMatches: List[(Span, Entity, List[Int], Double)] =
     matches.filter(x => x._1 != None).map(x => (x._1.get, x._2, x._3, x._4))
   val unlinkedMatches: List[(Entity, List[Int], Double)] =

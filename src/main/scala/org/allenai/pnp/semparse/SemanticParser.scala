@@ -26,8 +26,8 @@ import edu.cmu.dynet._
 /** A parser mapping token sequences to a distribution over
   * logical forms.
   */
-class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String], inputDim: Int,
-    hiddenDim: Int, maxVars: Int, forwardBuilder: LstmBuilder, backwardBuilder: LstmBuilder,
+class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String],
+    val config: SemanticParserConfig, forwardBuilder: LstmBuilder, backwardBuilder: LstmBuilder,
     actionBuilder: LstmBuilder, val model: PnpModel) {
 
   var dropoutProb = -1.0
@@ -95,8 +95,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         x => concatenateArray(Array(x._1, x._2)))
  
     val sentEmbedding = concatenateArray(Array(fwOutputs.last, bwOutputs.last)) 
-    val inputMatrix = concatenateArray(inputEmbeddings.map(reshape(_, Dim(1, inputDim))).toArray)
-    val outputMatrix = concatenateArray(outputEmbeddings.map(reshape(_, Dim(1, 2 * hiddenDim))).toArray)
+    val inputMatrix = concatenateArray(inputEmbeddings.map(reshape(_, Dim(1, config.inputDim))).toArray)
+    val outputMatrix = concatenateArray(outputEmbeddings.map(reshape(_, Dim(1, 2 * config.hiddenDim))).toArray)
     
     // TODO: figure out how to initialize the decoder from both the
     // forward and backward LSTMs
@@ -221,9 +221,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val hole = state.unfilledHoleIds.head
       val actionTemplates = actionSpace.getTemplates(hole.t)
       val allVariableTemplates = hole.scope.getVariableTemplates(hole.t)
-      val variableTemplates = if (allVariableTemplates.length > maxVars) {
+      val variableTemplates = if (allVariableTemplates.length > config.maxVars) {
         // The model only has parameters for MAX_VARS variables. 
-        allVariableTemplates.slice(0, maxVars)
+        allVariableTemplates.slice(0, config.maxVars)
       } else {
         allVariableTemplates
       }
@@ -283,15 +283,22 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         entityWeights <- Pnp.param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
 
         allScores = if (entities.size > 0) {
-          // Note: We have two possibilities to score entities here.
-          // The second one that uses entity spans worked better for GeoQuery.
-          // Option 1:
-          val entityChoiceScore = Expression.dotProduct(entityWeights, rnnOutputDropout) + entityBias
-          val entityScores = concatenateArray(entityVectors.map(v => Expression.dotProduct(v, attentionVector)
-                        + entityChoiceScore))
+          // There are two possibilities for scoring entities.
+          val entityScores = if (config.attentionCopyEntities) {
+            // Option 1: copy entities into the logical form using the
+            // attention weights assigned to their linked spans. This
+            // option works better on GeoQuery but requires entities to
+            // link to spans in the question.
+            concatenateArray(entities.map(x => wordAttentions * x.spanVector))
+          } else {
+            // Option 2: copy entities using the similarity between their embedding
+            // and the current attention vector.
+            val entityChoiceScore = Expression.dotProduct(
+                entityWeights, rnnOutputDropout) + entityBias
+            concatenateArray(entityVectors.map(
+                v => Expression.dotProduct(v, attentionVector) + entityChoiceScore))
+          }
 
-          // Option 2:
-          //val entityScores = concatenateArray(entities.map(x => wordAttentions * x.spanVector))
           concatenateArray(Array(actionScores, entityScores))
         } else {
           actionScores
@@ -410,9 +417,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   def save(saver: ModelSaver): Unit = {
     saver.addObject(actionSpace)
     saver.addObject(vocab)
-    saver.addInt(inputDim)
-    saver.addInt(hiddenDim)
-    saver.addInt(maxVars)
+    saver.addObject(config)
     saver.addLstmBuilder(forwardBuilder)
     saver.addLstmBuilder(backwardBuilder)
     saver.addLstmBuilder(actionBuilder)
@@ -470,6 +475,16 @@ class MaxExecutionScore(val scores: Seq[ExecutionScore]) extends ExecutionScore 
   }
 }
 
+class SemanticParserConfig extends Serializable {
+  var inputDim = 200
+  var hiddenDim = 100
+  var actionDim = 100
+  var actionHiddenDim = 100
+  var maxVars = 10
+  
+  var attentionCopyEntities = true
+}
+
 object SemanticParser {
   
   // Parameter names used by the parser
@@ -492,65 +507,58 @@ object SemanticParser {
   val ENTITY_WEIGHTS_PARAM = "entityWeights:"
   val ENTITY_LOOKUP_PARAM = "entityLookup:"
   
-  def create(actionSpace: ActionSpace, vocab: IndexedList[String], model: PnpModel): SemanticParser = {
-    val inputDim = 200
-    val hiddenDim = 100
-    val actionDim = 100
-    val actionHiddenDim = 100
-    val maxVars = 10
-
+  def create(actionSpace: ActionSpace, vocab: IndexedList[String], config: SemanticParserConfig,
+      model: PnpModel): SemanticParser = {
     // Initialize model
     // TODO: document these parameters.
-    model.addParameter(ROOT_WEIGHTS_PARAM, Dim(actionSpace.rootTypes.length, 2 * hiddenDim))
+    model.addParameter(ROOT_WEIGHTS_PARAM, Dim(actionSpace.rootTypes.length, 2 * config.hiddenDim))
     model.addParameter(ROOT_BIAS_PARAM, Dim(actionSpace.rootTypes.length))
-    model.addParameter(ATTENTION_WEIGHTS_PARAM, Dim(2 * hiddenDim, actionDim))
+    model.addParameter(ATTENTION_WEIGHTS_PARAM, Dim(2 * config.hiddenDim, config.actionDim))
 
-    model.addParameter(ACTION_HIDDEN_WEIGHTS, Dim(actionHiddenDim, inputDim + hiddenDim))
+    model.addParameter(ACTION_HIDDEN_WEIGHTS, Dim(config.actionHiddenDim, config.inputDim + config.hiddenDim))
 
-    model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size, Dim(inputDim))
+    model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size, Dim(config.inputDim))
     
     for (t <- actionSpace.getTypes) {
       val actions = actionSpace.getTemplates(t)
-      val dim = actions.length + maxVars
+      val dim = actions.length + config.maxVars
 
-      model.addParameter(BEGIN_ACTIONS + t, Dim(actionDim + inputDim))
-      model.addParameter(ACTION_WEIGHTS_PARAM + t, Dim(dim, hiddenDim))
+      model.addParameter(BEGIN_ACTIONS + t, Dim(config.actionDim + config.inputDim))
+      model.addParameter(ACTION_WEIGHTS_PARAM + t, Dim(dim, config.hiddenDim))
       model.addParameter(ACTION_BIAS_PARAM + t, Dim(dim))
 
-      model.addParameter(ATTENTION_ACTION_WEIGHTS_PARAM + t, Dim(dim, inputDim))
+      model.addParameter(ATTENTION_ACTION_WEIGHTS_PARAM + t, Dim(dim, config.inputDim))
       
-      model.addParameter(ACTION_HIDDEN_ACTION + t, Dim(dim, actionHiddenDim))
+      model.addParameter(ACTION_HIDDEN_ACTION + t, Dim(dim, config.actionHiddenDim))
       
       model.addParameter(ENTITY_BIAS_PARAM + t, Dim(1))
-      model.addParameter(ENTITY_WEIGHTS_PARAM + t, Dim(hiddenDim))
+      model.addParameter(ENTITY_WEIGHTS_PARAM + t, Dim(config.hiddenDim))
       
-      model.addLookupParameter(ACTION_LOOKUP_PARAM + t, dim, Dim(actionDim))
+      model.addLookupParameter(ACTION_LOOKUP_PARAM + t, dim, Dim(config.actionDim))
       
-      model.addLookupParameter(ENTITY_LOOKUP_PARAM + t, 1, Dim(actionDim))
+      model.addLookupParameter(ENTITY_LOOKUP_PARAM + t, 1, Dim(config.actionDim))
     }
 
     // Forward and backward RNNs for encoding the input token sequence
-    val forwardBuilder = new LstmBuilder(1, inputDim, hiddenDim, model.model)
-    val backwardBuilder = new LstmBuilder(1, inputDim, hiddenDim, model.model)
+    val forwardBuilder = new LstmBuilder(1, config.inputDim, config.hiddenDim, model.model)
+    val backwardBuilder = new LstmBuilder(1, config.inputDim, config.hiddenDim, model.model)
     // RNN for generating actions given previous actions (and the input)
-    val actionBuilder = new LstmBuilder(1, actionDim + inputDim, hiddenDim, model.model)
+    val actionBuilder = new LstmBuilder(1, config.actionDim + config.inputDim, config.hiddenDim, model.model)
 
-    new SemanticParser(actionSpace, vocab, inputDim, hiddenDim, maxVars, forwardBuilder,
+    new SemanticParser(actionSpace, vocab, config, forwardBuilder,
         backwardBuilder, actionBuilder, model)
   }
 
   def load(loader: ModelLoader, model: PnpModel): SemanticParser = {
     val actionSpace = loader.loadObject(classOf[ActionSpace])
     val vocab = loader.loadObject(classOf[IndexedList[String]])
-    val inputDim = loader.loadInt()
-    val hiddenDim = loader.loadInt()
-    val maxVars = loader.loadInt()
+    val config = loader.loadObject(classOf[SemanticParserConfig])
     val forwardBuilder = loader.loadLstmBuilder()
     val backwardBuilder = loader.loadLstmBuilder()
     val actionBuilder = loader.loadLstmBuilder()
     
-    new SemanticParser(actionSpace, vocab, inputDim, hiddenDim, maxVars,
-        forwardBuilder, backwardBuilder, actionBuilder, model)
+    new SemanticParser(actionSpace, vocab, config, forwardBuilder,
+        backwardBuilder, actionBuilder, model)
   }
   
   // TODO: move this method somewhere else.

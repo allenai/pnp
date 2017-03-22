@@ -41,6 +41,7 @@ import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.ActionSpace
 import org.allenai.pnp.PnpInferenceContext
+import org.allenai.pnp.semparse.SemanticParserConfig
 
 /** Command line program for training a semantic parser 
   * on the WikiTables data set.  
@@ -135,7 +136,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     val model = PnpModel.init(true)
-    val parser = SemanticParser.create(actionSpace, vocab, model)
+    val config = new SemanticParserConfig()
+    config.attentionCopyEntities = false
+    val parser = SemanticParser.create(actionSpace, vocab, config, model)
     
     val trainSeparatedLfs = getCcgDataset(trainPreprocessed)
     val testSeparatedLfs = getCcgDataset(testPreprocessed)

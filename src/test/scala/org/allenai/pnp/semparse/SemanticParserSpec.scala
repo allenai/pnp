@@ -34,7 +34,8 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     vocab.addAll(d._1.toList.asJava)
   }
   val model = PnpModel.init(true)
-  val parser = SemanticParser.create(lexicon, vocab, model)
+  val config = new SemanticParserConfig()
+  val parser = SemanticParser.create(lexicon, vocab, config, model)
 
   "SemanticParser" should "generate application templates" in {
     println(lexicon.typeTemplateMap)
