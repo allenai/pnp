@@ -26,7 +26,6 @@ import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
@@ -51,7 +50,7 @@ class TrainSemanticParserCli extends AbstractCli() {
   }
   
   override def run(options: OptionSet): Unit = {
-    initialize(SemanticParserUtils.DYNET_PARAMS)
+    Initialize.initialize(SemanticParserUtils.DYNET_PARAMS)
     
     // Initialize expression processing for Geoquery logical forms. 
     val typeDeclaration = GeoqueryUtil.getSimpleTypeDeclaration()

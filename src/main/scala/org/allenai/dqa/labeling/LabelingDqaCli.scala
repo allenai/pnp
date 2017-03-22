@@ -2,30 +2,23 @@ package org.allenai.dqa.labeling
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
 import com.jayantkrish.jklol.ccg.lambda.ExplicitTypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.util.IndexedList
-
-import edu.cmu.dynet.dynet_swig._
+import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.SemanticParser
-import org.allenai.pnp.PnpExample
-import org.allenai.pnp.PnpModel
-import org.allenai.pnp.Env
-import org.allenai.pnp.Pnp
+import org.allenai.pnp._
+
 import com.jayantkrish.jklol.training.DefaultLogFunction
-import org.allenai.pnp.LoglikelihoodTrainer
-import edu.cmu.dynet.SimpleSGDTrainer
 import org.allenai.pnp.semparse.ActionSpace
+
 import com.google.common.collect.HashMultimap
-import edu.cmu.dynet.ComputationGraph
-import edu.cmu.dynet.DynetParams
 
 class LabelingDqaCli extends AbstractCli {
   
@@ -40,7 +33,7 @@ class LabelingDqaCli extends AbstractCli {
   }
   
   override def run(options: OptionSet): Unit = {
-    initialize(new DynetParams())
+    Initialize.initialize()
   
     // Initialize expression processing for logical forms. 
     val typeDeclaration = ExplicitTypeDeclaration.getDefault
@@ -54,7 +47,8 @@ class LabelingDqaCli extends AbstractCli {
     val diagrams = diagramsAndLabels.map(_._1)
     val diagramLabels = diagramsAndLabels.map(_._2)
     val diagramMap = diagramsAndLabels.map(x => (x._1.id, x)).toMap
-    val partFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.size.toInt
+    // TODO: fix the feature dimensionality
+    val partFeatureDim = diagramFeatures.head._2.pointFeatures.head._2.xy.size.toInt
 
     val trainingData = ListBuffer[LabelingExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
@@ -104,10 +98,10 @@ class LabelingDqaCli extends AbstractCli {
   
   def validateParser(examples: Seq[PreprocessedLabelingExample], parser: SemanticParser): Unit = {
     for (ex <- examples) {
-      val cg = ComputationGraph.getNew
-      
+      ComputationGraph.renew()
       val lfDist = parser.generateExpression(ex.tokenIds, ex.entityLinking)
-      val dist = lfDist.beamSearch(100, 100, Env.init, null, parser.model.getComputationGraph(cg), null)
+      val context = PnpInferenceContext.init(parser.model)
+      val dist = lfDist.beamSearch(100, 100, Env.init, context)
       println(ex.ex.tokens.mkString(" "))
       for (x <- dist.executions) {
         println("  "  + x)
@@ -137,10 +131,10 @@ class LabelingDqaCli extends AbstractCli {
       model: PnpModel): Unit = {
     var numCorrect = 0 
     for (ex <- examples) {
-      val cg = ComputationGraph.getNew
-
+      ComputationGraph.renew()
       val pp = p3.exampleToPnpExample(ex).unconditional
-      val dist = pp.beamSearch(100, 100, Env.init, null, model.getComputationGraph(cg), null)
+      val context = PnpInferenceContext.init(model)
+      val dist = pp.beamSearch(100, 100, Env.init, context)
 
       println(ex.ex.tokens.mkString(" "))
       println(ex.ex.answerOptions)

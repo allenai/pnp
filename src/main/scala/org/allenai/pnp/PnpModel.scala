@@ -15,13 +15,26 @@ class PnpModel(var names: Map[String, Parameter], var lookupNames: Map[String, L
     val model: Model, var locallyNormalized: Boolean) {
 
   def addParameter(name: String, dim: Dim): Parameter = {
-    val param = model.add_parameters(dim)
+    val param = model.addParameters(dim)
+    names += (name -> param)
+    param
+  }
+  
+  def addParameter(name: String, dim: Dim, init: ParameterInit): Parameter = {
+    val param = model.addParameters(dim, init)
     names += (name -> param)
     param
   }
   
   def addLookupParameter(name: String, lookupNum: Long, dim: Dim): LookupParameter = {
-    val param = model.add_lookup_parameters(lookupNum, dim)
+    val param = model.addLookupParameters(lookupNum, dim)
+    lookupNames += (name -> param)
+    param
+  }
+
+  def addLookupParameter(name: String, lookupNum: Long, dim: Dim,
+      init: ParameterInit): LookupParameter = {
+    val param = model.addLookupParameters(lookupNum, dim, init)
     lookupNames += (name -> param)
     param
   }
@@ -34,24 +47,24 @@ class PnpModel(var names: Map[String, Parameter], var lookupNames: Map[String, L
     lookupNames(name)
   }
 
-  def getComputationGraph(cg: ComputationGraph): CompGraph = {
-    new CompGraph(cg, model, names, lookupNames, locallyNormalized)
+  def getComputationGraph(): CompGraph = {
+    new CompGraph(model, names, lookupNames, locallyNormalized)
   }
 
   def save(saver: ModelSaver): Unit = {
-    saver.add_model(model)
-    saver.add_boolean(locallyNormalized)
+    saver.addModel(model)
+    saver.addBoolean(locallyNormalized)
     
-    saver.add_int(names.size)
+    saver.addInt(names.size)
     for ((k, v) <- names) {
-      saver.add_object(k)
-      saver.add_parameter(v)
+      saver.addObject(k)
+      saver.addParameter(v)
     }
 
-    saver.add_int(lookupNames.size)
+    saver.addInt(lookupNames.size)
     for ((k, v) <- lookupNames) {
-      saver.add_object(k)
-      saver.add_lookup_parameter(v)
+      saver.addObject(k)
+      saver.addLookupParameter(v)
     }
   }
 }
@@ -62,22 +75,22 @@ object PnpModel {
   }
   
   def load(loader: ModelLoader): PnpModel = {
-    val model = loader.load_model()
-    val locallyNormalized = loader.load_boolean()
+    val model = loader.loadModel()
+    val locallyNormalized = loader.loadBoolean()
     
-    val numParams = loader.load_int()
+    val numParams = loader.loadInt()
     val params = ListBuffer[(String, Parameter)]()
     for (i <- 0 until numParams) {
-      val name = loader.load_object(classOf[String])
-      val param = loader.load_parameter()
+      val name = loader.loadObject(classOf[String])
+      val param = loader.loadParameter()
       params += ((name, param))
     }
 
-    val numLookups = loader.load_int()
+    val numLookups = loader.loadInt()
     val lookups = ListBuffer[(String, LookupParameter)]()
     for (i <- 0 until numLookups) {
-      val name = loader.load_object(classOf[String])
-      val param = loader.load_lookup_parameter()
+      val name = loader.loadObject(classOf[String])
+      val param = loader.loadLookupParameter()
       lookups += ((name, param))
     }
 

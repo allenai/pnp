@@ -3,31 +3,41 @@ package org.allenai.dqa.labeling
 import scala.io.Source
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.DyNetScalaHelpers._
-import edu.cmu.dynet.dynet_swig._
 import spray.json._
 import spray.json.DefaultJsonProtocol._
 
 /**
  * Features of points in a diagram. 
  */
-case class DiagramFeatures(imageId: String, pointFeatures: Map[Point, FloatVector]) {
+case class DiagramFeatures(imageId: String, pointFeatures: Map[Point, PointFeatures]) {
 
-  def getFeatures(part: Part): FloatVector = {
+  def getFeatures(part: Part): PointFeatures = {
     pointFeatures(part.coords)
   }
 
-  def getFeatureMatrix(parts: Seq[Part], cg: ComputationGraph): Array[Expression] = {
+  def getFeatureMatrix(parts: Seq[Part]): Array[PointExpressions] = {
     val expressions = for {
       part <- parts
     } yield {
-      val features = getFeatures(part)
-      input(cg, Seq(features.size().asInstanceOf[Int]), features)
+      val features = pointFeatures(part.coords)
+      val xy = Expression.input(Dim(features.xy.size), features.xy)
+      val matching = Expression.input(Dim(features.matching.size), features.matching)
+      val vgg0 = Expression.input(Dim(features.vgg0.size), features.vgg0)
+      val vgg1 = Expression.input(Dim(features.vgg1.size), features.vgg1)
+      val vgg2 = Expression.input(Dim(features.vgg2.size), features.vgg2)
+      val vggAll = Expression.input(Dim(features.vggAll.size), features.vggAll)
+      PointExpressions(xy, matching, vgg0, vgg1, vgg2, vggAll)
     }
-
     expressions.toArray
   }
 }
+
+case class PointFeatures(xy: FloatVector, matching: FloatVector,
+    vgg0: FloatVector, vgg1: FloatVector, vgg2: FloatVector,
+    vggAll: FloatVector)
+case class PointExpressions(xy: Expression, matching: Expression,
+    vgg0: Expression, vgg1: Expression, vgg2: Expression,
+    vggAll: Expression)
 
 object DiagramFeatures {
   
@@ -49,11 +59,22 @@ object DiagramFeatures {
         case JsArray(Vector(JsNumber(x), JsNumber(y))) => Point(x.toInt, y.toInt)
         case _ => deserializationError("Array of x/y coordinates expected")
       }
-      vec = p.fields("vec").asInstanceOf[JsArray].elements.map(x => x.convertTo[Float])
+      
+      xyVec = new FloatVector(p.fields("xy_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      matchingVec = new FloatVector(p.fields("matching_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      vgg0Vec = new FloatVector(p.fields("vgg_0_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      vgg1Vec = new FloatVector(p.fields("vgg_1_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      vgg2Vec = new FloatVector(p.fields("vgg_2_vec").asInstanceOf[JsArray].elements.map(
+          x => x.convertTo[Float]))
+      vggAll = new FloatVector(vgg0Vec.toSeq ++ vgg1Vec.toSeq ++ vgg2Vec.toSeq)
     } yield {
-      (xy, new FloatVector(vec))
+      (xy, PointFeatures(xyVec, matchingVec, vgg0Vec, vgg1Vec, vgg2Vec, vggAll))
     }
-    
+
     DiagramFeatures(imageId, pointFeatures.toMap)
   }
 }

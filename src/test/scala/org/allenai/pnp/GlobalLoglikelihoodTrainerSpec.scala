@@ -1,22 +1,30 @@
 package org.allenai.pnp
 
-import scala.collection.JavaConverters._
-import org.scalatest._
+import org.allenai.pnp.ExecutionScore.ExecutionScore
+import org.scalatest.FlatSpec
+import org.scalatest.Matchers
+
+import com.jayantkrish.jklol.training.NullLogFunction
+
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.NullLogFunction
 
 class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
-  
-  import DyNetScalaHelpers._
-  initialize(new DynetParams())
+    
+  Initialize.initialize()
 
   val TOLERANCE = 0.01
 
+
+
   "GlobalLoglikelihoodTrainer" should "train" in {
     val vocab = Array(0,1,2)
-    
+
+    val model = PnpModel.init(false)
+    val startParam = model.addParameter("start", Dim(vocab.length))
+    val transitionParam = model.addParameter("transition", Dim(vocab.length * vocab.length))
+
     def lm(k: Int): Pnp[Array[Int]] = {
       if (k == 1) {
         for {
@@ -30,7 +38,8 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
           rest <- lm(k - 1)
           previous = rest.last
           transition <- Pnp.param("transition")
-          params = pickrange(transition, previous * vocab.length, (previous + 1) * vocab.length)
+          params = Expression.pickrange(
+            transition, previous * vocab.length, (previous + 1) * vocab.length)
           choice <- Pnp.choose(vocab, params, k - 1)
         } yield {
           rest ++ Array(choice)
@@ -59,9 +68,6 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
       }
     }
     
-    val model = PnpModel.init(false)
-    val startParam = model.addParameter("start", Seq(vocab.length))
-    val transitionParam = model.addParameter("transition", Seq(vocab.length * vocab.length))
 
     val examples = List(
         PnpExample(lm(3), lm(3), Env.init, makeOracle(Array(0,1,0))),

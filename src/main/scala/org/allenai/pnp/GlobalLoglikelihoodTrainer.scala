@@ -4,29 +4,27 @@ import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
+import scala.util.Random
 
 class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
     val maxSearchSteps: Int, val model: PnpModel, val trainer: Trainer,
     val logFn: LogFunction) {
 
-  import DyNetScalaHelpers._
-  
   def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
       var searchErrors = 0
       logFn.notifyIterationStart(i)
-      for (example <- examples) {
-        val cg = ComputationGraph.getNew
-       
+      for (example <- Random.shuffle(examples)) {
+        ComputationGraph.renew()
+
         val env = example.env
-        val graph = model.getComputationGraph(cg)
-       
+        val context = PnpInferenceContext.init(model).setLog(logFn)
+
         // Compute the distribution over correct executions.
         logFn.startTimer("pp_loglikelihood/conditional")
-        val conditional = example.conditional.beamSearch(beamSize, maxSearchSteps, env,
-            example.conditionalExecutionScore, graph, logFn)
+        val conditional = example.conditional.beamSearch(beamSize, maxSearchSteps,
+            env, context.addExecutionScore(example.conditionalExecutionScore))
         val conditionalPartitionFunction = conditional.partitionFunction
         logFn.stopTimer("pp_loglikelihood/conditional")
 
@@ -35,19 +33,18 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
         // Compute the unconditional distribution over 
         // all executions.
         logFn.startTimer("pp_loglikelihood/unconditional")
-        val unconditional = example.unconditional.beamSearch(beamSize, maxSearchSteps,
-            env, null, graph, logFn)
+        val unconditional = example.unconditional.beamSearch(beamSize, maxSearchSteps, env, context)
         val unconditionalPartitionFunction = unconditional.partitionFunction
         logFn.stopTimer("pp_loglikelihood/unconditional")
 
-        val conditionalLogSumProb = marginalsToLogProbExpression(conditional, cg)
-        val unconditionalLogSumProb = marginalsToLogProbExpression(unconditional, cg)
+        val conditionalLogSumProb = marginalsToLogProbExpression(conditional)
+        val unconditionalLogSumProb = marginalsToLogProbExpression(unconditional)
         
         if (conditionalLogSumProb.isDefined && unconditionalLogSumProb.isDefined) {
           val lossExpr = unconditionalLogSumProb.get - conditionalLogSumProb.get
 
-          loss += as_scalar(cg.incremental_forward(lossExpr))
-          cg.backward(lossExpr)
+          loss += ComputationGraph.incrementalForward(lossExpr).toFloat
+          ComputationGraph.backward(lossExpr)
           trainer.update(1.0f)
         } else {
           searchErrors += 1
@@ -55,20 +52,19 @@ class GlobalLoglikelihoodTrainer(val epochs: Int, val beamSize: Int,
       }
       logFn.logStatistic(i, "search errors", searchErrors) 
       // println(i + "  loss: " + loss)
-      trainer.update_epoch()
+      trainer.updateEpoch()
     }
   }
   
-  private def marginalsToLogProbExpression[A](marginals: PnpBeamMarginals[A],
-      cg: ComputationGraph): Option[Expression] = {
-    val exScores = marginals.executions.map(_.env.getScore(false, cg))
+  private def marginalsToLogProbExpression[A](marginals: PnpBeamMarginals[A]): Option[Expression] = {
+    val exScores = marginals.executions.map(_.env.getScore(false))
 
     if (exScores.length == 0) {
       None 
     } else if (exScores.length == 1) {
       Some(exScores(0))
     } else {
-      Some(logsumexp(new ExpressionVector(exScores)))
+      Some(Expression.logSumExp(new ExpressionVector(exScores)))
     }
   }
 }

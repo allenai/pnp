@@ -10,12 +10,11 @@ import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import edu.cmu.dynet.dynet_swig._
 import com.jayantkrish.jklol.training.DefaultLogFunction
 
 class BsoTrainerSpec extends FlatSpec with Matchers {
   
-  initialize(new DynetParams())
+  Initialize.initialize()
   
   val TOLERANCE = 0.01
 
@@ -45,11 +44,11 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     val inputIndexes = input.split(" ").map(x => sourceVocab.getIndex(x)).toArray
     val expectedIndexes = expected.split(" ").map(x => targetVocab.getIndex(x)).toArray
     val unconditional = seq2seq.applyEncoded(inputIndexes)
-      
-    val cg = ComputationGraph.getNew
-    val graph = seq2seq.model.getComputationGraph(cg)
 
-    val marginals = unconditional.beamSearch(10, 10, Env.init, null, graph, new NullLogFunction)
+    ComputationGraph.renew()
+    val context = PnpInferenceContext.init(seq2seq.model)
+
+    val marginals = unconditional.beamSearch(10, 10, Env.init, context)
     
     marginals.executions.size should be > 0
     /*
@@ -61,22 +60,23 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
     marginals.executions(0).value.toList should be (expectedIndexes.toList)
   }
 
+
   "BsoTrainerSpec" should "train seq2seq models" in {
     val seq2seq = getSeq2Seq()
     val model = seq2seq.model
-    
+
     val examples = for {
       d <- indexedData
     } yield {
       val unconditional = seq2seq.applyEncoded(d._1)
-      val oracle = seq2seq.generateLabelCostEncoded(d._2)
+      val oracle = seq2seq.getMarginCostEncoded(d._2)
       PnpExample(unconditional, unconditional, Env.init, oracle)
     }
-    
+
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val trainer = new BsoTrainer(50, 2, 10, model, sgd, new NullLogFunction())
     trainer.train(examples)
-    
+
     for (d <- rawData) {
       runTest(seq2seq, d._1, d._2)
     }

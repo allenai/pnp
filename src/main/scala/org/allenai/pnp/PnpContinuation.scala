@@ -8,10 +8,10 @@ sealed trait PnpContinuation[A, B] {
   }
   def append[D](g: PnpContinuation[B, D]): PnpContinuation[A, D]
 
-  def searchStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[B],
+  def searchStep(arg: A, env: Env, logProb: Double, context: PnpInferenceContext, queue: PnpSearchQueue[B],
       finished: PnpSearchQueue[B]): Unit
       
-  def sampleStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[B],
+  def sampleStep(arg: A, env: Env, logProb: Double, context: PnpInferenceContext,  queue: PnpSearchQueue[B],
       finished: PnpSearchQueue[B]): Unit
 }
 
@@ -26,14 +26,14 @@ case class PnpContinuationFunction[A, B](val f: A => Pnp[B]) extends PnpContinua
     PnpContinuationChain(f, g)
   }
   
-  override def searchStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[B],
+  override def searchStep(arg: A, env: Env, logProb: Double, context: PnpInferenceContext, queue: PnpSearchQueue[B],
       finished: PnpSearchQueue[B]): Unit = {
-    f(arg).searchStep(env, logProb, endContinuation, queue, finished)
+    f(arg).searchStep(env, logProb, context, endContinuation, queue, finished)
   }
   
-  override def sampleStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[B],
+  override def sampleStep(arg: A, env: Env, logProb: Double, context: PnpInferenceContext, queue: PnpSearchQueue[B],
       finished: PnpSearchQueue[B]): Unit = {
-    f(arg).sampleStep(env, logProb, endContinuation, queue, finished)
+    f(arg).sampleStep(env, logProb, context, endContinuation, queue, finished)
   }
 }
 
@@ -48,14 +48,14 @@ case class PnpContinuationChain[A, B, C](val f: A => Pnp[B], val cont: PnpContin
     PnpContinuationChain(f, cont.append(g))
   }
   
-  override def searchStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[C],
+  override def searchStep(arg: A, env: Env, logProb: Double, context: PnpInferenceContext, queue: PnpSearchQueue[C],
       finished: PnpSearchQueue[C]): Unit = {
-    f(arg).searchStep(env, logProb, cont, queue, finished)
+    f(arg).searchStep(env, logProb, context, cont, queue, finished)
   }
   
-  override def sampleStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[C],
+  override def sampleStep(arg: A, env: Env, logProb: Double, context: PnpInferenceContext, queue: PnpSearchQueue[C],
       finished: PnpSearchQueue[C]): Unit = {
-    f(arg).sampleStep(env, logProb, cont, queue, finished)
+    f(arg).sampleStep(env, logProb, context, cont, queue, finished)
   }
 }
 
@@ -72,13 +72,13 @@ case class PnpEndContinuation[A]() extends PnpContinuation[A, A] {
     }
   }
 
-  override def searchStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[A],
+  override def searchStep(arg: A, env: Env, logProb: Double, context: PnpInferenceContext, queue: PnpSearchQueue[A],
       finished: PnpSearchQueue[A]): Unit = {
-    finished.offer(Pnp.value(arg), env, logProb, null, null, env)
+    finished.offer(Pnp.value(arg), env, logProb, context, null, null)
   }
 
-  override def sampleStep(arg: A, env: Env, logProb: Double, queue: PnpSearchQueue[A],
+  override def sampleStep(arg: A, env: Env, logProb: Double, context: PnpInferenceContext, queue: PnpSearchQueue[A],
       finished: PnpSearchQueue[A]): Unit = {
-    finished.offer(Pnp.value(arg), env, logProb, null, null, env)
+    finished.offer(Pnp.value(arg), env, logProb, context, null, null)
   }
 }
