@@ -1,18 +1,15 @@
 package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
+import org.allenai.pnp.{Env, Pnp, PnpInferenceContext, PnpModel}
 
-import org.allenai.pnp.Env
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
-
 import com.jayantkrish.jklol.ccg.lambda.ExplicitTypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.cmu.dynet._
-import org.allenai.pnp.PnpModel
 
 class SemanticParserSpec extends FlatSpec with Matchers {
   
@@ -58,10 +55,9 @@ class SemanticParserSpec extends FlatSpec with Matchers {
         entityLinking)
 
     ComputationGraph.renew()
-    val compGraph = parser.model.getComputationGraph()
-    
-    val results = exprs.beamSearch(
-        1, -1, Env.init, oracle, compGraph, new NullLogFunction()).executions
+    val context = PnpInferenceContext.init(model).addExecutionScore(oracle)
+
+    val results = exprs.beamSearch(1, -1, Env.init, context).executions
     for (result <- results) {
       println("  " + result)
     }

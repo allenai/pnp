@@ -11,7 +11,6 @@ import org.allenai.pnp.CompGraph
 import org.allenai.pnp.Env
 import org.allenai.pnp.ExecutionScore.ExecutionScore
 import org.allenai.pnp.Pnp
-import org.allenai.pnp.Pnp.computationGraph
 import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
@@ -41,7 +40,7 @@ class MatchingModel(var config: MatchingModelConfig,
     val targetParts = Random.shuffle(target.parts)
 
     for {
-      cg <- computationGraph()
+      cg <- Pnp.computationGraph()
       preprocessing = preprocess(source, sourceLabel, target, targetParts, cg)
       // pointerNetInitialInput = parameter(cg.cg, cg.getParameter(POINTER_NET_INIT))
       
@@ -453,7 +452,7 @@ class MatchingModel(var config: MatchingModelConfig,
       val remainingArray = remainingSourceParts.toArray
 
       for {
-        cg <- computationGraph()
+        cg <- Pnp.computationGraph()
         (scoresExpression, nextPointerNetState) = getScores(targetPart, remainingArray,
             previousMatching, cg, preprocessing, pointerNetState,
             preprocessing.targetFeatures(targetPart.ind).matching)

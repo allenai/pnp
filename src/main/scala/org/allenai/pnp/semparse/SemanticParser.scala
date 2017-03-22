@@ -3,16 +3,15 @@ package org.allenai.pnp.semparse
 import scala.collection.JavaConverters._
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.ListBuffer
-import scala.collection.mutable.{ Map => MutableMap }
+import scala.collection.mutable.{Map => MutableMap}
 import scala.collection.mutable.MultiMap
-import scala.collection.mutable.{ Set => MutableSet }
+import scala.collection.mutable.{Set => MutableSet}
 import scala.collection.mutable.SetBuilder
 
 import org.allenai.pnp.CompGraph
 import org.allenai.pnp.Env
 import org.allenai.pnp.ExecutionScore.ExecutionScore
 import org.allenai.pnp.Pnp
-import org.allenai.pnp.Pnp._
 import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
@@ -21,7 +20,6 @@ import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.cmu.dynet._
 
 /** A parser mapping token sequences to a distribution over
@@ -44,12 +42,13 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   /** Compute the input encoding of a list of tokens
     */
   def encode(tokens: Array[Int], entityLinking: EntityLinking): Pnp[InputEncoding] = {
+
     for {
-      compGraph <- computationGraph()
+      compGraph <- Pnp.computationGraph()
       _ = initializeRnns(compGraph)
       inputEncoding = rnnEncode(compGraph, tokens)
       entityEncoding = encodeEntities(compGraph, entityLinking, tokens)
-      // entityEncoding = null
+      //entityEncoding = null
     } yield {
       InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
           inputEncoding._4, entityEncoding)
@@ -160,15 +159,14 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       
       // Choose the root type for the logical form given the
       // final output of the LSTM.
-      rootWeights <- param(SemanticParser.ROOT_WEIGHTS_PARAM)
-      rootBias <- param(SemanticParser.ROOT_BIAS_PARAM)
+      rootWeights <- Pnp.param(SemanticParser.ROOT_WEIGHTS_PARAM)
+      rootBias <- Pnp.param(SemanticParser.ROOT_BIAS_PARAM)
       rootScores = (rootWeights * input.sentEmbedding) + rootBias
-      rootType <- choose(actionSpace.rootTypes, rootScores, state)
+      rootType <- Pnp.choose(actionSpace.rootTypes, rootScores, state)
       
       // Recursively generate a logical form using an LSTM to
       // select logical form templates to expand on typed holes
       // in the partially-generated logical form.  
-      cg <- computationGraph()
       expr <- parse(input, actionBuilder, state.addRootType(rootType))
     } yield {
       expr
@@ -180,9 +178,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     // Initialize the output LSTM before generating the logical form.
     builder.startNewSequence(input.rnnState)
     val startRnnState = builder.state()
-    
+
     for {
-      beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS + startState.unfilledHoleIds(0).t)
+      beginActionsParam <- Pnp.param(SemanticParser.BEGIN_ACTIONS + startState.unfilledHoleIds(0).t)
       e <- parse(input, builder, beginActionsParam, startRnnState, startState)
     } yield {
       e
@@ -233,7 +231,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val nextRnnState = builder.state
       for {
         // Compute an attention vector
-        attentionWeights <- param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
+        attentionWeights <- Pnp.param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
         wordAttentions = Expression.transpose(
           Expression.softmax(input.encodedTokenMatrix * attentionWeights * rnnOutputDropout))
 
@@ -251,8 +249,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         rnnActionScores = actionWeights * rnnOutputDropout
         */
 
-        actionHiddenWeights <- param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
-        actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
+        actionHiddenWeights <- Pnp.param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
+        actionHiddenWeights2 <- Pnp.param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
         attentionAndRnn = concatenateArray(Array(attentionVector, rnnOutputDropout))
         actionHidden = Expression.tanh(actionHiddenWeights * attentionAndRnn)
         actionHiddenDropout = if (dropoutProb > 0.0) {
@@ -266,8 +264,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         actionScores = Expression.pickrange(actionHiddenScores, 0, baseTemplates.length)
 
         // Score the entity templates
-        entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
-        entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
+        entityBias <- Pnp.param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
+        entityWeights <- Pnp.param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
         allScores = if (entities.size > 0) {
           // TODO: How should we score these entities using attentions?
           /*
@@ -286,12 +284,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         // the parser's state with. The tag for this choice is 
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
-        templateTuple <- choose(allTemplates.zipWithIndex.toArray, allScores, state)
+        templateTuple <- Pnp.choose(allTemplates.zipWithIndex.toArray, allScores, state)
         nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
         // Get the LSTM input parameters associated with the chosen
         // template.
-        cg <- computationGraph()
+        cg <- Pnp.computationGraph()
         actionLookup = cg.getLookupParameter(SemanticParser.ACTION_LOOKUP_PARAM + hole.t)
         entityLookup = cg.getLookupParameter(SemanticParser.ENTITY_LOOKUP_PARAM + hole.t)
         index = templateTuple._2

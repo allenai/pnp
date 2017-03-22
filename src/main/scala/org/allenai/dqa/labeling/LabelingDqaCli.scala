@@ -2,26 +2,22 @@ package org.allenai.dqa.labeling
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
 import com.jayantkrish.jklol.ccg.lambda.ExplicitTypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.SemanticParser
-import org.allenai.pnp.PnpExample
-import org.allenai.pnp.PnpModel
-import org.allenai.pnp.Env
-import org.allenai.pnp.Pnp
+import org.allenai.pnp._
+
 import com.jayantkrish.jklol.training.DefaultLogFunction
-import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.semparse.ActionSpace
+
 import com.google.common.collect.HashMultimap
 
 class LabelingDqaCli extends AbstractCli {
@@ -104,7 +100,8 @@ class LabelingDqaCli extends AbstractCli {
     for (ex <- examples) {
       ComputationGraph.renew()
       val lfDist = parser.generateExpression(ex.tokenIds, ex.entityLinking)
-      val dist = lfDist.beamSearch(100, 100, Env.init, null, parser.model.getComputationGraph(), null)
+      val context = PnpInferenceContext.init(parser.model)
+      val dist = lfDist.beamSearch(100, 100, Env.init, context)
       println(ex.ex.tokens.mkString(" "))
       for (x <- dist.executions) {
         println("  "  + x)
@@ -136,7 +133,8 @@ class LabelingDqaCli extends AbstractCli {
     for (ex <- examples) {
       ComputationGraph.renew()
       val pp = p3.exampleToPnpExample(ex).unconditional
-      val dist = pp.beamSearch(100, 100, Env.init, null, model.getComputationGraph(), null)
+      val context = PnpInferenceContext.init(model)
+      val dist = pp.beamSearch(100, 100, Env.init, context)
 
       println(ex.ex.tokens.mkString(" "))
       println(ex.ex.answerOptions)

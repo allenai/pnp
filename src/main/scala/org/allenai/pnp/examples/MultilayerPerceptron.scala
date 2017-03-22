@@ -2,20 +2,13 @@ package org.allenai.pnp.examples
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-import org.allenai.pnp.CompGraph
-import org.allenai.pnp.Env
-import org.allenai.pnp.ExecutionScore
-import org.allenai.pnp.Pnp
+import org.allenai.pnp._
 import org.allenai.pnp.Pnp._
-import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.util.IndexedList
 import edu.cmu.dynet._
-import org.allenai.pnp.PnpExample
-
 import com.jayantkrish.jklol.training.NullLogFunction
-import org.allenai.pnp.BsoTrainer
 
 class MultilayerPerceptron {
   
@@ -31,7 +24,6 @@ object MultilayerPerceptron {
   
   def mlp(x: FloatVector): Pnp[Boolean] = {
     for {
-      cg <- computationGraph()
       weights1 <- param("layer1Weights")
       bias1 <- param("layer1Bias")
       weights2 <- param("layer2Weights")
@@ -58,8 +50,8 @@ object MultilayerPerceptron {
     xs.foldLeft(Pnp.value(List[Boolean]()))((x, y) => for {
       cur <- mlp(y)
       rest <- x
-  
-      cg <- computationGraph()
+
+      cg <- Pnp.computationGraph()
       _ <- if (rest.length > 0) {
         score(labelNn(cur, rest.head, cg))
       } else {
@@ -78,7 +70,7 @@ object MultilayerPerceptron {
     model.addParameter("layer1Weights", Dim(HIDDEN_DIM, FEATURE_VECTOR_DIM))
     model.addParameter("layer1Bias", Dim(HIDDEN_DIM))
     model.addParameter("layer2Weights", Dim(2, HIDDEN_DIM))
-    
+
     val featureVector = new FloatVector(Seq(1.0f, 2f, 3f))
     val dist = mlp(featureVector)
     val marginals = dist.beamSearch(2, model)

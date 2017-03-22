@@ -2,9 +2,7 @@ package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
-import org.allenai.pnp.Env
-import org.allenai.pnp.PnpModel
+import org.allenai.pnp.{Env, PnpInferenceContext, PnpModel}
 
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.cli.TrainSemanticParser
@@ -15,7 +13,6 @@ import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.experiments.geoquery.GeoqueryUtil
 import com.jayantkrish.jklol.training.NullLogFunction
-
 import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
@@ -83,6 +80,7 @@ class TestSemanticParserCli extends AbstractCli() {
     var numCorrectAt10 = 0
     for (e <- examples) {
       ComputationGraph.renew()
+      val context = PnpInferenceContext.init(parser.model)
 
       println(e.getSentence.getWords.asScala.mkString(" "))
       println(e.getSentence.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
@@ -92,8 +90,7 @@ class TestSemanticParserCli extends AbstractCli() {
       val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
-      val results = dist.beamSearch(5, 75, Env.init, null,
-          parser.model.getComputationGraph(), new NullLogFunction())
+      val results = dist.beamSearch(5, 75, Env.init, context)
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>

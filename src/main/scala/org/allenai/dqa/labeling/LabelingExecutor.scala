@@ -1,20 +1,14 @@
 package org.allenai.dqa.labeling
 
 import scala.collection.JavaConverters._
-
-import org.allenai.pnp.CompGraph
-import org.allenai.pnp.Env
+import org.allenai.pnp._
 import org.allenai.pnp.ExecutionScore.ExecutionScore
-import org.allenai.pnp.Pnp
-import org.allenai.pnp.PnpUtil
 
 import com.google.common.collect.HashMultimap
 import com.google.common.collect.Multimap
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.cmu.dynet._
-import org.allenai.pnp.PnpModel
 
 /**
  * Executes logical forms against a diagram to produce a
@@ -70,7 +64,7 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
         .asScala.map(parts.get(_)).toArray
 
       cg <- Pnp.computationGraph()
-      // TODO: don't treat parts as independent.        
+      // TODO: don't treat parts as independent.
       partLabels <- PnpUtil.map((x: Part) => labelPart(x, permittedLabels, cg, diagram),
           diagram.parts.toList) 
     } yield {
