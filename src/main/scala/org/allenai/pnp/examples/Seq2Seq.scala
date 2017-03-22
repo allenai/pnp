@@ -2,13 +2,23 @@ package org.allenai.pnp.examples
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-import org.allenai.pnp._
-import org.allenai.pnp.Pnp._
+
+import org.allenai.pnp.BsoTrainer
+import org.allenai.pnp.CompGraph
+import org.allenai.pnp.Env
+import org.allenai.pnp.ExecutionScore.ExecutionScore
+import org.allenai.pnp.LoglikelihoodTrainer
+import org.allenai.pnp.Pnp
+import org.allenai.pnp.PnpExample
+import org.allenai.pnp.PnpInferenceContext
+import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
-import com.jayantkrish.jklol.util.IndexedList
-import edu.cmu.dynet._
+import com.jayantkrish.jklol.training.DefaultLogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
+import com.jayantkrish.jklol.util.IndexedList
+
+import edu.cmu.dynet._
 
 /**
  * Basic sequence-to-sequence model. This model encodes
@@ -43,7 +53,7 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
       _ = outputBuilder.startNewSequence(inputEncoding)
       startRnnState = outputBuilder.state()
 
-      startInput <- param(TARGET_START_INPUT)
+      startInput <- Pnp.param(TARGET_START_INPUT)
 
       // Generate target sequence. output represents a single
       // possible target sequence.
@@ -108,13 +118,13 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
     for {
       // Select an action as a linear function on top of the LSTM's
       // output. outputWeights has one row per word in the target vocab.
-      targetWeights <- param(TARGET_WEIGHTS)
+      targetWeights <- Pnp.param(TARGET_WEIGHTS)
       targetTokenScores = targetWeights * lstmOutput
       
       // Make a discrete choice of the target token. targetTokenIndex
       // represents a single possible token, but the final probabilistic
       // neural program will represent the space of all possible tokens.
-      targetTokenIndex <- choose(targetVocabInds, targetTokenScores, tokenIndex)
+      targetTokenIndex <- Pnp.choose(targetVocabInds, targetTokenScores, tokenIndex)
       
       // Get the LSTM input associated with the chosen target token, which
       // is necessary to generate the next target.
@@ -124,7 +134,7 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
       
       v <- if (targetTokenIndex == endTokenIndex) {
         // If we chose the end of sequence token, we're done.
-        value(List(endTokenIndex))
+        Pnp.value(List(endTokenIndex))
       } else {
         // Otherwise, recursively generate the rest of the sequence,
         // add the chosen token to the front, and return that.
@@ -139,11 +149,20 @@ class Seq2Seq[S, T](val sourceVocab: IndexedList[S], val targetVocab: IndexedLis
     }
   }
 
-  def generateLabelCost(targetTokens: Seq[T]): Seq2SeqExecutionScore = {
-    new Seq2SeqExecutionScore(targetTokens.map(x => targetVocab.getIndex(x)).toArray)
+  def getLabelCost(targetTokens: Seq[T]): ExecutionScore = {
+    getLabelCostEncoded(targetTokens.map(x => targetVocab.getIndex(x)))
   }
 
-  def generateLabelCostEncoded(targetTokens: Seq[Int]): Seq2SeqExecutionScore = {
+  def getLabelCostEncoded(targetTokens: Seq[Int]): ExecutionScore = {
+    val score = new Seq2SeqExecutionScore(targetTokens.toArray)
+    (x, y, z) => if (score(x, y, z) > 0.0) { Double.NegativeInfinity } else { 0.0 }
+  }
+
+  def getMarginCost(targetTokens: Seq[T]): ExecutionScore = {
+    getMarginCostEncoded(targetTokens.map(x => targetVocab.getIndex(x)))
+  }
+  
+  def getMarginCostEncoded(targetTokens: Seq[Int]): ExecutionScore = {
     new Seq2SeqExecutionScore(targetTokens.toArray)
   }
 }
@@ -162,7 +181,7 @@ class Seq2SeqExecutionScore(val targetTokensLabel: Array[Int]) extends Execution
       if (tokenIndex < targetTokensLabel.length && targetTokensLabel(tokenIndex) == chosen) {
         0.0
       } else {
-        Double.NegativeInfinity
+        1.0
       }
     } else {
       0.0
@@ -232,6 +251,9 @@ object Seq2Seq {
     val model = PnpModel.init(false)
     val seq2seq = Seq2Seq.create(sourceVocab, targetVocab, endTokenIndex, model)
 
+    // Flag controlling the training algorithm.
+    val trainBso = true
+    
     // 2. Generate training examples.
     val trainingExamples = for {
       d <- trainingDataTokenized
@@ -247,7 +269,11 @@ object Seq2Seq {
       // a cost to each program execution. In this case we're using a cost
       // function. 
       val conditionalPnp = unconditionalPnp
-      val oracle = seq2seq.generateLabelCost(d._2)
+      val oracle = if (trainBso) {
+        seq2seq.getMarginCost(d._2)
+      } else {
+        seq2seq.getLabelCost(d._2)
+      }
       PnpExample(unconditionalPnp, conditionalPnp, Env.init, oracle)
     }
     
@@ -255,18 +281,20 @@ object Seq2Seq {
     // an objective function.
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     
-    // Train using beam search optimization, similar to LaSO.
-    // This optimizes the neural network parameters such that the
-    // correct target sequence stays on the beam.
-    model.locallyNormalized = false
-    val trainer = new BsoTrainer(50, beamSize, maxBeamSteps, model, sgd, new NullLogFunction())
-    
-    // Train with maximum likelihood (i.e., the usual way
-    // seq2seq models are trained).
-    // model.locallyNormalized = true
-    // val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
-    
-    trainer.train(trainingExamples)
+    if (trainBso) {
+      // Train using beam search optimization, similar to LaSO.
+      // This optimizes the neural network parameters such that the
+      // correct target sequence stays on the beam.
+      model.locallyNormalized = false
+      val trainer = new BsoTrainer(50, beamSize, maxBeamSteps, model, sgd, new NullLogFunction())
+      trainer.train(trainingExamples)
+    } else {
+      // Train with maximum likelihood (i.e., the usual way
+      // seq2seq models are trained).
+      model.locallyNormalized = true
+      val trainer = new LoglikelihoodTrainer(50, 100, false, model, sgd, new DefaultLogFunction())
+      trainer.train(trainingExamples)
+    }
     
     // 4. Apply the trained model to new data.
     for (d <- testDataTokenized) {

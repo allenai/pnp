@@ -7,6 +7,7 @@ import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 
 import edu.cmu.dynet._
+import scala.util.Random
 
 class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleExecutions: Boolean,
     val model: PnpModel, val trainer: Trainer, val log: LogFunction) {
@@ -18,7 +19,8 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
       var loss = 0.0
       var searchErrors = 0
       log.notifyIterationStart(i)
-      for (example <- examples) {
+
+      for (example <- Random.shuffle(examples)) {
         ComputationGraph.renew()
 
         val env = example.env
@@ -35,8 +37,8 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
         
         val lossExpr = if (exLosses.length == 0) {
           Preconditions.checkState(sumMultipleExecutions,
-              "Found %s conditional executions (expected exactly 1) for example: %s",
-              conditional.executions.size.asInstanceOf[AnyRef], example)
+            "Found %s conditional executions (expected exactly 1) for example: %s",
+            conditional.executions.size.asInstanceOf[AnyRef], example)
 
           null
         } else if (exLosses.length == 1) {
@@ -46,13 +48,13 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
           // single label per example doesn't work "by accident" 
           // with an execution score that permits multiple labels.
           Preconditions.checkState(sumMultipleExecutions,
-              "Found %s conditional executions (expected exactly 1) for example: %s",
-              conditional.executions.size.asInstanceOf[AnyRef], example)
+            "Found %s conditional executions (expected exactly 1) for example: %s",
+            conditional.executions.size.asInstanceOf[AnyRef], example)
 
           Expression.logSumExp(new ExpressionVector(exLosses))
         }
         log.stopTimer("pp_loglikelihood/build_loss")
-        
+
         if (lossExpr != null) {
           log.startTimer("pp_loglikelihood/eval_loss")
           loss += ComputationGraph.incrementalForward(lossExpr).toFloat

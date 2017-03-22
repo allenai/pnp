@@ -2,6 +2,7 @@ package org.allenai.pnp
 
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.util.KbestQueue
+import ExecutionScore.ExecutionScore
 
 trait PnpSearchQueue[A] {
   def offer(value: Pnp[A], env: Env, logProb: Double, context: PnpInferenceContext, tag: Any, choice: Any): Unit

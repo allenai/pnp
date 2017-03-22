@@ -51,7 +51,8 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val label = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
     val entityLinking = EntityLinking(List())
     val oracle = parser.generateExecutionOracle(label, entityLinking, typeDeclaration).get
-    val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)), entityLinking)
+    val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)),
+        entityLinking)
 
     ComputationGraph.renew()
     val context = PnpInferenceContext.init(model).addExecutionScore(oracle)

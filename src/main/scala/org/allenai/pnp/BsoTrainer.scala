@@ -1,11 +1,13 @@
 package org.allenai.pnp
 
 import scala.collection.mutable.ListBuffer
+import scala.util.Random
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.util.KbestQueue
 
+import ExecutionScore.ExecutionScore
 import edu.cmu.dynet._
 
 /**
@@ -21,12 +23,14 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
   Preconditions.checkArgument(model.locallyNormalized == false,
       "BsoTrainer expects model to be not locally normalized".asInstanceOf[Any])
 
+  import BsoTrainer.EXECUTION_INCORRECT_VAR_NAME
+
   def train[A](examples: Seq[PnpExample[A]]): Unit = {
     for (i <- 0 until epochs) {
       var loss = 0.0
       log.notifyIterationStart(i)
-      for (example <- examples) {
-        loss += doExampleUpdate(example)
+      for (example <- Random.shuffle(examples)) {
+        loss +=  doExampleUpdate(example)
       }
       
       trainer.updateEpoch()
@@ -41,11 +45,10 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     var loss = 0.0
 
     val env = example.env
-    val stateCost = if (example.conditionalExecutionScore == null) {
-      ExecutionScore.zero
-    } else {
-      example.conditionalExecutionScore
-    }
+    Preconditions.checkArgument(example.conditionalExecutionScore != null,
+        "BsoTrainer requires an execution score".asInstanceOf[AnyRef])
+    val stateCost = example.conditionalExecutionScore
+    val graph = model.getComputationGraph()
 
     val queue = new BsoPnpQueue[A](beamSize, stateCost)
     val finished = new BsoPnpQueue[A](beamSize, stateCost)
@@ -90,8 +93,11 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       log.stopTimer("bso/beam_search/get_executions")
 
       var nextBeamSize = -1
+
+      // Check for a margin violation. Note that the cost (margin)
+      // of worstIncorrectEx is included in worstIncorrectEx.logProb.
       if (numIters != 0 && bestCorrectEx != null && worstIncorrectEx != null &&
-          worstIncorrectEx.logProb + 1 > bestCorrectEx.logProb) {
+          worstIncorrectEx.logProb > bestCorrectEx.logProb) {
         // Margin violation
         // println("m: " + numIters + " " + worstIncorrectEx.logProb + " " + bestCorrectEx.logProb)
 
@@ -99,10 +105,9 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         log.startTimer("bso/beam_search/margin_violation")
         
         val beamScoreExpr = worstIncorrectEx.env.getScore(false)
+        val margin = worstIncorrectEx.env.getVar[Double](EXECUTION_INCORRECT_VAR_NAME)
         val correctScoreExpr = bestCorrectEx.env.getScore(false)
-
-        // XXX: allow different costs.
-        losses += ((beamScoreExpr + 1) - correctScoreExpr)
+        losses += ((beamScoreExpr + margin.toFloat) - correctScoreExpr)
 
         // Continue the search with the best correct execution.
         beam(0) = bestCorrectEx
@@ -113,7 +118,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         // No margin violation. Queue up all beam executions for 
         // the next search step.
         for (i <- 0 until beamSize) {
-          beam(i) = queue.queue.getItems()(i)._1 
+          beam(i) = queue.queue.getItems()(i)
         }
 
         nextBeamSize = beamSize
@@ -152,16 +157,16 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     }
 
     if (finalBestIncorrect != null && finalBestCorrect != null &&
-        finalBestIncorrect.logProb + 1 > finalBestCorrect.logProb) {
-        // Margin violation
+        finalBestIncorrect.logProb > finalBestCorrect.logProb) {
+      // Margin violation
       // println("m: end " + finalBestIncorrect.logProb + " " + finalBestCorrect.logProb)
 
       // Add to the loss.
       val beamScoreExpr = finalBestIncorrect.env.getScore(false)
+      val margin = finalBestIncorrect.env.getVar[Double](EXECUTION_INCORRECT_VAR_NAME)
       val correctScoreExpr = finalBestCorrect.env.getScore(false)
 
-      // XXX: allow different costs.
-      losses += ((beamScoreExpr + 1) - correctScoreExpr)
+      losses += ((beamScoreExpr + margin.toFloat) - correctScoreExpr)
     }
 
     if (losses.size > 0) {
@@ -183,32 +188,41 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
 
 class BsoPnpQueue[A](size: Int, val stateCost: ExecutionScore) extends PnpSearchQueue[A] {
 
-  val queue = new KbestQueue(size, Array.empty[(SearchState[A], Double)])
+  val queue = new KbestQueue(size, Array.empty[SearchState[A]])
   val correctQueue = new KbestQueue(size, Array.empty[SearchState[A]])
   val incorrectQueue = new KbestQueue(size, Array.empty[SearchState[A]])
-  
-  val EXECUTION_INCORRECT_VAR_NAME = "**bso_execution_incorrect**"
 
+  import BsoTrainer.EXECUTION_INCORRECT_VAR_NAME
+  
   override def offer(value: Pnp[A], env: Env, logProb: Double, context: PnpInferenceContext, tag: Any, choice: Any): Unit = {
     if (logProb > Double.NegativeInfinity) {
       context.log.startTimer("bso/beam_search/search_step/eval_cost")
       val cost = stateCost(tag, choice, env)
       context.log.stopTimer("bso/beam_search/search_step/eval_cost")
       val nextEnv = if (cost != 0.0) {
-        env.setVar(EXECUTION_INCORRECT_VAR_NAME, null)
+        val prevCost = env.getVar(EXECUTION_INCORRECT_VAR_NAME, 0.0)
+        // TODO: we may want to allow different combination functions.
+        // We'd also have to adjust the scoring computation for queuing
+        // below.
+        env.setVar(EXECUTION_INCORRECT_VAR_NAME, (prevCost + cost))
       } else {
         env
       }
-
-      // TODO(joelgrus) is this right?
-      val state = SearchState(value, nextEnv, logProb, tag, choice)
-      queue.offer((state, cost), logProb)
+      
+      val executionScore = logProb + cost
+      val state = SearchState(value, nextEnv, executionScore, tag, choice)
+      queue.offer(state, executionScore)
 
       if (nextEnv.isVarBound(EXECUTION_INCORRECT_VAR_NAME)) {
-        incorrectQueue.offer(state, logProb)
+        incorrectQueue.offer(state, executionScore)
       } else {
-        correctQueue.offer(state, logProb)
+        // Note that cost is 0 in this case.
+        correctQueue.offer(state, executionScore)
       }
     }
   }
+}
+
+object BsoTrainer {
+  val EXECUTION_INCORRECT_VAR_NAME = "**bso_execution_incorrect**"
 }

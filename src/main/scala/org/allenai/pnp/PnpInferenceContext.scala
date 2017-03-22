@@ -1,6 +1,7 @@
 package org.allenai.pnp
 
 import com.jayantkrish.jklol.training.{LogFunction, NullLogFunction}
+import org.allenai.pnp.ExecutionScore.ExecutionScore
 
 class PnpInferenceContext(
   cg: CompGraph = null,

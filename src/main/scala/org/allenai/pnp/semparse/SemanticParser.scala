@@ -3,12 +3,16 @@ package org.allenai.pnp.semparse
 import scala.collection.JavaConverters._
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.ListBuffer
-import scala.collection.mutable.{Map => MutableMap}
+import scala.collection.mutable.{ Map => MutableMap }
 import scala.collection.mutable.MultiMap
-import scala.collection.mutable.{Set => MutableSet}
+import scala.collection.mutable.{ Set => MutableSet }
 import scala.collection.mutable.SetBuilder
-import org.allenai.pnp._
-import org.allenai.pnp.Pnp._
+
+import org.allenai.pnp.CompGraph
+import org.allenai.pnp.Env
+import org.allenai.pnp.ExecutionScore.ExecutionScore
+import org.allenai.pnp.Pnp
+import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -16,6 +20,7 @@ import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
+
 import edu.cmu.dynet._
 
 /** A parser mapping token sequences to a distribution over
@@ -53,7 +58,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
   private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int]
     ): (ExpressionVector, Expression, Expression, Expression) = {
-    import Expression.{lookup, dropout, reshape}
+    import Expression.{ dropout, lookup, reshape }
 
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
     
@@ -100,20 +105,16 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
   def encodeEntities(computationGraph: CompGraph,
       entityLinking: EntityLinking, tokens: Seq[Int]): MultiMap[Type, EntityEncoding] = {
-    import Expression.{lookup, input}
+    import Expression.{ input, lookup }
 
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
     val output = ListBuffer[(Type, EntityEncoding)]()
-    for (entityMatch <- entityLinking.bestEntityMatchesList) {
-      val span = entityMatch._1
-      val entity = entityMatch._2
-      val name = entityMatch._3
-      val score = entityMatch._4
-
+    def encodeBOW(tokenIds: List[Int]): Expression = {
       var lastOutput: Expression = null
-      for (wordId <- name) {
+      for (wordId <- tokenIds) {
         val inputEmbedding = lookup(wordEmbeddings, wordId)
+
         if (lastOutput == null) {
           lastOutput = inputEmbedding
         } else {
@@ -121,15 +122,33 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         }
       }
       Preconditions.checkState(lastOutput != null)
-      
+      // Entity encoding is average of the representations of the corresponding span.
+      lastOutput / tokenIds.length
+    }
+    for (linkedEntityMatch <- entityLinking.bestEntityMatchesList) {
+      val span = linkedEntityMatch._1
+      val entity = linkedEntityMatch._2
+      val tokenIds = linkedEntityMatch._3
+      //val score = linkedEntityMatch._4
+      val encoding = encodeBOW(tokenIds)
       val spanVector = new FloatVector(tokens.length)
       for (i <- 0 until tokens.length) {
         val value = if (i >= span.start && i < span.end) { 1.0 } else { 0.0 }
         spanVector.update(i, value.asInstanceOf[Float])
       }
-      val spanExpression = input(Dim(tokens.length), spanVector)
 
-      output += ((entity.t, EntityEncoding(entity, lastOutput, span, spanExpression)))
+      val spanExpression = input(Dim(tokens.length), spanVector)
+      output += ((entity.t, EntityEncoding(entity, encoding, Some(span), spanExpression)))
+    }
+
+    for (unlinkedEntityMatch <- entityLinking.unlinkedMatches) {
+      val entity = unlinkedEntityMatch._1
+      val tokenIds = unlinkedEntityMatch._2
+      //val score = unlinkedEntityMatch._3
+      val encoding = encodeBOW(tokenIds)
+      val spanVector = new FloatVector(Seq.fill(tokens.length)(0.0f))
+      val spanExpression = input(Dim(tokens.length), spanVector)
+      output += ((entity.t, EntityEncoding(entity, encoding, None, spanExpression)))
     }
 
     SemanticParser.seqToMultimap(output)
@@ -155,10 +174,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       
       // Choose the root type for the logical form given the
       // final output of the LSTM.
-      rootWeights <- param(SemanticParser.ROOT_WEIGHTS_PARAM)
-      rootBias <- param(SemanticParser.ROOT_BIAS_PARAM)
+      rootWeights <- Pnp.param(SemanticParser.ROOT_WEIGHTS_PARAM)
+      rootBias <- Pnp.param(SemanticParser.ROOT_BIAS_PARAM)
       rootScores = (rootWeights * input.sentEmbedding) + rootBias
-      rootType <- choose(actionSpace.rootTypes, rootScores, state)
+      rootType <- Pnp.choose(actionSpace.rootTypes, rootScores, state)
       
       // Recursively generate a logical form using an LSTM to
       // select logical form templates to expand on typed holes
@@ -176,7 +195,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val startRnnState = builder.state()
 
     for {
-      beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS + startState.unfilledHoleIds(0).t)
+      beginActionsParam <- Pnp.param(SemanticParser.BEGIN_ACTIONS + startState.unfilledHoleIds(0).t)
       e <- parse(input, builder, beginActionsParam, startRnnState, startState)
     } yield {
       e
@@ -227,7 +246,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val nextRnnState = builder.state
       for {
         // Compute an attention vector
-        attentionWeights <- param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
+        attentionWeights <- Pnp.param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
         wordAttentions = Expression.transpose(
           Expression.softmax(input.encodedTokenMatrix * attentionWeights * rnnOutputDropout))
 
@@ -245,8 +264,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         rnnActionScores = actionWeights * rnnOutputDropout
         */
 
-        actionHiddenWeights <- param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
-        actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
+        actionHiddenWeights <- Pnp.param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
+        actionHiddenWeights2 <- Pnp.param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
         attentionAndRnn = concatenateArray(Array(attentionVector, rnnOutputDropout))
         actionHidden = Expression.tanh(actionHiddenWeights * attentionAndRnn)
         actionHiddenDropout = if (dropoutProb > 0.0) {
@@ -260,17 +279,19 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         actionScores = Expression.pickrange(actionHiddenScores, 0, baseTemplates.length)
 
         // Score the entity templates
-        entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
-        entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
+        entityBias <- Pnp.param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
+        entityWeights <- Pnp.param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
+
         allScores = if (entities.size > 0) {
-          // TODO: How should we score these entities using attentions?
-          /*
-            entityChoiceScore = dot_product(entityWeights, rnnOutputDropout) + entityBias 
-            entityScores = concatenate(entityVectors.map(v => dot_product(v, attentionVector)
-                + entityChoiceScore))
-           */
-          
-          val entityScores = concatenateArray(entities.map(x => wordAttentions * x.spanVector))
+          // Note: We have two possibilities to score entities here.
+          // The second one that uses entity spans worked better for GeoQuery.
+          // Option 1:
+          val entityChoiceScore = Expression.dotProduct(entityWeights, rnnOutputDropout) + entityBias
+          val entityScores = concatenateArray(entityVectors.map(v => Expression.dotProduct(v, attentionVector)
+                        + entityChoiceScore))
+
+          // Option 2:
+          //val entityScores = concatenateArray(entities.map(x => wordAttentions * x.spanVector))
           concatenateArray(Array(actionScores, entityScores))
         } else {
           actionScores
@@ -280,7 +301,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         // the parser's state with. The tag for this choice is 
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
-        templateTuple <- choose(allTemplates.zipWithIndex.toArray, allScores, state)
+        templateTuple <- Pnp.choose(allTemplates.zipWithIndex.toArray, allScores, state)
         nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
         // Get the LSTM input parameters associated with the chosen
@@ -340,7 +361,6 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val templates = actionSpace.getTemplates(curType) ++
         currentScope.getVariableTemplates(curType) ++
         entityLinking.getEntitiesWithType(curType).map(_.template)
-        
       val matches = templates.filter(_.matches(expIndex, exp, typeMap))
       if (matches.size != 1) {
         println("Found " + matches.size + " for expression " + exp.getSubexpression(expIndex) +
@@ -547,7 +567,7 @@ case class InputEncoding(val tokens: Array[Int], val rnnState: ExpressionVector,
     val entityEncoding: MultiMap[Type, EntityEncoding]) {
 }
 
-case class EntityEncoding(val entity: Entity, val vector: Expression, val span: Span,
+case class EntityEncoding(val entity: Entity, val vector: Expression, val span: Option[Span],
     val spanVector: Expression) {
 }
 

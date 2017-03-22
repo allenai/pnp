@@ -1,10 +1,11 @@
 package org.allenai.pnp
 
-import scala.collection.JavaConverters._
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
+
+import ExecutionScore.ExecutionScore
 import edu.cmu.dynet._
 import scala.collection.mutable.MapBuilder
 

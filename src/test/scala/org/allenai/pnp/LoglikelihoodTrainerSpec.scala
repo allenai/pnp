@@ -1,7 +1,11 @@
 package org.allenai.pnp
 
-import scala.collection.JavaConverters._
-import org.scalatest._
+import org.allenai.pnp.ExecutionScore.ExecutionScore
+import org.scalatest.FlatSpec
+import org.scalatest.Matchers
+
+import com.jayantkrish.jklol.training.NullLogFunction
+
 import edu.cmu.dynet._
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.NullLogFunction

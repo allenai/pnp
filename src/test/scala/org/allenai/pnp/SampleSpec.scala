@@ -2,6 +2,7 @@ package org.allenai.pnp
 
 import edu.cmu.dynet._
 import org.scalatest._
+import org.allenai.pnp.ExecutionScore.ExecutionScore
 
 class SampleSpec extends FlatSpec with Matchers {
 
