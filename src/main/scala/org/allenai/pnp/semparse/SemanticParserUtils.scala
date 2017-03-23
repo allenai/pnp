@@ -94,13 +94,13 @@ object SemanticParserUtils {
       val sent = e.getSentence
       val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
-
-      val oracleOpt = parser.generateExecutionOracle(e.getLogicalForm, entityLinking, typeDeclaration)
-      val dist = parser.parse(tokenIds, entityLinking)
-
+      
+      val oracleOpt = parser.getLabelScore(e.getLogicalForm, entityLinking, typeDeclaration)
+      
       if (oracleOpt.isDefined) {
         val oracle = oracleOpt.get
         ComputationGraph.renew()
+        val dist = parser.parse(tokenIds, entityLinking)
         val context = PnpInferenceContext.init(parser.model).addExecutionScore(oracle)
         val results = dist.beamSearch(1, 50, Env.init, context)
         if (results.executions.size != 1) {

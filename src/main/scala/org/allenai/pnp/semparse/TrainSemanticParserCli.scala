@@ -42,11 +42,15 @@ class TrainSemanticParserCli extends AbstractCli() {
   var testDataOpt: OptionSpec[String] = null
   var modelOutOpt: OptionSpec[String] = null
   
+  var lasoOpt: OptionSpec[Void] = null
+  
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     entityDataOpt = parser.accepts("entityData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
     modelOutOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
+    
+    lasoOpt = parser.accepts("laso")
   }
   
   override def run(options: OptionSet): Unit = {
@@ -109,7 +113,7 @@ class TrainSemanticParserCli extends AbstractCli() {
     println("*** Validating train set action space ***")
     SemanticParserUtils.validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     println("*** Training ***")
-    train(trainPreprocessed, parser, typeDeclaration)
+    train(trainPreprocessed, parser, typeDeclaration, options.has(lasoOpt))
     
     // Serialize model to disk.
     val saver = new ModelSaver(options.valueOf(modelOutOpt))
@@ -124,7 +128,7 @@ class TrainSemanticParserCli extends AbstractCli() {
     * trained parameters.  
     */
   def train(examples: Seq[CcgExample], parser: SemanticParser,
-      typeDeclaration: TypeDeclaration): Unit = {
+      typeDeclaration: TypeDeclaration, laso: Boolean): Unit = {
     
     parser.dropoutProb = 0.5
     val ppExamples = for {
@@ -133,7 +137,11 @@ class TrainSemanticParserCli extends AbstractCli() {
       tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       unconditional = parser.generateExpression(tokenIds, entityLinking)
-      oracle <- parser.generateExecutionOracle(x.getLogicalForm, entityLinking, typeDeclaration)
+      oracle <- if (laso) {
+        parser.getMarginScore(x.getLogicalForm, entityLinking, typeDeclaration)
+      } else {
+        parser.getLabelScore(x.getLogicalForm, entityLinking, typeDeclaration)
+      }
     } yield {
       PnpExample(unconditional, unconditional, Env.init, oracle)
     }
@@ -141,18 +149,18 @@ class TrainSemanticParserCli extends AbstractCli() {
     // Train model
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(50, 10, false, model, sgd, new DefaultLogFunction())
-    println("Running locally-normalized training...")
-    trainer.train(ppExamples.toList)
-    
-    // Globally normalized training
-    /*
-    model.locallyNormalized = false
-    val sgd2 = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val gtrainer = new BsoTrainer(50, 5, 50, model, sgd2, new DefaultLogFunction())
-    println("Running globally-normalized training...")
-    gtrainer.train(ppExamples.toList)
-    */
+
+    if (laso) {
+      println("Running globally-normalized LaSO training...")
+      model.locallyNormalized = false
+      val trainer = new BsoTrainer(50, 10, 50, model, sgd, new DefaultLogFunction())
+      trainer.train(ppExamples.toList)
+    } else {
+      println("Running locally-normalized loglikelihood training...")
+      model.locallyNormalized = true
+      val trainer = new LoglikelihoodTrainer(50, 10, false, model, sgd, new DefaultLogFunction())
+      trainer.train(ppExamples.toList)
+    }
 
     parser.dropoutProb = -1
   }
