@@ -21,6 +21,7 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
 import edu.cmu.dynet._
+import org.allenai.pnp.util.Trie
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
@@ -108,15 +109,11 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
-    val output = ListBuffer[(Type, EntityEncoding)]()
-    for (entityMatch <- entityLinking.bestEntityMatchesList) {
-      val span = entityMatch._1
-      val entity = entityMatch._2
-      val name = entityMatch._3
-      val score = entityMatch._4
+    def encodeBOW(tokenIds: List[Int]): Expression = {
+      Preconditions.checkArgument(tokenIds.length > 0)
 
       var lastOutput: Expression = null
-      for (wordId <- name) {
+      for (wordId <- tokenIds) {
         val inputEmbedding = lookup(wordEmbeddings, wordId)
         if (lastOutput == null) {
           lastOutput = inputEmbedding
@@ -124,8 +121,19 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           lastOutput = lastOutput + inputEmbedding
         }
       }
-      Preconditions.checkState(lastOutput != null)
-      
+
+      // Entity encoding is average of the representations of the corresponding span.
+      lastOutput / tokenIds.length
+    }
+
+    val output = ListBuffer[(Type, EntityEncoding)]()
+    for (entityMatch <- entityLinking.bestEntityMatchesList) {
+      val span = entityMatch._1
+      val entity = entityMatch._2
+      val tokenIds = entityMatch._3
+      val score = entityMatch._4
+      val encoding = encodeBOW(tokenIds)
+
       val spanVector = new FloatVector(tokens.length)
       for (i <- 0 until tokens.length) {
         val value = if (i >= span.start && i < span.end) { 1.0 } else { 0.0 }
@@ -133,7 +141,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       }
       val spanExpression = input(Dim(tokens.length), spanVector)
 
-      output += ((entity.t, EntityEncoding(entity, lastOutput, span, spanExpression)))
+      output += ((entity.t, EntityEncoding(entity, encoding, span, spanExpression)))
     }
 
     SemanticParser.seqToMultimap(output)
@@ -284,6 +292,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         // the parser's state with. The tag for this choice is 
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
+        _ = if (allTemplates.size == 0) {
+          println("Warning: no actions from hole " + hole)
+        } else {
+          ()
+        }
+        
         templateTuple <- Pnp.choose(allTemplates.zipWithIndex.toArray, allScores, state)
         nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
@@ -373,9 +387,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     Some((actionTypes.toList, actions.toList))
   }
   
-  /** Generate an execution oracle that constrains the
+  /** Generate an execution score that constrains the
     * parser to generate exp. This oracle can be used 
-    * to supervise the parser.
+    * to supervise the parser when training with loglikelihood.
     */
   def getLabelScore(exp: Expression2, entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration): Option[SemanticParserExecutionScore] = {
@@ -394,6 +408,32 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     } yield {
       new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray, 1.0)
     }
+  }
+  
+  /**
+   * Generate an execution score that constrains the parser
+   * to produce any expression in {@code exprs}. This oracle
+   * can be used to supervise the parser when training with
+   * loglikelihood with weak supervision, i.e., when multiple
+   * logical forms may be correct.
+   */
+  def getMultiLabelScore(exprs: Iterable[Expression2], entityLinking: EntityLinking,
+      typeDeclaration: TypeDeclaration): Option[SemanticParserMultiExecutionScore] = {
+    val oracles = for {
+      lf <- exprs
+      oracle <- getLabelScore(lf, entityLinking, typeDeclaration)
+    } yield {
+      oracle
+    }
+
+    if (oracles.size > 0) {
+      val score = new SemanticParserMultiExecutionScore(oracles, Double.NegativeInfinity)
+      Some(score)
+    } else {
+      None
+    }
+    
+    
   }
   
   /**
@@ -462,6 +502,62 @@ class MaxExecutionScore(val scores: Seq[ExecutionScore]) extends ExecutionScore 
   def apply(tag: Any, choice: Any, env: Env): Double = {
     return scores.map(s => s.apply(tag, choice, env)).max
   }
+}
+
+class SemanticParserMultiExecutionScore(val scores: Iterable[SemanticParserExecutionScore],
+    val incorrectCost: Double)
+  extends ExecutionScore {
+  
+  val trie = new Trie[AnyRef]()
+  
+  for (score <- scores) {
+    val key = List(score.rootType) ++ score.templates
+    trie.insert(key)
+  }
+  
+  def apply(tag: Any, choice: Any, env: Env): Double = {
+    if (tag != null && tag.isInstanceOf[SemanticParserState]) {
+      val state = tag.asInstanceOf[SemanticParserState]
+      val key = if (state.hasRootType) {
+        Array(state.rootType) ++ state.getTemplates
+      } else {
+        Array()
+      }
+
+      val trieNodeId = trie.lookup(key)      
+      if (trieNodeId.isDefined) {
+        val nextStates = trie.getNextMap(trieNodeId.get)
+
+        // First action is a type. Remaining actions are templates, but they
+        // come paired with an index that the parser uses for selection purposes.
+        val action: AnyRef = if (state.hasRootType) {
+          choice.asInstanceOf[(Template, Int)]._1
+        } else {
+          choice.asInstanceOf[Type]
+        }
+
+        if (nextStates.contains(action)) {
+          0.0
+        } else {
+          incorrectCost
+        }
+      } else {
+        incorrectCost
+      }
+    } else {
+      0.0
+    }
+  }
+}
+
+class SemanticParserConfig extends Serializable {
+  var inputDim = 200
+  var hiddenDim = 100
+  var actionDim = 100
+  var actionHiddenDim = 100
+  var maxVars = 10
+  
+  var attentionCopyEntities = true
 }
 
 object SemanticParser {
