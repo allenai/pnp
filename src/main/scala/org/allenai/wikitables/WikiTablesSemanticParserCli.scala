@@ -283,7 +283,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       unconditional = parser.generateExpression(tokenIds, entityLinking)
       oracles = for {
         lf <- x.getLogicalForms.asScala
-        oracle <- parser.generateExecutionOracle(lf, entityLinking, typeDeclaration)
+        oracle <- parser.getLabelScore(lf, entityLinking, typeDeclaration)
       } yield {
         oracle
       }
