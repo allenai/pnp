@@ -127,8 +127,11 @@ public class WikiTablesDataProcessor {
         linkedFormulas.addAll(matcher.getFuzzyMatchedFormulas(exTokens, i, j,
                 FuzzyMatchFnMode.BINARY));
         for (Formula formula: linkedFormulas) {
-          entityLinking.add(new Pair(new Pair(i, j), formula));
-          formulasPresent.add(formula);
+          // TODO: Store all the spans in entity linking instead of just the first one.
+          if (!formulasPresent.contains(formula)) {
+            entityLinking.add(new Pair(new Pair(i, j), formula));
+            formulasPresent.add(formula);
+          }
         }
       }
     }

@@ -1,10 +1,13 @@
 package org.allenai.wikitables;
 
+import java.beans.Expression;
+import java.util.Arrays;
 import java.util.Set;
 import java.util.List;
 import java.util.ArrayList;
 
 import com.jayantkrish.jklol.ccg.lambda2.Expression2;
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier;
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence;
 import edu.stanford.nlp.sempre.ContextValue;
 import edu.stanford.nlp.sempre.Formula;
@@ -43,7 +46,7 @@ public class WikiTablesExample {
     // Sempre represents lambda expressions differently. We changed them when reading the examples. Changing
     // them back for execution.
     System.out.println("Before conversion: " + pnpFormula.toString());
-    String expressionString = WikiTablesUtil.toSempreLogicalForm(pnpFormula.toString());
+    String expressionString = WikiTablesUtil.toSempreLogicalForm(pnpFormula);
     System.out.println("After conversion: " + expressionString);
     try {
       Formula sempreFormula = Formula.fromString(expressionString);
@@ -60,9 +63,5 @@ public class WikiTablesExample {
         logicalFormStrings.add(lf.toString());
     }
     return sentence + " [\n" + String.join(" ", logicalFormStrings) + "\n]";
-  }
-
-  public static void main(String[] args) {
-    System.out.println(WikiTablesUtil.toSempreLogicalForm("((reverse fb:cell.cell.number) ((reverse fb:row.row.round_2) (fb:type.object.type (fb:type.row))))"));
   }
 }
