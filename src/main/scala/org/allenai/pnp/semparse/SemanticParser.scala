@@ -377,12 +377,22 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     * parser to generate exp. This oracle can be used 
     * to supervise the parser.
     */
-  def generateExecutionOracle(exp: Expression2, entityLinking: EntityLinking,
+  def getLabelScore(exp: Expression2, entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration): Option[SemanticParserExecutionScore] = {
     for {
       (holeTypes, templates) <- generateActionSequence(exp, entityLinking, typeDeclaration)
     } yield {
-      new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray)
+      new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray,
+          Double.NegativeInfinity)
+    }
+  }
+  
+  def getMarginScore(exp: Expression2, entityLinking: EntityLinking,
+      typeDeclaration: TypeDeclaration): Option[SemanticParserExecutionScore] = {
+    for {
+      (holeTypes, templates) <- generateActionSequence(exp, entityLinking, typeDeclaration)
+    } yield {
+      new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray, 1.0)
     }
   }
   
@@ -408,7 +418,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   * templates. 
   */
 class SemanticParserExecutionScore(val holeTypes: Array[Type],
-    val templates: Array[Template])
+    val templates: Array[Template], val incorrectCost: Double)
 extends ExecutionScore {
 
   val rootType = holeTypes(0)
@@ -424,7 +434,7 @@ extends ExecutionScore {
         if (choice.asInstanceOf[Type].equals(rootType)) {
           0.0
         } else {
-          Double.NegativeInfinity
+          incorrectCost
         }
       } else {
         val actionInd = state.numActions
@@ -436,10 +446,10 @@ extends ExecutionScore {
               (actionInd == 0 || state.templates.zip(myTemplates).map(x => x._1.equals(x._2)).reduce(_ && _))) { 
             0.0
           } else {
-            Double.NegativeInfinity
+            incorrectCost
           }
         } else {
-          Double.NegativeInfinity
+          incorrectCost
         }
       }
     } else {
