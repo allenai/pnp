@@ -518,8 +518,6 @@ class MaxExecutionScore(val scores: Seq[ExecutionScore]) extends ExecutionScore 
   }
 }
 
-<<<<<<< HEAD
-=======
 class SemanticParserMultiExecutionScore(val scores: Iterable[SemanticParserExecutionScore],
     val incorrectCost: Double)
   extends ExecutionScore {
@@ -566,7 +564,6 @@ class SemanticParserMultiExecutionScore(val scores: Iterable[SemanticParserExecu
   }
 }
 
->>>>>>> master
 class SemanticParserConfig extends Serializable {
   var inputDim = 200
   var hiddenDim = 100
