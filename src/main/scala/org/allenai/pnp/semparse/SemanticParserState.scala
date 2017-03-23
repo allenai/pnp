@@ -16,7 +16,8 @@ import edu.cmu.dynet.Expression
   */
 case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     val unfilledHoleIds: List[Hole], val nextId: Int,
-    val numActions: Int, val templates: List[Template], val attentions: List[Expression]) {
+    val numActions: Int, val rootType: Type,
+    val templates: List[Template], val attentions: List[Expression]) {
 
   def decodeExpression(partId: Int): Expression2 = {
     val part = parts(partId)
@@ -38,7 +39,7 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
   
   def addAttention(e: Expression): SemanticParserState = {
     SemanticParserState(parts, unfilledHoleIds, nextId, numActions,
-        templates, e :: attentions)
+        rootType, templates, e :: attentions)
   }
   
   def getTemplates: Array[Template] = {
@@ -69,21 +70,25 @@ case class SemanticParserState(val parts: Map[Int, ExpressionPart],
     val nextHoles = newHoles ++ unfilledHoles
     
     SemanticParserState(parts + partTuple, nextHoles, nextId + newHoles.length,
-        numActions + 1, template :: templates, attentions)
+        numActions + 1, rootType, template :: templates, attentions)
   }
 
   def drop(hole: Hole, template: Template): SemanticParserState = {
     Preconditions.checkArgument(unfilledHoleIds(0).id == hole.id)
     SemanticParserState(parts, unfilledHoleIds.drop(1), nextId,
-        numActions + 1, template :: templates, attentions)
+        numActions + 1, rootType, template :: templates, attentions)
   }
-  
+
+  def hasRootType: Boolean = {
+    rootType != null
+  }
+
   def addRootType(rootType: Type): SemanticParserState = {
     Preconditions.checkState(unfilledHoleIds.length == 0 && numActions == 0,
         "The root type can only be added at the beginning of parsing".asInstanceOf[AnyRef])
     
     val scope = Scope(List.empty)
-    SemanticParserState(parts, List(Hole(0, rootType, scope, false)), 1, 0, List(), List())
+    SemanticParserState(parts, List(Hole(0, rootType, scope, false)), 1, 0, rootType, List(), List())
   }
 }
 
@@ -94,7 +99,7 @@ object SemanticParserState {
     * applying a sequence of templates.  
     */
   def start(): SemanticParserState = {
-    SemanticParserState(Map.empty, List(), 1, 0, List(), List()) 
+    SemanticParserState(Map.empty, List(), 1, 0, null, List(), List())
   }
 }
 

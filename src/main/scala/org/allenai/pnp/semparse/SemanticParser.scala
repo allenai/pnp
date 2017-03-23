@@ -22,6 +22,7 @@ import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
+import org.allenai.pnp.util.Trie
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
@@ -129,7 +130,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val span = linkedEntityMatch._1
       val entity = linkedEntityMatch._2
       val tokenIds = linkedEntityMatch._3
-      //val score = linkedEntityMatch._4
+      val score = linkedEntityMatch._4
       val encoding = encodeBOW(tokenIds)
       val spanVector = new FloatVector(tokens.length)
       for (i <- 0 until tokens.length) {
@@ -308,6 +309,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         // the parser's state with. The tag for this choice is 
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
+        _ = if (allTemplates.size == 0) {
+          println("Warning: no actions from hole " + hole)
+        } else {
+          ()
+        }
+        
         templateTuple <- Pnp.choose(allTemplates.zipWithIndex.toArray, allScores, state)
         nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
@@ -396,9 +403,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     Some((actionTypes.toList, actions.toList))
   }
   
-  /** Generate an execution oracle that constrains the
+  /** Generate an execution score that constrains the
     * parser to generate exp. This oracle can be used 
-    * to supervise the parser.
+    * to supervise the parser when training with loglikelihood.
     */
   def getLabelScore(exp: Expression2, entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration): Option[SemanticParserExecutionScore] = {
@@ -417,6 +424,32 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     } yield {
       new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray, 1.0)
     }
+  }
+  
+  /**
+   * Generate an execution score that constrains the parser
+   * to produce any expression in {@code exprs}. This oracle
+   * can be used to supervise the parser when training with
+   * loglikelihood with weak supervision, i.e., when multiple
+   * logical forms may be correct.
+   */
+  def getMultiLabelScore(exprs: Iterable[Expression2], entityLinking: EntityLinking,
+      typeDeclaration: TypeDeclaration): Option[SemanticParserMultiExecutionScore] = {
+    val oracles = for {
+      lf <- exprs
+      oracle <- getLabelScore(lf, entityLinking, typeDeclaration)
+    } yield {
+      oracle
+    }
+
+    if (oracles.size > 0) {
+      val score = new SemanticParserMultiExecutionScore(oracles, Double.NegativeInfinity)
+      Some(score)
+    } else {
+      None
+    }
+    
+    
   }
   
   /**
@@ -485,6 +518,55 @@ class MaxExecutionScore(val scores: Seq[ExecutionScore]) extends ExecutionScore 
   }
 }
 
+<<<<<<< HEAD
+=======
+class SemanticParserMultiExecutionScore(val scores: Iterable[SemanticParserExecutionScore],
+    val incorrectCost: Double)
+  extends ExecutionScore {
+  
+  val trie = new Trie[AnyRef]()
+  
+  for (score <- scores) {
+    val key = List(score.rootType) ++ score.templates
+    trie.insert(key)
+  }
+  
+  def apply(tag: Any, choice: Any, env: Env): Double = {
+    if (tag != null && tag.isInstanceOf[SemanticParserState]) {
+      val state = tag.asInstanceOf[SemanticParserState]
+      val key = if (state.hasRootType) {
+        Array(state.rootType) ++ state.getTemplates
+      } else {
+        Array()
+      }
+
+      val trieNodeId = trie.lookup(key)      
+      if (trieNodeId.isDefined) {
+        val nextStates = trie.getNextMap(trieNodeId.get)
+
+        // First action is a type. Remaining actions are templates, but they
+        // come paired with an index that the parser uses for selection purposes.
+        val action: AnyRef = if (state.hasRootType) {
+          choice.asInstanceOf[(Template, Int)]._1
+        } else {
+          choice.asInstanceOf[Type]
+        }
+
+        if (nextStates.contains(action)) {
+          0.0
+        } else {
+          incorrectCost
+        }
+      } else {
+        incorrectCost
+      }
+    } else {
+      0.0
+    }
+  }
+}
+
+>>>>>>> master
 class SemanticParserConfig extends Serializable {
   var inputDim = 200
   var hiddenDim = 100

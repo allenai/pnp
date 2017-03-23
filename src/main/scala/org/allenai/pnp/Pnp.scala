@@ -164,7 +164,7 @@ case class BindPnp[A, C](b: Pnp[C], f: PnpContinuation[C, A]) extends Pnp[A] {
   * scores, i.e., log probabilities.
   */
 case class CategoricalPnp[A](dist: Array[(A, Double)], tag: Any) extends Pnp[A] {
-  
+
   override def searchStep[C](env: Env, logProb: Double, context: PnpInferenceContext,
     continuation: PnpContinuation[A,C], queue: PnpSearchQueue[C], finished: PnpSearchQueue[C]): Unit = {
     dist.foreach {
@@ -239,47 +239,54 @@ case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression
   }
 
   override def searchStep[B](env: Env, logProb: Double, context: PnpInferenceContext,
-      continuation: PnpContinuation[A, B], queue: PnpSearchQueue[B], finished: PnpSearchQueue[B]) = {
-      
-    val (paramTensor, numTensorValues) = getTensor(context.compGraph)
-    val v = paramTensor.toVector
-    for (i <- 0 until numTensorValues) {
-      val nextEnv = env.addLabel(parameter, i)
-      val nextLogProb = logProb + v(i)
-      queue.offer(BindPnp(ValuePnp(items(i)), continuation), nextEnv, nextLogProb, context, tag, items(i))
+      continuation: PnpContinuation[A, B], queue: PnpSearchQueue[B],
+      finished: PnpSearchQueue[B]): Unit = {
+    if (items.size > 0) {
+      val (paramTensor, numTensorValues) = getTensor(context.compGraph)
+      val v = paramTensor.toVector
+      for (i <- 0 until numTensorValues) {
+        val nextEnv = env.addLabel(parameter, i)
+        val nextLogProb = logProb + v(i)
+        queue.offer(BindPnp(ValuePnp(items(i)), continuation), nextEnv, nextLogProb, context,
+            tag, items(i))
+      }
     }
   }
   
-  override def sampleStep[D](env: Env, logProb: Double, context: PnpInferenceContext, continuation: PnpContinuation[A,D],
-    queue: PnpSearchQueue[D], finished: PnpSearchQueue[D]): Unit = {
-    
-    val (paramTensor, numTensorValues) = getTensor(context.compGraph)
-    val logScores = paramTensor.toSeq.toArray
+  override def sampleStep[D](env: Env, logProb: Double, context: PnpInferenceContext,
+      continuation: PnpContinuation[A,D], queue: PnpSearchQueue[D],
+      finished: PnpSearchQueue[D]): Unit = {
+    // TODO: what is the right behavior if items.size == 0?
+    if (items.size > 0) {
+      val (paramTensor, numTensorValues) = getTensor(context.compGraph)
+      val logScores = paramTensor.toSeq.toArray
 
-    // TODO: This code assumes that the distribution is locally normalized.
-    val scores = items.zip(logScores).map {
-      case (value, valueLogProb) => {
-        // Add in the state cost
-        valueLogProb + context.computeScore(tag, value, env)
+      // TODO: This code assumes that the distribution is locally normalized.
+      val scores = items.zip(logScores).map {
+        case (value, valueLogProb) => {
+          // Add in the state cost
+          valueLogProb + context.computeScore(tag, value, env)
+        }
+      }.map(Math.exp(_))
+
+      val totalProb = scores.sum
+      val draw = Math.random() * totalProb
+
+      var s = 0.0
+      var choice = -1 
+      for (i <- 0 until scores.length) {
+        s += scores(i)
+        if (draw <= s && choice == -1) {
+          choice = i
+        }
       }
-    }.map(Math.exp(_))
 
-    val totalProb = scores.sum
-    val draw = Math.random() * totalProb
-
-    var s = 0.0
-    var choice = -1 
-    for (i <- 0 until scores.length) {
-      s += scores(i)
-      if (draw <= s && choice == -1) {
-        choice = i
-      }
+      val value = items(choice)
+      val choiceLogProb = scores(choice)
+      val nextEnv = env.addLabel(parameter, choice)
+      ValuePnp(value).sampleStep(nextEnv, logProb + choiceLogProb, context, continuation,
+          queue, finished)
     }
-
-    val value = items(choice)
-    val choiceLogProb = scores(choice)
-    val nextEnv = env.addLabel(parameter, choice)
-    ValuePnp(value).sampleStep(nextEnv, logProb + choiceLogProb, context, continuation, queue, finished)
   }
 }
 
@@ -390,7 +397,7 @@ case class StopTimerPnp(timerName: String) extends Pnp[Unit] {
 }
 
 class Execution[A](val value: A, val env: Env, val logProb: Double) {
-  def prob = Math.exp(logProb)
+  val prob = Math.exp(logProb)
 
   override def toString: String = {
     "[Execution " + value + " " + logProb + "]"

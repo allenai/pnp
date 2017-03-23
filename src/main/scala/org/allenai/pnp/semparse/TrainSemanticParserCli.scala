@@ -109,7 +109,7 @@ class TrainSemanticParserCli extends AbstractCli() {
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
     
     println("*** Validating types ***")
-    SemanticParserUtils.validateTypes(trainPreprocessed, typeDeclaration)
+    trainPreprocessed.map(x => SemanticParserUtils.validateTypes(x.getLogicalForm, typeDeclaration))
     println("*** Validating train set action space ***")
     SemanticParserUtils.validateActionSpace(trainPreprocessed, parser, typeDeclaration)
     println("*** Training ***")
