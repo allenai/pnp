@@ -1,13 +1,10 @@
 package org.allenai.wikitables;
 
-import java.beans.Expression;
-import java.util.Arrays;
 import java.util.Set;
 import java.util.List;
 import java.util.ArrayList;
 
 import com.jayantkrish.jklol.ccg.lambda2.Expression2;
-import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier;
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence;
 import edu.stanford.nlp.sempre.ContextValue;
 import edu.stanford.nlp.sempre.Formula;

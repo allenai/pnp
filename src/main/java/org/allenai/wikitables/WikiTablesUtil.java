@@ -3,7 +3,6 @@ package org.allenai.wikitables;
 import java.util.*;
 
 import com.jayantkrish.jklol.ccg.lambda2.Expression2;
-import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier;
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis;
 import edu.stanford.nlp.sempre.Formula;
 import edu.stanford.nlp.sempre.Formulas;
@@ -76,18 +75,5 @@ public class WikiTablesUtil {
                                                      String.format("(var %s)", variableName));
     }
     return expressionString;
-  }
-
-  public static void main(String[] args) {
-    Expression2 subExpression = Expression2.nested(Expression2.constant("+"),
-            Expression2.constant("x"),
-            Expression2.constant("y"));
-    Expression2 pnpExpression = Expression2.lambda(Arrays.asList("x"), subExpression);
-    pnpExpression = Expression2.lambda(Arrays.asList("y"), pnpExpression);
-    ExpressionSimplifier simplifier = ExpressionSimplifier.lambdaCalculus();
-    System.out.println("Before simplification:" + pnpExpression.toString());
-    pnpExpression = simplifier.apply(pnpExpression);
-    System.out.println("After simplification:" + pnpExpression.toString());
-    System.out.println("After conversion:" + WikiTablesUtil.toSempreLogicalForm(pnpExpression));
   }
 }

@@ -110,7 +110,7 @@ public class WikiTablesDataProcessor {
     EditDistanceFuzzyMatcher.opts.fuzzyMatchMaxEditDistanceRatio = 0.3;
     
     FuzzyMatcher matcher = new EditDistanceFuzzyMatcher((TableKnowledgeGraph) ex.context.graph);
-    Set<Formula> formulasPresent = new HashSet<>();
+    HashMap<Formula, Pair<Integer, Integer>> formulasPresent = new HashMap<>();
     for (int i=0; i <= exTokens.size()-1; i++) {
       for (int j=i+1; j <= exTokens.size(); j++) {
         if (j == i+1) {
@@ -118,8 +118,9 @@ public class WikiTablesDataProcessor {
           String token = exTokens.get(i);
           if (token.matches("[-+]?\\d*\\.?\\d+")) {
             Formula formula = Formula.fromString(token);
-            entityLinking.add(new Pair(new Pair(i, j), formula));
-            formulasPresent.add(formula);
+            Pair<Integer, Integer> span = new Pair<>(i, j);
+            entityLinking.add(new Pair<>(span, formula));
+            formulasPresent.put(formula, span);
           }
         }
         Collection<Formula> linkedFormulas = matcher.getFuzzyMatchedFormulas(exTokens, i, j,
@@ -128,9 +129,19 @@ public class WikiTablesDataProcessor {
                 FuzzyMatchFnMode.BINARY));
         for (Formula formula: linkedFormulas) {
           // TODO: Store all the spans in entity linking instead of just the first one.
-          if (!formulasPresent.contains(formula)) {
-            entityLinking.add(new Pair(new Pair(i, j), formula));
-            formulasPresent.add(formula);
+          Pair<Integer, Integer> span = new Pair<>(i, j);
+          if (formulasPresent.containsKey(formula)) {
+            Pair<Integer, Integer> previousSpan = formulasPresent.get(formula);
+            int previousSpanLength = previousSpan.getSecond() - previousSpan.getFirst();
+            int currentSpanLength = span.getSecond() - span.getFirst();
+            if (currentSpanLength < previousSpanLength) {
+              entityLinking.remove(new Pair<>(previousSpan, formula));
+              entityLinking.add(new Pair<>(span, formula));
+              formulasPresent.put(formula, span);
+            }
+          } else {
+            entityLinking.add(new Pair(span, formula));
+            formulasPresent.put(formula, span);
           }
         }
       }
@@ -141,9 +152,9 @@ public class WikiTablesDataProcessor {
     unlinkedFormulas.addAll(matcher.getAllFormulas(FuzzyMatchFnMode.BINARY));
     // Adding unlinked entities with a null span
     for (Formula formula: unlinkedFormulas) {
-      if (! formulasPresent.contains(formula)) {
+      if (! formulasPresent.containsKey(formula)) {
         entityLinking.add(new Pair(null, formula));
-        formulasPresent.add(formula);
+        formulasPresent.put(formula, null);
       }
     }
     // Sempre often generates formulas that contain 1, 0 and -1. Adding them as unlinked entities.
