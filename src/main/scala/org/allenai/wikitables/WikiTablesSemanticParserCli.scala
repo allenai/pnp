@@ -2,7 +2,6 @@ package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
 import java.util.HashSet
 
 import org.allenai.pnp.Env
@@ -17,7 +16,6 @@ import org.allenai.pnp.semparse.SemanticParser
 import org.allenai.pnp.semparse.SemanticParserLoss
 import org.allenai.pnp.semparse.SemanticParserUtils
 import org.allenai.pnp.semparse.Span
-
 import com.google.common.collect.Maps
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
@@ -33,7 +31,6 @@ import com.jayantkrish.jklol.training.DefaultLogFunction
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
-
 import edu.cmu.dynet._
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import joptsimple.OptionParser
@@ -43,7 +40,11 @@ import org.allenai.pnp.semparse.ActionSpace
 import org.allenai.pnp.PnpInferenceContext
 
 /** Command line program for training a semantic parser 
-  * on the WikiTables data set.  
+  * on the WikiTables data set.
+  * runMain org.allenai.wikitables.WikiTablesSemanticParserCli -trainingData TRAIN-DATA-PATH
+  *                                                           [-testData TEST-DATA-PATH]
+  *                                                           [-derivationsPath PATH-TO-LOGICAL-FORMS]
+  * If derivationsPath is not specified, Sempre will be used to parse utterances (this will be SLOW!)
   */
 class WikiTablesSemanticParserCli extends AbstractCli() {
   
@@ -70,15 +71,13 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
-        options.valueOf(derivationsPathOpt), 100).asScala
+      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, 50).asScala
     }
     
     val testData = ListBuffer[CustomExample]()
     if (options.has(testDataOpt)) {
       for (filename <- options.valuesOf(testDataOpt).asScala) {
-        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
-          options.valueOf(derivationsPathOpt), 100).asScala
+        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, -1).asScala
       }
     }
     
@@ -149,9 +148,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
     println("***************** TEST EVALUATION *****************")
-    val testResults = test(testPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    val testResults = test(testPreprocessed, parser, trainedModel, typeDeclaration, comparator)
     println("***************** TRAIN EVALUATION *****************")
-    val trainResults = test(trainPreprocessed, parser, trainedModel, typeDeclaration, simplifier, comparator)
+    val trainResults = test(trainPreprocessed, parser, trainedModel, typeDeclaration, comparator)
     
     println("Test: ")
     println(testResults)
@@ -246,9 +245,11 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
    
     // Sempre's logical forms do not have parens around x in lambda expressions. Fixing that.
     // TODO: This is fragile.
-    val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => x.toString().replaceAll("lambda x", "lambda (x)")}
+
+    val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => WikiTablesUtil.toPnpLogicalForm(x)}
     val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(lfParser.parse(x))}
-    new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava))
+    new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
+                          ex.context, ex.targetValue);
   }
 
   /** Returns a modified dataset that has CcgExamples, with one logical form per example.
@@ -284,11 +285,11 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       } yield {
         oracle
       }
-      oracle = new MaxExecutionScore(oracles.toSeq)
+      oracle = new MaxExecutionScore(oracles.toSeq) if oracles.nonEmpty
     } yield {
       PnpExample(unconditional, unconditional, Env.init, oracle)
     }
-
+    println(pnpExamples.length + " examples have oracles. Training on them.")
     // Train model
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
@@ -299,21 +300,19 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     model
   }
 
+  //TODO(pradeep): Make a new Test Cli
   /** Evaluate the test accuracy of parser on examples. Logical
     * forms are compared for equality using comparator.  
     */
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser,
-      model: PnpModel, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
-      comparator: ExpressionComparator): SemanticParserLoss = {
-    // TODO: Change the errors to denotation errors.
+      model: PnpModel, typeDeclaration: TypeDeclaration, comparator: ExpressionComparator): SemanticParserLoss = {
     println("")
     var numCorrect = 0
     var numCorrectAt10 = 0
     for (e <- examples) {
       println(e.getSentence.getWords.asScala.mkString(" "))
       println(e.getSentence.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
-      println("expected: " + e.getLogicalForm)
-      
+
       val sent = e.getSentence
       val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
@@ -325,12 +324,12 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
-        val simplified = simplifier.apply(x.value.decodeExpression)
-        if (comparator.equals(e.getLogicalForm, simplified)) {
-          println("* " + x.logProb.formatted("%02.3f") + "  " + simplified)
+         val expression = x.value.decodeExpression
+        if (e.isFormulaCorrect(expression)) {
+          println("* " + x.logProb.formatted("%02.3f") + "  " + expression)
           true
         } else {
-          println("  " + x.logProb.formatted("%02.3f") + "  " + simplified)
+          println("  " + x.logProb.formatted("%02.3f") + "  " + expression)
           false
         }
       }
@@ -343,30 +342,32 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       }
       
       // Print the attentions of the best predicted derivation
-      val state = beam(0).value
-      val templates = state.getTemplates
-      val attentions = state.getAttentions
-      val tokens = e.getSentence.getWords.asScala.toArray
-      for (i <- 0 until templates.length) {
-        val values = ComputationGraph.incrementalForward(attentions(i)).toSeq()
+      if (beam.nonEmpty) {
+        val state = beam(0).value
+        val templates = state.getTemplates
+        val attentions = state.getAttentions
+        val tokens = e.getSentence.getWords.asScala.toArray
+        for (i <- 0 until templates.length) {
+          val values = ComputationGraph.incrementalForward(attentions(i)).toSeq()
 
-        val maxIndex = values.zipWithIndex.max._2
-        
-        val tokenStrings = for {
-          j <- 0 until values.length
-        } yield {
-          val color = if (j == maxIndex) {
-            Console.RED
-          } else if (values(j) > 0.1) {
-            Console.YELLOW
-          } else {
-            Console.RESET
+          val maxIndex = values.zipWithIndex.max._2
+
+          val tokenStrings = for {
+            j <- 0 until values.length
+          } yield {
+            val color = if (j == maxIndex) {
+              Console.RED
+            } else if (values(j) > 0.1) {
+              Console.YELLOW
+            } else {
+              Console.RESET
+            }
+
+            color + tokens(j) + Console.RESET
           }
-          
-          color + tokens(j) + Console.RESET
-        }
 
-        println("  " + tokenStrings.mkString(" ") + " " + templates(i))
+          println("  " + tokenStrings.mkString(" ") + " " + templates(i))
+        }
       }
     }
     
