@@ -357,9 +357,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       println(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
 
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
-      println(entityLinking)
-      println("expected: " + e.getLogicalForm)
-      
       val dist = parser.parse(sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           entityLinking)
       
