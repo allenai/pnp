@@ -57,6 +57,11 @@ class MatchingModel(var config: MatchingModelConfig,
     contextBuilder.newGraph()
     pointerNetInputBuilder.newGraph()
     pointerNetOutputBuilder.newGraph()
+    
+    if (config.dropoutProb >= 0.0) {
+      forwardBuilder.setDropout(config.dropoutProb)
+      backwardBuilder.setDropout(config.dropoutProb)
+    }
   }
 
   def preprocess(source: Diagram, sourceLabel: DiagramLabel, target: Diagram,
@@ -560,6 +565,8 @@ class MatchingModelConfig() extends Serializable {
   
   var pointerNetHiddenDim = 100
   var pointerNetLstmDim = 64
+  
+  var dropoutProb = -1.0f
 
   var matchIndependent: Boolean = false
   var affineTransformScore: Boolean = false

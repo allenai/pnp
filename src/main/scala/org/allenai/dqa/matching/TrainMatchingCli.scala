@@ -46,6 +46,7 @@ class TrainMatchingCli extends AbstractCli {
   var pretrainOpt: OptionSpec[Void] = null
   var epochsOpt: OptionSpec[Integer] = null
   var beamSizeOpt: OptionSpec[Integer] = null
+  var dropoutOpt: OptionSpec[Float] = null
   
   override def initializeOptions(parser: OptionParser): Unit = {
     diagramsOpt = parser.accepts("diagrams").withRequiredArg().ofType(classOf[String]).required()
@@ -70,6 +71,7 @@ class TrainMatchingCli extends AbstractCli {
     pretrainOpt = parser.accepts("pretrain")
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
+    dropoutOpt = parser.accepts("dropout").withRequiredArg().ofType(classOf[Float]).defaultsTo(-1.0f)
   }
 
   override def run(options: OptionSet): Unit = {
@@ -125,14 +127,15 @@ class TrainMatchingCli extends AbstractCli {
       model.locallyNormalized = true
 
       train(matchingExamples, matchingModel, options.valueOf(epochsOpt),
-          options.valueOf(beamSizeOpt), true)
+          options.valueOf(beamSizeOpt), options.valueOf(dropoutOpt), true)
 
       matchingModel.config.matchIndependent = matchIndependent
       model.locallyNormalized = locallyNormalized
     }
 
     train(matchingExamples, matchingModel, options.valueOf(epochsOpt),
-        options.valueOf(beamSizeOpt), options.has(loglikelihoodOpt))
+        options.valueOf(beamSizeOpt), options.valueOf(dropoutOpt),
+        options.has(loglikelihoodOpt))
     
     // Serialize model to disk.
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
@@ -159,7 +162,7 @@ class TrainMatchingCli extends AbstractCli {
   }
 
   def train(examples: Seq[MatchingExample], matchingModel: MatchingModel,
-      epochs: Int, beamSize: Int, loglikelihood: Boolean): Unit = {
+      epochs: Int, beamSize: Int, dropout: Float, loglikelihood: Boolean): Unit = {
     val pnpExamples = for {
       x <- examples
     } yield {
@@ -177,6 +180,10 @@ class TrainMatchingCli extends AbstractCli {
     val decay = 0.01f
 
     val model = matchingModel.model
+    
+    if (dropout >= 0.0) {
+      matchingModel.config.dropoutProb = dropout
+    }
 
     if (loglikelihood) {
       // Locally-normalized training
@@ -192,6 +199,10 @@ class TrainMatchingCli extends AbstractCli {
       val sgd = new SimpleSGDTrainer(model.model, learningRate, decay)
       val trainer = new BsoTrainer(epochs, beamSize, -1, model, sgd, new DefaultLogFunction())
       trainer.train(pnpExamples.toList)
+    }
+    
+    if (dropout >= 0.0) {
+      matchingModel.config.dropoutProb = -1
     }
   }
 }
