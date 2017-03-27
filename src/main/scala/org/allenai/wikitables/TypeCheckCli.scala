@@ -34,8 +34,8 @@ class TypeCheckCli extends AbstractCli() {
     }
 
     println(trainingData.size + " training examples")
-    
-    SemanticParserUtils.validateTypes(trainingData, typeDeclaration)
+
+    trainingData.map(x => SemanticParserUtils.validateTypes(x.getLogicalForm, typeDeclaration))
   }
 }
 

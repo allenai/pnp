@@ -12,6 +12,7 @@ import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
 import edu.cmu.dynet._
+import com.jayantkrish.jklol.ccg.lambda2.Expression2
 
 object SemanticParserUtils {
   
@@ -32,39 +33,46 @@ object SemanticParserUtils {
   }
   
   /**
-   * Checks that the logical forms in {@code examples}
-   * are well-typed using {@code typeDeclaration}. 
+   * Checks that {@code lf} is well-typed using {@code typeDeclaration}. 
    */
-  def validateTypes(examples: Seq[CcgExample], typeDeclaration: TypeDeclaration): Unit = {
-    for (e <- examples) {
-      val lf = e.getLogicalForm
-      val typeInference = StaticAnalysis.typeInference(lf, TypeDeclaration.TOP, typeDeclaration)
-      
-      val constraints = typeInference.getSolvedConstraints
-      val typeMap = typeInference.getExpressionTypes.asScala
-      
-      if (!constraints.isSolvable) {
-        println(lf)
-        println(typeInference.getConstraints)
-        println(typeInference.getSolvedConstraints)
+  def validateTypes(lf: Expression2, typeDeclaration: TypeDeclaration): Boolean = {
+    val typeInference = StaticAnalysis.typeInference(lf, TypeDeclaration.TOP, typeDeclaration)
+
+    val constraints = typeInference.getSolvedConstraints
+    val typeMap = typeInference.getExpressionTypes.asScala
+
+    if (!constraints.isSolvable) {
+      // Type inference generated unsolvable type constraints.
+      println(lf)
+      println(typeInference.getConstraints)
+      println(typeInference.getSolvedConstraints)
         
-        for (i <- 0 until lf.size()) {
-          if (typeMap.contains(i)) {
-            val t = typeMap(i)
-            println("    " + i + " " + t + " " + lf.getSubexpression(i))
-          }
-        }
-      } else {
-        for (i <- 0 until lf.size()) {
-          if (typeMap.contains(i)) {
-            val t = typeMap(i)
-            if (isBadType(t)) {
-              println(lf)
-              println("  B " + i + " " + t + " " + lf.getSubexpression(i))
-            }
-          }
+      for (i <- 0 until lf.size()) {
+        if (typeMap.contains(i)) {
+          val t = typeMap(i)
+          println("    " + i + " " + t + " " + lf.getSubexpression(i))
         }
       }
+
+      false
+    } else {
+      // Check that every subexpression is assigned a fully-instantiated 
+      // type (i.e., no type variables), and that no types are
+      // TOP or BOTTOM.
+      val goodTypes = for {
+        i <- 0 until lf.size()
+        if typeMap.contains(i)
+      } yield {
+        val t = typeMap(i)
+        val goodType = !isBadType(t)
+        if (!goodType) {
+          println(lf)
+          println("  B " + i + " " + t + " " + lf.getSubexpression(i))
+        }
+        goodType
+      }
+
+      goodTypes.fold(true)(_ && _)
     }
   }
 
@@ -94,13 +102,13 @@ object SemanticParserUtils {
       val sent = e.getSentence
       val tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
-
-      val oracleOpt = parser.generateExecutionOracle(e.getLogicalForm, entityLinking, typeDeclaration)
-      val dist = parser.parse(tokenIds, entityLinking)
-
+      
+      val oracleOpt = parser.getLabelScore(e.getLogicalForm, entityLinking, typeDeclaration)
+      
       if (oracleOpt.isDefined) {
         val oracle = oracleOpt.get
         ComputationGraph.renew()
+        val dist = parser.parse(tokenIds, entityLinking)
         val context = PnpInferenceContext.init(parser.model).addExecutionScore(oracle)
         val results = dist.beamSearch(1, 50, Env.init, context)
         if (results.executions.size != 1) {

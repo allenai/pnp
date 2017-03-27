@@ -8,6 +8,7 @@ import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import scala.collection.mutable.ListBuffer
 import com.jayantkrish.jklol.ccg.lambda.Type
+import com.jayantkrish.jklol.util.IndexedList
 
 /** A collection of actions to be used in a semantic parser
  *  to generate expressions. An action space has a set
@@ -100,6 +101,8 @@ object ActionSpace {
    */
   def fromExpressions(data: Seq[Expression2], typeDeclaration: TypeDeclaration,
       combineApplications: Boolean): ActionSpace = {
+
+    // Generate each type of action template.
     val applicationTemplates = for {
       x <- data
       template <- generateApplicationTemplates(x, typeDeclaration)
@@ -120,10 +123,12 @@ object ActionSpace {
       constant <- StaticAnalysis.getFreeVariables(x).asScala
       typeInd <- StaticAnalysis.getIndexesOfFreeVariable(x, constant)
       t = typeMap(typeInd)
+      if !t.hasTypeVariables()
     } yield {
       ConstantTemplate(t, Expression2.constant(constant))
     }
     
+    // Get the root type of every logical form
     val rootTypes = for {
       x <- data
       typeMap = StaticAnalysis.inferTypeMap(x, TypeDeclaration.TOP, typeDeclaration).asScala
@@ -132,6 +137,12 @@ object ActionSpace {
     }
 
     val allTemplates = if (combineApplications) {
+      // combineApplications merges application templates with their first
+      // argument, i.e., the function being invoked. All constants with
+      // the appropriate type are substituted into this hole, resulting
+      // in new templates. This flag only makes sense if the first argument
+      // is always a constant (and not itself a function).
+
       val constantsWithType = SemanticParser.seqToMultimap(
           constantTemplates.map(x => (x.root, x)).toSeq)
       val newApplicationTemplates = for {
@@ -151,6 +162,7 @@ object ActionSpace {
     } else {
       (applicationTemplates ++ lambdaTemplates ++ constantTemplates)
     }
+    
 
     val templateMap = allTemplates.map(x => (x.root, x))
     

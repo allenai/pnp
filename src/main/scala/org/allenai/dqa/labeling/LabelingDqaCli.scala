@@ -19,6 +19,7 @@ import com.jayantkrish.jklol.training.DefaultLogFunction
 import org.allenai.pnp.semparse.ActionSpace
 
 import com.google.common.collect.HashMultimap
+import org.allenai.pnp.semparse.SemanticParserConfig
 
 class LabelingDqaCli extends AbstractCli {
   
@@ -87,7 +88,8 @@ class LabelingDqaCli extends AbstractCli {
       }
     }
 
-    val parser = SemanticParser.create(actionSpace, vocab, model)
+    val config = new SemanticParserConfig()
+    val parser = SemanticParser.create(actionSpace, vocab, config, model)
     val answerSelector = new AnswerSelector()
     val p3 = new LabelingP3Model(parser, executor, answerSelector)
 

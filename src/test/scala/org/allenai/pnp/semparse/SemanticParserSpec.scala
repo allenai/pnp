@@ -34,7 +34,8 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     vocab.addAll(d._1.toList.asJava)
   }
   val model = PnpModel.init(true)
-  val parser = SemanticParser.create(lexicon, vocab, model)
+  val config = new SemanticParserConfig()
+  val parser = SemanticParser.create(lexicon, vocab, config, model)
 
   "SemanticParser" should "generate application templates" in {
     println(lexicon.typeTemplateMap)
@@ -50,7 +51,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   it should "condition on expressions" in {
     val label = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
     val entityLinking = EntityLinking(List())
-    val oracle = parser.generateExecutionOracle(label, entityLinking, typeDeclaration).get
+    val oracle = parser.getLabelScore(label, entityLinking, typeDeclaration).get
     val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)),
         entityLinking)
 
@@ -58,11 +59,25 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val context = PnpInferenceContext.init(model).addExecutionScore(oracle)
 
     val results = exprs.beamSearch(1, -1, Env.init, context).executions
-    for (result <- results) {
-      println("  " + result)
-    }
-
     results.length should be(1)
     results(0).value should equal(label)
+  }
+  
+  it should "condition on multiple expressions" in {
+    val label1 = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
+    val label2 = exprParser.parse("(lambda ($0) (state:<e,t> $0))")
+    val labels = Set(label1, label2)
+    val entityLinking = EntityLinking(List())
+    val oracle = parser.getMultiLabelScore(labels, entityLinking, typeDeclaration).get
+    
+    val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)),
+        entityLinking)
+
+    ComputationGraph.renew()
+    val context = PnpInferenceContext.init(model).addExecutionScore(oracle)
+
+    val results = exprs.beamSearch(2, -1, Env.init, context).executions
+    results.length should be(2)
+    results.map(_.value).toSet should equal(labels)
   }
 }

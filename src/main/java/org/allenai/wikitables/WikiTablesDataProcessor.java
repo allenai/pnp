@@ -4,6 +4,8 @@ import java.io.*;
 import java.util.*;
 import java.util.zip.GZIPInputStream;
 
+import com.google.common.base.Preconditions;
+
 import edu.stanford.nlp.sempre.*;
 import edu.stanford.nlp.sempre.corenlp.CoreNLPAnalyzer;
 import edu.stanford.nlp.sempre.FuzzyMatchFn.FuzzyMatchFnMode;
@@ -168,10 +170,11 @@ public class WikiTablesDataProcessor {
     for (CustomExample ex: dataset) {
       String exId = ex.getId();
       File file = new File(derivationsPath + "/" + exId + ".gz");
+      
       if (file.exists()) {
         try {
           BufferedReader reader = new BufferedReader(new InputStreamReader(
-                  new GZIPInputStream(new FileInputStream(file))));
+              new GZIPInputStream(new FileInputStream(file))));
           List<Formula> correctFormulas = new ArrayList<>();
           String line;
           // TODO: Sort the derivations by length and set a limit on their number.
