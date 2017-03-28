@@ -55,6 +55,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var testDataOpt: OptionSpec[String] = null
   
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
+  var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -62,6 +63,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
+    trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
   }
   
   override def run(options: OptionSet): Unit = {
@@ -75,14 +77,17 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
+    val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, 50).asScala
+      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, includeDerivationsForTrain,
+        options.valueOf(derivationsPathOpt), 100, 50).asScala
     }
     
     val testData = ListBuffer[CustomExample]()
     if (options.has(testDataOpt)) {
       for (filename <- options.valuesOf(testDataOpt).asScala) {
-        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, -1).asScala
+        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
+          options.valueOf(derivationsPathOpt), 100, -1).asScala
       }
     }
     
@@ -269,11 +274,15 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
         sent.getPosTags, annotations)
-   
-    // Sempre's logical forms do not have parens around x in lambda expressions. Fixing that.
-    // TODO: This is fragile.
 
-    val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => WikiTablesUtil.toPnpLogicalForm(x)}
+    val correctLogicalForms = {
+      if (ex.targetFormula == null) {
+        ex.alternativeFormulas.asScala.map { x => WikiTablesUtil.toPnpLogicalForm(x) }
+      } else {
+        // This means we have the gold annotation available.
+        Seq(WikiTablesUtil.toPnpLogicalForm(ex.targetFormula))
+      }
+    }
     val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(lfParser.parse(x))}
     new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
                           ex.context, ex.targetValue);

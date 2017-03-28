@@ -130,7 +130,7 @@ public class WikiTablesDataProcessor {
         linkedFormulas.addAll(matcher.getFuzzyMatchedFormulas(exTokens, i, j,
                 FuzzyMatchFnMode.BINARY));
         for (Formula formula: linkedFormulas) {
-          // TODO: Store all the spans in entity linking instead of just the first one.
+          // TODO: Store all the spans in entity linking instead of just the shortest one.
           Pair<Integer, Integer> span = new Pair<>(i, j);
           if (formulasPresent.containsKey(formula)) {
             Pair<Integer, Integer> previousSpan = formulasPresent.get(formula);
@@ -177,7 +177,6 @@ public class WikiTablesDataProcessor {
               new GZIPInputStream(new FileInputStream(file))));
           List<Formula> correctFormulas = new ArrayList<>();
           String line;
-          // TODO: Sort the derivations by length and set a limit on their number.
           while ((line = reader.readLine()) != null) {
             correctFormulas.add(Formula.fromString(line));
           }
