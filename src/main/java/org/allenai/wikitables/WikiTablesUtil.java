@@ -2,6 +2,7 @@ package org.allenai.wikitables;
 
 import java.util.*;
 
+import com.jayantkrish.jklol.ccg.lambda.ExpressionParser;
 import com.jayantkrish.jklol.ccg.lambda2.Expression2;
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis;
 import edu.stanford.nlp.sempre.Formula;
@@ -55,6 +56,11 @@ public class WikiTablesUtil {
     fringe.add(expression);
     while (!fringe.isEmpty()) {
       Expression2 currExpression = fringe.remove();
+      List<Expression2> currChildren = currExpression.getSubexpressions();
+      if (currChildren != null) {
+        for (Expression2 subExpression : currChildren)
+          fringe.add(subExpression);
+      }
       if (!StaticAnalysis.isLambda(currExpression))
         continue;
       for (String var : StaticAnalysis.getLambdaArguments(currExpression)) {
@@ -63,8 +69,6 @@ public class WikiTablesUtil {
             variableMap.put(var, variableNames.remove());
         }
       }
-      for (Expression2 subExpression: currExpression.getSubexpressions())
-        fringe.add(subExpression);
     }
     String expressionString = expression.toString();
     for (String var: variableMap.keySet()) {
@@ -72,6 +76,10 @@ public class WikiTablesUtil {
       expressionString = expressionString.replaceAll(String.format("lambda \\(\\%s\\)", var),
                                                      String.format("lambda %s", variableName));
       expressionString = expressionString.replaceAll(String.format("\\%s", var),
+                                                     String.format("(var %s)", variableName));
+      // The last replacement can potentially lead to formulae like ((reverse fb:row.row.player) ((var x))))
+      // with a single child in subtree with (var x). Fixing those.
+      expressionString = expressionString.replaceAll(String.format("\\(\\(var %s\\)\\)", variableName),
                                                      String.format("(var %s)", variableName));
     }
     return expressionString;
