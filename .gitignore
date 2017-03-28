@@ -23,3 +23,11 @@ project/plugins/project/
 # Notebooks
 docs/.ipynb_checkpoints
 /bin/
+
+# Wikitables data (large files)
+data/WikiTableQuestions
+
+# Dynet jars (machine-specific)
+lib/dynet*
+lib/jollyday.jar
+lib/stanford-corenlp-*models.jar

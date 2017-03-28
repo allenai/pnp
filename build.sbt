@@ -15,8 +15,11 @@ libraryDependencies ++= Seq(
   "com.fasterxml.jackson.core" % "jackson-databind" % "2.2.3",
   "com.fasterxml.jackson.core" % "jackson-core" % "2.2.3",
   "com.fasterxml.jackson.core" % "jackson-annotations" % "2.2.3",
+  "edu.stanford.nlp" % "stanford-corenlp" % "3.2.0",
+  "edu.stanford.nlp" % "stanford-corenlp" % "3.2.0" classifier "models",
   "net.sf.jopt-simple" % "jopt-simple" % "4.9",
   "org.scalatest" %% "scalatest" % "3.0.0" % "test",
+  "org.json4s" %% "json4s-native" % "3.2.11",
   "io.spray" %%  "spray-json" % "1.3.3"
 )
 
@@ -27,6 +30,8 @@ bintrayOrganization := Some("allenai")
 bintrayRepository := "private"
 
 fork := true
+
+cancelable in Global := true
 
 // Docker configuration
 enablePlugins(DockerBuildPlugin)
