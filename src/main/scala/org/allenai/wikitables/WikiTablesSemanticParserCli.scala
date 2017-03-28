@@ -56,13 +56,20 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var derivationsPathOpt: OptionSpec[String] = null
   var modelOutputOpt: OptionSpec[String] = null
   
+  var maxDerivationsOpt: OptionSpec[Integer] = null
+  var epochsOpt: OptionSpec[Integer] = null
+  var beamSizeOpt: OptionSpec[Integer] = null
+  
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
-
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
+    
+    maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(1)
+    epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
+    beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
   }
@@ -79,21 +86,27 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, 50).asScala
+      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
+          options.valueOf(derivationsPathOpt), 100,
+          options.valueOf(maxDerivationsOpt)).asScala
+    }
+    
+    for (ex <- trainingData) {
+      println(ex.getTokens)
+      println(ex.alternativeFormulas)
     }
 
     println("Read " + trainingData.size + " training examples")
-    val wordCounts = getWordCounts(trainingData)
+    val wordCounts = getTokenCounts(trainingData)
     val allEntities = trainingData.map(ex => getUnlinkedEntities(ex)).flatten.toList
-    val entityCounts = getEntityCounts(allEntities)
+    val entityCounts = getEntityTokenCounts(allEntities)
     // Vocab consists of all words that appear more than once in
-    // the training data.
+    // the training data and in the name of any entity.
     val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
     vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
     vocab.add(UNK)
     vocab.add(ENTITY)
-    println(vocab.size + " words")
-    
+    println(vocab.size + " words")    
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
     val trainPreprocessed = trainingData.filter(!_.alternativeFormulas.isEmpty).map(
@@ -151,7 +164,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       println("Skipping action space validation")
     }
 
-    val trainedModel = train(trainPreprocessed, parser, typeDeclaration)
+    val trainedModel = train(trainPreprocessed, parser, typeDeclaration,
+        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt))
     
     // TODO: serialization
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
@@ -170,7 +184,7 @@ object WikiTablesSemanticParserCli {
     (new WikiTablesSemanticParserCli()).run(args)
   }
 
-  def getWordCounts(examples: Seq[CustomExample]): CountAccumulator[String] = {
+  def getTokenCounts(examples: Seq[CustomExample]): CountAccumulator[String] = {
     val acc = CountAccumulator.create[String]
     for (ex <- examples) {
       ex.getTokens.asScala.map(x => acc.increment(x, 1.0)) 
@@ -178,13 +192,10 @@ object WikiTablesSemanticParserCli {
     acc
   }
 
-  def getEntityCounts(entityNames: List[String]): CountAccumulator[String] = {
+  def getEntityTokenCounts(entityNames: List[String]): CountAccumulator[String] = {
     val acc = CountAccumulator.create[String]
     for (entityString <- entityNames) {
-      // Strings are of the form fb:cell.cell_name
-      val parts = entityString.split('.')
-      acc.increment(parts.slice(1, parts.size - 1).mkString("."), 1.0)  // entity type
-      parts.last.split('_').map(x => acc.increment(x, 1.0))  // actual value split into tokens
+      tokenizeEntity(entityString).map(x => acc.increment(x, 1.0))
     }
     acc
   }
@@ -213,7 +224,7 @@ object WikiTablesSemanticParserCli {
     * Returns a model with the trained parameters. 
     */
   def train(examples: Seq[WikiTablesExample], parser: SemanticParser,
-      typeDeclaration: TypeDeclaration): PnpModel = {
+      typeDeclaration: TypeDeclaration, epochs: Int, beamSize: Int): PnpModel = {
     
     parser.dropoutProb = 0.5
     val pnpExamples = for {
@@ -232,7 +243,8 @@ object WikiTablesSemanticParserCli {
     // Train model
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(20, 5, true, model, sgd, new DefaultLogFunction())
+    val trainer = new LoglikelihoodTrainer(epochs, beamSize, true, model, sgd,
+        new DefaultLogFunction())
     trainer.train(pnpExamples.toList)
 
     parser.dropoutProb = -1

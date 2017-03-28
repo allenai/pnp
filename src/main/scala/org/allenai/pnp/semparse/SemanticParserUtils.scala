@@ -151,7 +151,7 @@ object SemanticParserUtils {
         numFailed += 1
       }
     }
-    println("max parts: " + maxParts)
+    println("max templates in a correct logical form: " + maxParts)
     println("decoding failures: " + numFailed)
     
     val holeTypes = usedRules.map(_._1).toSet

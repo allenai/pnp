@@ -95,7 +95,7 @@ public class WikiTablesDataProcessor {
       if (ex.alternativeFormulas.size() > numDerivationsLimit) {
         List<Formula> derivations = ex.alternativeFormulas;
         derivations.sort(new DerivationLengthComparator());
-        ex.alternativeFormulas = derivations.subList(0, numDerivationsLimit - 1);
+        ex.alternativeFormulas = derivations.subList(0, numDerivationsLimit);
       }
       prunedDataset.add(ex);
     }

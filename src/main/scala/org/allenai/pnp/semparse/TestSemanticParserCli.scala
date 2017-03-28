@@ -24,11 +24,15 @@ class TestSemanticParserCli extends AbstractCli() {
   var entityDataOpt: OptionSpec[String] = null
   var testDataOpt: OptionSpec[String] = null
   var modelOpt: OptionSpec[String] = null
+
+  var beamSizeOpt: OptionSpec[Integer] = null
   
   override def initializeOptions(parser: OptionParser): Unit = {
     entityDataOpt = parser.accepts("entityData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
+    
+    beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
   }
 
   override def run(options: OptionSet): Unit = {
@@ -66,13 +70,14 @@ class TestSemanticParserCli extends AbstractCli() {
       TrainSemanticParserCli.preprocessExample(x, simplifier, vocab, entityDict))
 
     println("*** Running Evaluation ***")
-    val results = test(testPreprocessed, parser, typeDeclaration, simplifier, comparator)
+    val results = test(testPreprocessed, parser, options.valueOf(beamSizeOpt),
+        typeDeclaration, simplifier, comparator)
   }
   
   /** Evaluate the test accuracy of parser on examples. Logical
    *  forms are compared for equality using comparator.  
    */
-  def test(examples: Seq[CcgExample], parser: SemanticParser,
+  def test(examples: Seq[CcgExample], parser: SemanticParser, beamSize: Int,
       typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
       comparator: ExpressionComparator): SemanticParserLoss = {
     println("")
@@ -90,7 +95,7 @@ class TestSemanticParserCli extends AbstractCli() {
       val dist = parser.parse(
           sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking])
-      val results = dist.beamSearch(5, 75, Env.init, context)
+      val results = dist.beamSearch(beamSize, 100, Env.init, context)
           
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
