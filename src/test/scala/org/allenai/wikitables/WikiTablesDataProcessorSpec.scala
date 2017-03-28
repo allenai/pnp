@@ -30,6 +30,7 @@ class WikiTablesDataProcessorSpec extends FlatSpecLike with Matchers {
        |"posTags": ["WDT", "VB", "DT", "NN", "."],
        |"table": "(context (graph tables.TableKnowledgeGraph csv/203-csv/634.csv))",
        |"answer": "(targetValue (list (description \"3\")))",
+       |"gold logical form": "(count (fb:row.row.category fb:cell.",
        |"logical forms": ["(count (fb:row.row.category fb:cell.choice_tv_sidekick))",
        |                  "(count (fb:row.row.population (fb:cell.cell.number (> (number 2000)))))"
        |                 ]
