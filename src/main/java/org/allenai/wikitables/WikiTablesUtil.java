@@ -55,7 +55,7 @@ public class WikiTablesUtil {
     for (String variable: boundVariables) {
       expressionString = expressionString.replaceAll(String.format("lambda %s", variable),
                                                      String.format("lambda (%s)", variable));
-      expressionString = expressionString.replaceAll(String.format("(var %s)", variable), variable);
+      expressionString = expressionString.replaceAll(String.format("\\(var %s\\)", variable), variable);
     }
     return expressionString;
   }

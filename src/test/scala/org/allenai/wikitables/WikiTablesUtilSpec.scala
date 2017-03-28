@@ -21,7 +21,7 @@ class WikiTablesUtilSpec extends FlatSpec {
     val e = "(argmax (number 1) (number 1) (fb:cell.cell.part (!= fb:part.gamecube)) (reverse (lambda x (count (fb:row.row.computer (var x))))))"
     val sempreLf = Formula.fromString(e)
     val converted = WikiTablesUtil.toPnpLogicalForm(sempreLf)
-    val expected = "(argmax (number 1) (number 1) (fb:cell.cell.part (!= fb:part.gamecube)) (reverse (lambda ($0) (count (fb:row.row.computer $0)))))"
+    val expected = "(argmax (number 1) (number 1) (fb:cell.cell.part (!= fb:part.gamecube)) (reverse (lambda (x) (count (fb:row.row.computer x)))))"
     
     assert(converted == expected)
   }
