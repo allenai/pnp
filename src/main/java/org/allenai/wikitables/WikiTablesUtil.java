@@ -1,10 +1,17 @@
 package org.allenai.wikitables;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
 
-import com.jayantkrish.jklol.ccg.lambda.ExpressionParser;
 import com.jayantkrish.jklol.ccg.lambda2.Expression2;
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis;
+
 import edu.stanford.nlp.sempre.Formula;
 import edu.stanford.nlp.sempre.Formulas;
 import edu.stanford.nlp.sempre.LambdaFormula;
@@ -37,6 +44,8 @@ public class WikiTablesUtil {
         }
       }
     }
+    System.out.println(boundVariables);
+    
     for (String variable: boundVariables) {
       expressionString = expressionString.replaceAll(String.format("lambda %s", variable),
                                                      String.format("lambda (%s)", variable));
@@ -77,6 +86,7 @@ public class WikiTablesUtil {
                                                      String.format("lambda %s", variableName));
       expressionString = expressionString.replaceAll(String.format("\\%s", var),
                                                      String.format("(var %s)", variableName));
+
       // The last replacement can potentially lead to formulae like ((reverse fb:row.row.player) ((var x))))
       // with a single child in subtree with (var x). Fixing those.
       expressionString = expressionString.replaceAll(String.format("\\(\\(var %s\\)\\)", variableName),

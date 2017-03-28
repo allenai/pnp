@@ -89,10 +89,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
           100, options.valueOf(maxDerivationsOpt)).asScala
     }
 
-    for (ex <- trainingData) {
-      println(ex.getTokens)
-      println(ex.alternativeFormulas)
-    }
     println("Read " + trainingData.size + " training examples")
     val wordCounts = getTokenCounts(trainingData)
     val allEntities = trainingData.map(ex => getUnlinkedEntities(ex)).flatten.toList
@@ -110,6 +106,12 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
         x => preprocessExample(x, vocab, simplifier, logicalFormParser, typeDeclaration))
     println("Found correct logical forms for " + trainPreprocessed.size + " training examples")
 
+    println("Preprocessed:")
+    for (ex <- trainPreprocessed) {
+      println(ex.getSentence.getWords)
+      println(ex.getLogicalForms)
+    }
+    
     // Generate the action space of the semantic parser from the logical
     // forms that are well-typed.
     val trainingLfs = trainPreprocessed.map(_.getLogicalForms.asScala).flatten
