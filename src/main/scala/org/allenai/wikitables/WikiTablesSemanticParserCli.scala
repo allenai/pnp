@@ -359,11 +359,13 @@ object WikiTablesSemanticParserCli {
     lfParser: ExpressionParser[Expression2],
     typeDeclaration: WikiTablesTypeDeclaration
   ): WikiTablesExample = {
+    // Convert words to indices using the vocab.
     val sent = new AnnotatedSentence(example.getTokens(), example.languageInfo.posTags)
     val unkedWords = sent.getWords.asScala.map(
         x => if (vocab.contains(x)) { x } else { WikiTablesSemanticParserCli.UNK })
     val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toList
 
+    // Compute an entity linking.
     val entityLinking = sempreEntityLinkingToPnpEntityLinking(sempreEntityLinking, vocab, typeDeclaration)
     val entityAnonymizedWords = unkedWords.toArray
     val entityAnonymizedTokenIds = tokenIds.toArray
@@ -386,6 +388,7 @@ object WikiTablesSemanticParserCli {
     val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
         sent.getPosTags, annotations)
 
+    // Convert logical forms.
     val correctLogicalForms = {
       if (example.targetFormula == null) {
         example.alternativeFormulas.asScala.map { x => WikiTablesUtil.toPnpLogicalForm(x) }
@@ -395,7 +398,31 @@ object WikiTablesSemanticParserCli {
       }
     }
     val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(x)}
+
+    // Return example.
     new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
                           example.context, example.targetValue);
+  }
+
+  def newPreprocessExample(
+    example: WikiTablesExample,
+    vocab: IndexedList[String],
+    sempreEntityLinking: Seq[Pair[Pair[Integer, Integer], Formula]],
+    typeDeclaration: WikiTablesTypeDeclaration
+  ) {
+    // All we do here is add some annotations to the example.  Those annotations are:
+    // 1. Token ids, computed using the vocab
+    // 2. An EntityLinking
+    val words = example.getSentence().getWords().asScala
+    val unkedWords = words.map(x => if (vocab.contains(x)) x else WikiTablesSemanticParserCli.UNK)
+    val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toList
+
+    // Compute an entity linking.
+    val entityLinking = sempreEntityLinkingToPnpEntityLinking(sempreEntityLinking, vocab, typeDeclaration)
+
+    val annotations = example.getSentence().getAnnotations()
+    annotations.put("originalTokens", example.getSentence().getWords().asScala.toList)
+    annotations.put("tokenIds", tokenIds)
+    annotations.put("entityLinking", entityLinking)
   }
 }

@@ -28,6 +28,7 @@ class WikiTablesDataProcessorSpec extends FlatSpecLike with Matchers {
        |"question": "What is the answer?",
        |"tokens": ["What", "is", "the", "answer", "?"],
        |"posTags": ["WDT", "VB", "DT", "NN", "."],
+       |"NER": [["", ""], ["", ""], ["", ""], ["", ""], ["", ""]],
        |"table": "(context (graph tables.TableKnowledgeGraph csv/203-csv/634.csv))",
        |"answer": "(targetValue (list (description \"3\")))",
        |"gold logical form": "(count (fb:row.row.category fb:cell.",
