@@ -1,8 +1,8 @@
 #!/bin/bash -e
 
-source "experiments/dipart/scripts/config.sh"
+source "experiments/pascal_parts/scripts/config.sh"
 
-MY_NAME=matching_lstm2
+MY_NAME=matching_lstm
 MY_DIR=$EXPERIMENT_DIR/$MY_NAME/
 MY_MODEL=$MY_DIR/model.ser
 MY_FLAGS="--lstmEncode --matchIndependent --loglikelihood"
@@ -22,8 +22,6 @@ mkdir -p $MY_DIR/validation_error_matching/
 python $SCRIPT_DIR/visualize/visualize_loss.py $MY_DIR/validation_error_matching.json $MY_DIR/validation_error_matching/
 tar cf $MY_DIR/validation_error_matching.tar $MY_DIR/validation_error_matching/
 gzip -f $MY_DIR/validation_error_matching.tar
-
-./$SCRIPT_DIR/run.sh org.allenai.dqa.matching.TestMatchingCli --beamSize $TEST_BEAM --examples $TRAIN --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --model $MY_MODEL --lossJson $MY_DIR/train_error_independent.json  > $MY_DIR/train_error_independent_log.txt
 
 ./$SCRIPT_DIR/run.sh org.allenai.dqa.matching.TestMatchingCli --beamSize 120 --enforceMatching --globalNormalize --examples $TRAIN --diagrams $DIAGRAMS --diagramFeatures $DIAGRAM_FEATURES --model $MY_MODEL --lossJson $MY_DIR/train_error_matching.json  > $MY_DIR/train_error_matching_log.txt
 
