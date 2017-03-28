@@ -8,12 +8,10 @@ import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.PnpExample
 import org.allenai.pnp.PnpModel
-import org.allenai.pnp.semparse.MaxExecutionScore
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
 import org.allenai.pnp.semparse.SemanticParser
-import org.allenai.pnp.semparse.SemanticParserLoss
 import org.allenai.pnp.semparse.SemanticParserUtils
 import org.allenai.pnp.semparse.Span
 import com.google.common.collect.Maps
@@ -22,13 +20,11 @@ import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
-import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.training.DefaultLogFunction
-import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
 import edu.cmu.dynet._
@@ -37,7 +33,6 @@ import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.ActionSpace
-import org.allenai.pnp.PnpInferenceContext
 import org.allenai.pnp.semparse.SemanticParserConfig
 
 /** Command line program for training a semantic parser 
@@ -57,6 +52,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var modelOutputOpt: OptionSpec[String] = null
   
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
+  var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -65,6 +61,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
     
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
+    trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
   }
 
   override def run(options: OptionSet): Unit = {
@@ -78,10 +75,11 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     // Read and preprocess data
     val trainingData = ListBuffer[CustomExample]()
+    val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, 50).asScala
+      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true, includeDerivationsForTrain,
+        options.valueOf(derivationsPathOpt), 100, 50).asScala
     }
-
     println("Read " + trainingData.size + " training examples")
     val wordCounts = getWordCounts(trainingData)
     val allEntities = trainingData.map(ex => getUnlinkedEntities(ex)).flatten.toList
@@ -328,11 +326,15 @@ object WikiTablesSemanticParserCli {
 
     val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
         sent.getPosTags, annotations)
-   
-    // Sempre's logical forms do not have parens around x in lambda expressions. Fixing that.
-    // TODO: This is fragile.
 
-    val correctLogicalForms = ex.alternativeFormulas.asScala.map {x => WikiTablesUtil.toPnpLogicalForm(x)}
+    val correctLogicalForms = {
+      if (ex.targetFormula == null) {
+        ex.alternativeFormulas.asScala.map { x => WikiTablesUtil.toPnpLogicalForm(x) }
+      } else {
+        // This means we have the gold annotation available.
+        Seq(WikiTablesUtil.toPnpLogicalForm(ex.targetFormula))
+      }
+    }
     val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(lfParser.parse(x))}
     new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
                           ex.context, ex.targetValue);
