@@ -32,6 +32,7 @@ class TestWikiTablesCli extends AbstractCli() {
   var modelOpt: OptionSpec[String] = null
   
   var beamSizeOpt: OptionSpec[Integer] = null
+  var evaluateDpdOpt: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -39,6 +40,7 @@ class TestWikiTablesCli extends AbstractCli() {
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
     
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
+    evaluateDpdOpt = parser.accepts("evaluateDpd")
   }
   
   override def run(options: OptionSet): Unit = {
@@ -54,7 +56,7 @@ class TestWikiTablesCli extends AbstractCli() {
     val testData = ListBuffer[CustomExample]()
     if (options.has(testDataOpt)) {
       for (filename <- options.valuesOf(testDataOpt).asScala) {
-        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, 1).asScala
+        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, -1).asScala
       }
     }
     
@@ -75,7 +77,7 @@ class TestWikiTablesCli extends AbstractCli() {
     */
         
     val testResults = test(testPreprocessed, parser, options.valueOf(beamSizeOpt),
-        typeDeclaration, comparator)
+        options.has(evaluateDpdOpt), typeDeclaration, comparator)
     println("*** Evaluation results ***")
     println(testResults)
   }
@@ -83,8 +85,9 @@ class TestWikiTablesCli extends AbstractCli() {
   /** Evaluate the test accuracy of parser on examples. Logical
     * forms are compared for equality using comparator.  
     */
-  def test(examples: Seq[WikiTablesExample], parser: SemanticParser,
-      beamSize: Int, typeDeclaration: TypeDeclaration, comparator: ExpressionComparator): SemanticParserLoss = {
+  def test(examples: Seq[WikiTablesExample], parser: SemanticParser, beamSize: Int,
+      evaluateDpd: Boolean, typeDeclaration: TypeDeclaration,
+      comparator: ExpressionComparator): SemanticParserLoss = {
 
     println("")
     var numCorrect = 0
@@ -105,7 +108,17 @@ class TestWikiTablesCli extends AbstractCli() {
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
         val expression = x.value.decodeExpression
-        if (e.isFormulaCorrect(expression)) {
+        
+        val isCorrect = if (evaluateDpd) {
+          // Evaluate the logical forms using the output of dynamic programming on denotations.
+          e.getLogicalForms.size > 0 && e.getLogicalForms.asScala.map(
+              x => comparator.equals(x, expression)).reduce(_ || _)
+        } else {
+          // Evaluate the logical form by executing it.
+          e.isFormulaCorrect(expression)
+        }
+
+        if (isCorrect) {
           println("* " + x.logProb.formatted("%02.3f") + "  " + expression)
           true
         } else {

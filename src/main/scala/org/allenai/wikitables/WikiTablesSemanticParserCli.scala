@@ -91,7 +91,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     println("Read " + trainingData.size + " training examples")
     val wordCounts = getTokenCounts(trainingData)
-    val allEntities = trainingData.map(ex => getUnlinkedEntities(ex)).flatten.toList
+    val allEntities = trainingData.map(ex => getEntities(ex)).flatten.toList
     val entityCounts = getEntityTokenCounts(allEntities)
     // Vocab consists of all words that appear more than once in
     // the training data and in the name of any entity.
@@ -99,7 +99,11 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
     vocab.add(UNK)
     vocab.add(ENTITY)
-    println(vocab.size + " words")    
+    println(vocab.size + " words")
+    
+    for (w <- vocab.items().asScala.sorted) {
+      println("  " + w + " " + wordCounts.getCount(w) + " " + entityCounts.getCount(w))
+    }
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
     val logicalFormPresent = (ex: CustomExample) => !ex.alternativeFormulas.isEmpty || ex.targetFormula != null
@@ -200,9 +204,9 @@ object WikiTablesSemanticParserCli {
     acc
   }
 
-  def getUnlinkedEntities(ex: CustomExample): List[String] = {
+  def getEntities(ex: CustomExample): List[String] = {
     val sempreEntityLinking = WikiTablesDataProcessor.getEntityLinking(ex)
-    sempreEntityLinking.asScala.filter(p => p.getFirst() == null).map(p => p.getSecond().toString).toList
+    sempreEntityLinking.asScala.map(p => p.getSecond().toString).toList
   }
 
 
@@ -349,7 +353,7 @@ object WikiTablesSemanticParserCli {
         Seq(WikiTablesUtil.toPnpLogicalForm(ex.targetFormula))
       }
     }
-    val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(lfParser.parse(x))}
+    val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(x)}
     new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
                           ex.context, ex.targetValue);
   }

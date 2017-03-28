@@ -8,9 +8,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.regex.Pattern;
 
+import com.google.common.collect.Lists;
+import com.jayantkrish.jklol.ccg.lambda.ExpressionParser;
 import com.jayantkrish.jklol.ccg.lambda2.Expression2;
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier;
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis;
+import com.jayantkrish.jklol.ccg.lambda2.VariableCanonicalizationReplacementRule;
 
 import edu.stanford.nlp.sempre.Formula;
 import edu.stanford.nlp.sempre.Formulas;
@@ -18,7 +23,7 @@ import edu.stanford.nlp.sempre.LambdaFormula;
 import fig.basic.LispTree;
 
 public class WikiTablesUtil {
-  public static String toPnpLogicalForm(Formula expression) {
+  public static Expression2 toPnpLogicalForm(Formula expression) {
     /*
     Sempre's lambda expressions are written differently from what pnp expects. We make the following changes
     1. Sempre uses ! and reverse interchangeably. Converting all ! to reverse.
@@ -32,8 +37,7 @@ public class WikiTablesUtil {
     // Change 1:
     expressionString = expressionString.replaceAll("!(fb:[^ ]*)", "(reverse $1)");
     LispTree expressionTree = expression.toLispTree();
-    if (expressionTree.isLeaf())
-      return expressionString;
+    
     Set<String> boundVariables = new HashSet<>();
     // BFS to find all the free variables
     Queue<LispTree> fringe = new LinkedList<>();
@@ -50,17 +54,21 @@ public class WikiTablesUtil {
         }
       }
     }
-    System.out.println(boundVariables);
     
     for (String variable: boundVariables) {
       expressionString = expressionString.replaceAll(String.format("lambda %s", variable),
                                                      String.format("lambda (%s)", variable));
       expressionString = expressionString.replaceAll(String.format("\\(var %s\\)", variable), variable);
     }
-    return expressionString;
+
+    return ExpressionParser.expression2().parse(expressionString);
   }
 
   public static String toSempreLogicalForm(Expression2 expression) {
+    ExpressionSimplifier simplifier = new ExpressionSimplifier(Lists.newArrayList(
+        new VariableCanonicalizationReplacementRule()));
+    expression = simplifier.apply(expression);
+    
     Queue<String> variableNames = new LinkedList<>(Arrays.asList("x", "y", "z"));
     for (char varName = 'a'; varName <= 'w'; varName++) {
       variableNames.add(String.valueOf(varName));
@@ -79,24 +87,25 @@ public class WikiTablesUtil {
       if (!StaticAnalysis.isLambda(currExpression))
         continue;
       for (String var : StaticAnalysis.getLambdaArguments(currExpression)) {
-        if (var.startsWith("$")) {
-          if (!variableMap.containsKey(var))
-            variableMap.put(var, variableNames.remove());
-        }
+        variableMap.put(var, variableNames.remove());
       }
     }
+    
     String expressionString = expression.toString();
     for (String var: variableMap.keySet()) {
       String variableName = variableMap.get(var);
-      expressionString = expressionString.replaceAll(String.format("lambda \\(\\%s\\)", var),
+      expressionString = expressionString.replaceAll(String.format("lambda \\(%s\\)", Pattern.quote(var)),
                                                      String.format("lambda %s", variableName));
-      expressionString = expressionString.replaceAll(String.format("\\%s", var),
+      expressionString = expressionString.replaceAll(String.format("%s", Pattern.quote(var)),
                                                      String.format("(var %s)", variableName));
 
+      /*
+      // XXX: test this
       // The last replacement can potentially lead to formulae like ((reverse fb:row.row.player) ((var x))))
       // with a single child in subtree with (var x). Fixing those.
       expressionString = expressionString.replaceAll(String.format("\\(\\(var %s\\)\\)", variableName),
                                                      String.format("(var %s)", variableName));
+       */
     }
     return expressionString;
   }
