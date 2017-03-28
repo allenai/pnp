@@ -102,7 +102,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     println(vocab.size + " words")    
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
-    val trainPreprocessed = trainingData.filter(!_.alternativeFormulas.isEmpty).map(
+    val logicalFormPresent = (ex: CustomExample) => !ex.alternativeFormulas.isEmpty || ex.targetFormula != null
+    val trainPreprocessed = trainingData.filter(logicalFormPresent).map(
         x => preprocessExample(x, vocab, simplifier, logicalFormParser, typeDeclaration))
     println("Found correct logical forms for " + trainPreprocessed.size + " training examples")
 

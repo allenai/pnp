@@ -20,11 +20,17 @@ import fig.basic.LispTree;
 public class WikiTablesUtil {
   public static String toPnpLogicalForm(Formula expression) {
     /*
-    Sempre's lambda expressions are written differently from what pnp expects. We make the following change
-    (lambda x ((reverse fb:cell.cell.number) (var x))) -> (lambda (x) ((reverse fb:cell.cell.number) x))
-    We need to do this for all bound variables.
+    Sempre's lambda expressions are written differently from what pnp expects. We make the following changes
+    1. Sempre uses ! and reverse interchangeably. Converting all ! to reverse.
+      Eg.: (!fb:row.row.score (...)) -> ((reverse fb:row.row.score) (...))
+    2. Variables in lambda forms are written without parentheses as arguments, and when they are actually
+      used, declared as functions with 'var'.
+      Eg.: (lambda x ((reverse fb:cell.cell.number) (var x))) -> (lambda (x) ((reverse fb:cell.cell.number) x))
+      We need to do this for all bound variables.
      */
     String expressionString = expression.toString();
+    // Change 1:
+    expressionString = expressionString.replaceAll("!(fb:[^ ]*)", "(reverse $1)");
     LispTree expressionTree = expression.toLispTree();
     if (expressionTree.isLeaf())
       return expressionString;
