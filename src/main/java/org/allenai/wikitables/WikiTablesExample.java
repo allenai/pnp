@@ -42,9 +42,7 @@ public class WikiTablesExample {
   public boolean isFormulaCorrect(Expression2 pnpFormula) {
     // Sempre represents lambda expressions differently. We changed them when reading the examples. Changing
     // them back for execution.
-    System.out.println("Before conversion: " + pnpFormula.toString());
     String expressionString = WikiTablesUtil.toSempreLogicalForm(pnpFormula);
-    System.out.println("After conversion: " + expressionString);
     try {
       Formula sempreFormula = Formula.fromString(expressionString);
       return WikiTablesDataProcessor.isFormulaCorrect(sempreFormula, context, targetValue, null);

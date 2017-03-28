@@ -21,19 +21,26 @@ import org.allenai.pnp.semparse.SemanticParserLoss
 import edu.cmu.dynet.ComputationGraph
 import org.allenai.pnp.Env
 import edu.cmu.dynet.ModelLoader
+import org.allenai.pnp.semparse.SemanticParserUtils
+import org.allenai.pnp.Execution
+import org.allenai.pnp.semparse.SemanticParserState
 
 class TestWikiTablesCli extends AbstractCli() {
   
   var testDataOpt: OptionSpec[String] = null
   var derivationsPathOpt: OptionSpec[String] = null
-  
   var modelOpt: OptionSpec[String] = null
+  
+  var beamSizeOpt: OptionSpec[Integer] = null
+  var evaluateDpdOpt: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
-    
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
+    
+    beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
+    evaluateDpdOpt = parser.accepts("evaluateDpd")
   }
   
   override def run(options: OptionSet): Unit = {
@@ -60,10 +67,17 @@ class TestWikiTablesCli extends AbstractCli() {
     loader.done()
 
     println("Read " + testData.size + " test examples")
-    val testPreprocessed = testData.filter(!_.alternativeFormulas.isEmpty).map(
-        x => WikiTablesSemanticParserCli.preprocessExample(x, parser.vocab, simplifier, logicalFormParser, typeDeclaration))
+    val testPreprocessed = testData.map(x => WikiTablesSemanticParserCli.preprocessExample(
+        x, parser.vocab, simplifier, logicalFormParser, typeDeclaration))
+    
+    /*
+    println("*** Validating test set action space ***")
+    val testSeparatedLfs = WikiTablesSemanticParserCli.getCcgDataset(testPreprocessed)
+    SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
+    */
         
-    val testResults = test(testPreprocessed, parser, model, typeDeclaration, comparator)
+    val testResults = test(testPreprocessed, parser, options.valueOf(beamSizeOpt),
+        options.has(evaluateDpdOpt), typeDeclaration, comparator)
     println("*** Evaluation results ***")
     println(testResults)
   }
@@ -71,8 +85,10 @@ class TestWikiTablesCli extends AbstractCli() {
   /** Evaluate the test accuracy of parser on examples. Logical
     * forms are compared for equality using comparator.  
     */
-  def test(examples: Seq[WikiTablesExample], parser: SemanticParser,
-      model: PnpModel, typeDeclaration: TypeDeclaration, comparator: ExpressionComparator): SemanticParserLoss = {
+  def test(examples: Seq[WikiTablesExample], parser: SemanticParser, beamSize: Int,
+      evaluateDpd: Boolean, typeDeclaration: TypeDeclaration,
+      comparator: ExpressionComparator): SemanticParserLoss = {
+
     println("")
     var numCorrect = 0
     var numCorrectAt10 = 0
@@ -86,13 +102,23 @@ class TestWikiTablesCli extends AbstractCli() {
           entityLinking)
       
       ComputationGraph.renew()
-      val context = PnpInferenceContext.init(model)
-      val results = dist.beamSearch(10, 75, Env.init, context)
+      val context = PnpInferenceContext.init(parser.model)
+      val results = dist.beamSearch(beamSize, 75, Env.init, context)
       
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
         val expression = x.value.decodeExpression
-        if (e.isFormulaCorrect(expression)) {
+        
+        val isCorrect = if (evaluateDpd) {
+          // Evaluate the logical forms using the output of dynamic programming on denotations.
+          e.getLogicalForms.size > 0 && e.getLogicalForms.asScala.map(
+              x => comparator.equals(x, expression)).reduce(_ || _)
+        } else {
+          // Evaluate the logical form by executing it.
+          e.isFormulaCorrect(expression)
+        }
+
+        if (isCorrect) {
           println("* " + x.logProb.formatted("%02.3f") + "  " + expression)
           true
         } else {
@@ -110,34 +136,36 @@ class TestWikiTablesCli extends AbstractCli() {
       
       // Print the attentions of the best predicted derivation
       if (beam.nonEmpty) {
-        val state = beam(0).value
-        val templates = state.getTemplates
-        val attentions = state.getAttentions
-        val tokens = e.getSentence.getWords.asScala.toArray
-        for (i <- 0 until templates.length) {
-          val values = ComputationGraph.incrementalForward(attentions(i)).toSeq()
-          val maxIndex = values.zipWithIndex.max._2
-
-          val tokenStrings = for {
-            j <- 0 until values.length
-          } yield {
-            val color = if (j == maxIndex) {
-              Console.RED
-            } else if (values(j) > 0.1) {
-              Console.YELLOW
-            } else {
-              Console.RESET
-            }
-            color + tokens(j) + Console.RESET
-          }
-
-          println("  " + tokenStrings.mkString(" ") + " " + templates(i))
-        }
+        printAttentions(beam(0).value, e.getSentence.getWords.asScala.toArray)
       }
     }
     
     val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)
     loss
+  }
+
+  def printAttentions(state: SemanticParserState, tokens: Array[String]): Unit = {
+    val templates = state.getTemplates
+    val attentions = state.getAttentions
+    for (i <- 0 until templates.length) {
+      val values = ComputationGraph.incrementalForward(attentions(i)).toSeq()
+      val maxIndex = values.zipWithIndex.max._2
+
+      val tokenStrings = for {
+        j <- 0 until values.length
+      } yield {
+        val color = if (j == maxIndex) {
+          Console.RED
+        } else if (values(j) > 0.1) {
+          Console.YELLOW
+        } else {
+          Console.RESET
+        }
+        color + tokens(j) + Console.RESET
+      }
+      
+      println("  " + tokenStrings.mkString(" ") + " " + templates(i))
+    }
   }
 }
 

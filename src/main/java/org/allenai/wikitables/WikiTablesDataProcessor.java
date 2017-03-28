@@ -11,12 +11,16 @@ import edu.stanford.nlp.sempre.corenlp.CoreNLPAnalyzer;
 import edu.stanford.nlp.sempre.FuzzyMatchFn.FuzzyMatchFnMode;
 import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph;
 import edu.stanford.nlp.sempre.tables.StringNormalizationUtils;
+import edu.stanford.nlp.sempre.tables.TableValuePreprocessor;
 import edu.stanford.nlp.sempre.tables.dpd.DPDParser;
 import edu.stanford.nlp.sempre.tables.test.*;
 import edu.stanford.nlp.sempre.tables.match.*;
 import fig.basic.*;
 
 public class WikiTablesDataProcessor {
+  
+  private static Builder SEMPRE_BUILDER = getSempreBuilder(100);
+  
   public static List<CustomExample> getDataset(String path, boolean inSempreFormat,
                                                boolean includeDerivations, String derivationsPath,
                                                int beamSize, int numDerivationsLimit) {
@@ -95,7 +99,7 @@ public class WikiTablesDataProcessor {
       if (ex.alternativeFormulas.size() > numDerivationsLimit) {
         List<Formula> derivations = ex.alternativeFormulas;
         derivations.sort(new DerivationLengthComparator());
-        ex.alternativeFormulas = derivations.subList(0, numDerivationsLimit - 1);
+        ex.alternativeFormulas = derivations.subList(0, numDerivationsLimit);
       }
       prunedDataset.add(ex);
     }
@@ -249,12 +253,18 @@ public class WikiTablesDataProcessor {
   public static boolean isFormulaCorrect(Formula formula, ContextValue context, Value targetValue,
                                          Builder builder) {
     if (builder == null) {
-      // This can happen when we are
-      builder = getSempreBuilder(100);  // Beamsize does not matter.
+      builder = SEMPRE_BUILDER;
     }
+
     Value pred = builder.executor.execute(formula, context).value;
     if (pred instanceof ListValue)
       pred = ((TableKnowledgeGraph) context.graph).getListValueWithOriginalStrings((ListValue) pred);
+    
+    TableValuePreprocessor targetPreprocessor = new TableValuePreprocessor();
+    targetValue = targetPreprocessor.preprocess(targetValue);
+    // Print the predicted and target values.
+    // System.out.println(pred + " " + targetValue);
+
     double result = builder.valueEvaluator.getCompatibility(targetValue, pred);
     return result == 1;
   }
