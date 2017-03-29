@@ -97,6 +97,7 @@ class TestWikiTablesCli extends AbstractCli() {
     var numCorrectAt10 = 0
     for (e <- examples) {
       val sent = e.getSentence
+      println("example id: " + e.getId())
       println(sent.getWords.asScala.mkString(" "))
       println(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
 
@@ -120,7 +121,7 @@ class TestWikiTablesCli extends AbstractCli() {
           // Evaluate the logical form by executing it.
           e.isFormulaCorrect(expression)
         }
-
+        
         if (isCorrect) {
           println("* " + x.logProb.formatted("%02.3f") + "  " + expression)
           true
@@ -143,10 +144,10 @@ class TestWikiTablesCli extends AbstractCli() {
       if (oracle.isDefined) { 
         val oracleContext = PnpInferenceContext.init(parser.model).addExecutionScore(oracle.get)
         val oracleResults = dist.beamSearch(beamSize, 75, Env.init, oracleContext)
-
+            
         oracleResults.executions.map { x =>
-          val expression = x.value.decodeExpression
-          println("o " + x.logProb.formatted("%02.3f") + "  " + expression)
+        val expression = x.value.decodeExpression
+        println("o " + x.logProb.formatted("%02.3f") + "  " + expression)
         }
       } else {
         println("  No correct logical forms in oracle.")

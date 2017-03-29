@@ -18,17 +18,23 @@ import edu.stanford.nlp.sempre.Value;
 
 public class WikiTablesExample {
 
+  private final String id;
   private final AnnotatedSentence sentence;
   private final Set<Expression2> logicalForms;
   private final ContextValue context;
   private final Value targetValue;
 
-  public WikiTablesExample(AnnotatedSentence sentence, Set<Expression2> logicalForms, ContextValue context,
-                           Value targetValue) {
+  public WikiTablesExample(String id, AnnotatedSentence sentence,
+      Set<Expression2> logicalForms, ContextValue context, Value targetValue) {
+    this.id = id;
     this.sentence = sentence;
     this.logicalForms = logicalForms;
     this.context = context;
     this.targetValue = targetValue;
+  }
+  
+  public String getId() {
+    return id;
   }
 
   public Set<Expression2> getLogicalForms() {

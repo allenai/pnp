@@ -93,10 +93,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val wordCounts = getTokenCounts(trainingData)
     val allEntities = trainingData.map(ex => getEntities(ex)).flatten.toList
     val entityCounts = getEntityTokenCounts(allEntities)
-    // Vocab consists of all words that appear more than once in
-    // the training data and in the name of any entity.
+
     val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
-    vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
+    // vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(1.9)))
     vocab.add(UNK)
     vocab.add(ENTITY)
     println(vocab.size + " words")
@@ -158,6 +157,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
     config.attentionCopyEntities = false
+    config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
     
     if (!options.has(skipActionSpaceValidationOpt)) {
@@ -269,7 +269,10 @@ object WikiTablesSemanticParserCli {
     } else {
       val (typeName, entityName) = entityString.splitAt(lastDotInd)
       val tokens = entityName.substring(1).split('_').toList
+      // Return the type prefixed to the tokens
       // List(typeName) ++ tokens
+
+      // Return only the tokens
       tokens
     }
 
@@ -285,9 +288,26 @@ object WikiTablesSemanticParserCli {
                         lfParser: ExpressionParser[Expression2],
                         typeDeclaration: WikiTablesTypeDeclaration): WikiTablesExample = {
     val sent = new AnnotatedSentence(ex.getTokens(), ex.languageInfo.posTags)
+
+    // Each example has its own vocabulary which is comprised of the
+    // parser's vocab plus new entries for OOV tokens found in
+    // this example's question or entities.
+    val exampleVocab = IndexedList.create[String]
+    def tokenToId(token: String): Int = {
+      if (vocab.contains(token)) {
+        vocab.getIndex(token)
+      } else {
+        exampleVocab.add(token)
+        vocab.size() + exampleVocab.getIndex(token)
+      }
+    }
+
+    // Use UNK in the tokens to identify which tokens were OOV.
+    // However, each UNKed token is assigned a distinct token id.
     val unkedWords = sent.getWords.asScala.map(
         x => if (vocab.contains(x)) { x } else { WikiTablesSemanticParserCli.UNK })
-    val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toList
+    val tokenIds = sent.getWords.asScala.map(tokenToId(_))
+    
     val sempreEntityLinking = WikiTablesDataProcessor.getEntityLinking(ex)
     val builder = ListBuffer[(Option[Span], Entity, List[Int], Double)]()
     for (linking <- sempreEntityLinking.asScala) {
@@ -295,57 +315,31 @@ object WikiTablesSemanticParserCli {
       val entityExpr = Expression2.constant(entityString)
       val entityType = typeDeclaration.getType(entityString)
       val template = ConstantTemplate(entityType, entityExpr)
-      // Note: Passing a constant score of 0.1 for all matches
-      if (linking.getFirst() == null) {
-        val entityTokens = tokenizeEntity(entityString)
-        val entityTokenIds = entityTokens.map(x => 
-          if (vocab.contains(x)) {
-            vocab.getIndex(x)
-          } else {
-            vocab.getIndex(WikiTablesSemanticParserCli.UNK)
-          } ).toList
-        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-        builder += ((None, entity, entityTokenIds, 0.1))
+      
+      val span = if (linking.getFirst() != null) {
+        val start = linking.getFirst().getFirst()
+        val end = linking.getFirst().getSecond()
+        Some(Span(start, end))
       } else {
-        val i = linking.getFirst().getFirst()
-        val j = linking.getFirst().getSecond()
-        // val entityTokenIds = tokenIds.slice(i, j)
-
-        // XXX: The vocabulary isn't constructed to contain the tokens
-        // found in entities. This should be fixed.
-        val entityTokens = tokenizeEntity(entityString)
-        val entityTokenIds = entityTokens.map(x => 
-          if (vocab.contains(x)) {
-            vocab.getIndex(x)
-          } else {
-            vocab.getIndex(WikiTablesSemanticParserCli.UNK)
-          } ).toList
-
-        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-        builder += ((Some(Span(i, j)), entity, entityTokenIds, 0.1))
+        None
       }
+
+      // Tokens in the names of entities are also encoded with the
+      // example-specific vocabulary.
+      val entityTokens = tokenizeEntity(entityString)
+      val entityTokenIds = entityTokens.map(tokenToId(_)).toList
+      val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
+      builder += ((span, entity, entityTokenIds, 0.1))
     }
+
     val entityLinking = new EntityLinking(builder.toList)
-
-    val entityAnonymizedWords = unkedWords.toArray
-    val entityAnonymizedTokenIds = tokenIds.toArray
-    // Don't anonymize entity words.
-    /*
-    for (entityMatch <- entityLinking.linkedMatches) {
-      val span = entityMatch._1
-      for (i <- span.start until span.end) {
-        entityAnonymizedTokenIds(i) = vocab.getIndex(WikiTablesSemanticParserCli.ENTITY)
-        entityAnonymizedWords(i) = WikiTablesSemanticParserCli.ENTITY
-      }
-    }
-    */
 
     val annotations = Maps.newHashMap[String, Object](sent.getAnnotations)
     annotations.put("originalTokens", sent.getWords.asScala.toList)
-    annotations.put("tokenIds", entityAnonymizedTokenIds.toArray)
+    annotations.put("tokenIds", tokenIds.toArray)
     annotations.put("entityLinking", entityLinking)
 
-    val unkedSentence = new AnnotatedSentence(entityAnonymizedWords.toList.asJava,
+    val unkedSentence = new AnnotatedSentence(unkedWords.toList.asJava,
         sent.getPosTags, annotations)
 
     val correctLogicalForms = {
@@ -357,7 +351,7 @@ object WikiTablesSemanticParserCli {
       }
     }
     val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(x)}
-    new WikiTablesExample(unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
+    new WikiTablesExample(ex.getId, unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
                           ex.context, ex.targetValue);
   }
 }
