@@ -33,6 +33,7 @@ class TestWikiTablesCli extends AbstractCli() {
   
   var beamSizeOpt: OptionSpec[Integer] = null
   var evaluateDpdOpt: OptionSpec[Void] = null
+  var maxDerivationsOpt: OptionSpec[Integer] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -41,6 +42,7 @@ class TestWikiTablesCli extends AbstractCli() {
     
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     evaluateDpdOpt = parser.accepts("evaluateDpd")
+    maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
   }
   
   override def run(options: OptionSet): Unit = {
@@ -56,7 +58,8 @@ class TestWikiTablesCli extends AbstractCli() {
     val testData = ListBuffer[CustomExample]()
     if (options.has(testDataOpt)) {
       for (filename <- options.valuesOf(testDataOpt).asScala) {
-        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, -1).asScala
+        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true,
+            options.valueOf(derivationsPathOpt), 100, options.valueOf(maxDerivationsOpt)).asScala
       }
     }
     
@@ -132,6 +135,21 @@ class TestWikiTablesCli extends AbstractCli() {
       }
       if (correct.fold(false)(_ || _)) {
         numCorrectAt10 += 1
+      }
+      
+      // Re-parse with a label oracle to find the highest-scoring correct parses.
+      val oracle = parser.getMultiLabelScore(e.getLogicalForms.asScala,
+          entityLinking, typeDeclaration)
+      if (oracle.isDefined) { 
+        val oracleContext = PnpInferenceContext.init(parser.model).addExecutionScore(oracle.get)
+        val oracleResults = dist.beamSearch(beamSize, 75, Env.init, oracleContext)
+
+        oracleResults.executions.map { x =>
+          val expression = x.value.decodeExpression
+          println("o " + x.logProb.formatted("%02.3f") + "  " + expression)
+        }
+      } else {
+        println("  No correct logical forms in oracle.")
       }
       
       // Print the attentions of the best predicted derivation

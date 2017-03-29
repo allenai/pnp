@@ -1,21 +1,49 @@
 package org.allenai.wikitables;
 
-import java.io.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
 import java.util.zip.GZIPInputStream;
 
-import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.jayantkrish.jklol.ccg.lambda.ExpressionParser;
+import com.jayantkrish.jklol.ccg.lambda2.Expression2;
 
-import edu.stanford.nlp.sempre.*;
-import edu.stanford.nlp.sempre.corenlp.CoreNLPAnalyzer;
+import edu.stanford.nlp.sempre.Builder;
+import edu.stanford.nlp.sempre.ContextValue;
+import edu.stanford.nlp.sempre.Derivation;
+import edu.stanford.nlp.sempre.DerivationPruner;
+import edu.stanford.nlp.sempre.FloatingParser;
+import edu.stanford.nlp.sempre.Formula;
 import edu.stanford.nlp.sempre.FuzzyMatchFn.FuzzyMatchFnMode;
-import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph;
+import edu.stanford.nlp.sempre.Grammar;
+import edu.stanford.nlp.sempre.JoinFn;
+import edu.stanford.nlp.sempre.LanguageAnalyzer;
+import edu.stanford.nlp.sempre.ListValue;
+import edu.stanford.nlp.sempre.NumberFn;
+import edu.stanford.nlp.sempre.ParserState;
+import edu.stanford.nlp.sempre.TargetValuePreprocessor;
+import edu.stanford.nlp.sempre.TypeInference;
+import edu.stanford.nlp.sempre.Value;
+import edu.stanford.nlp.sempre.corenlp.CoreNLPAnalyzer;
 import edu.stanford.nlp.sempre.tables.StringNormalizationUtils;
+import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph;
 import edu.stanford.nlp.sempre.tables.TableValuePreprocessor;
 import edu.stanford.nlp.sempre.tables.dpd.DPDParser;
-import edu.stanford.nlp.sempre.tables.test.*;
-import edu.stanford.nlp.sempre.tables.match.*;
-import fig.basic.*;
+import edu.stanford.nlp.sempre.tables.match.EditDistanceFuzzyMatcher;
+import edu.stanford.nlp.sempre.tables.match.FuzzyMatcher;
+import edu.stanford.nlp.sempre.tables.test.CustomExample;
+import fig.basic.LispTree;
+import fig.basic.Pair;
 
 public class WikiTablesDataProcessor {
   
@@ -59,13 +87,10 @@ public class WikiTablesDataProcessor {
       }
     }
     if (includeDerivations) {
-      if (derivationsPath == null)
+      if (derivationsPath == null) {
         computeDerivations(dataset, beamSize);
-      else
-        addDerivations(dataset, derivationsPath);
-      if (numDerivationsLimit != -1) {
-        System.out.println("Limiting number of derivations per example to " + numDerivationsLimit);
-        dataset = removeLongDerivations(dataset, numDerivationsLimit);
+      } else {
+        addDerivations(dataset, derivationsPath, numDerivationsLimit);
       }
       int maxNumFormulas = 0;
       int minNumFormulas = (int) Double.POSITIVE_INFINITY;
@@ -87,23 +112,6 @@ public class WikiTablesDataProcessor {
       System.out.println(numZeroFormulas + " questions did not yield any logical forms.");
     }
     return dataset;
-  }
-
-  static List<CustomExample> removeLongDerivations(List<CustomExample> dataset, int numDerivationsLimit) {
-    /*
-    Sort the derivations of each example by length and remove long derivations such that numDerivationsLimit
-    number of derivations remain.
-     */
-    List<CustomExample> prunedDataset = new ArrayList<>();
-    for (CustomExample ex : dataset) {
-      if (ex.alternativeFormulas.size() > numDerivationsLimit) {
-        List<Formula> derivations = ex.alternativeFormulas;
-        derivations.sort(new DerivationLengthComparator());
-        ex.alternativeFormulas = derivations.subList(0, numDerivationsLimit);
-      }
-      prunedDataset.add(ex);
-    }
-    return prunedDataset;
   }
 
   public static List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(CustomExample ex) {
@@ -170,25 +178,45 @@ public class WikiTablesDataProcessor {
     return entityLinking;
   }
 
-  static void addDerivations(List<CustomExample> dataset, String derivationsPath) {
+  static void addDerivations(List<CustomExample> dataset, String derivationsPath,
+      int numDerivationsLimit) {
+    if (numDerivationsLimit != -1) {
+      System.out.println("Limiting number of derivations per example to " + numDerivationsLimit);
+    }
+
     for (CustomExample ex: dataset) {
       String exId = ex.getId();
       File file = new File(derivationsPath + "/" + exId + ".gz");
-      
+
+      List<Formula> correctFormulas = Lists.newArrayList();
       if (file.exists()) {
         try {
           BufferedReader reader = new BufferedReader(new InputStreamReader(
               new GZIPInputStream(new FileInputStream(file))));
-          List<Formula> correctFormulas = new ArrayList<>();
           String line;
           while ((line = reader.readLine()) != null) {
             correctFormulas.add(Formula.fromString(line));
           }
-          ex.alternativeFormulas = correctFormulas;
         } catch (IOException e) {
           e.printStackTrace();
         }
       }
+      
+      if (numDerivationsLimit >= 0 && correctFormulas.size() > numDerivationsLimit) {        
+        List<Pair<Integer, Formula>> formulasWithSizes = Lists.newArrayList();
+        for (Formula f : correctFormulas) {
+          Expression2 e = ExpressionParser.expression2().parse(f.toString());
+          formulasWithSizes.add(Pair.newPair(e.size(), f));
+        }
+
+        formulasWithSizes.sort(new DerivationLengthComparator());
+        correctFormulas.clear();
+        for (Pair<Integer, Formula> p : formulasWithSizes.subList(0, numDerivationsLimit)) {
+          correctFormulas.add(p.getSecond());
+        }
+      }
+
+      ex.alternativeFormulas = correctFormulas;
     }
   }
 
@@ -290,10 +318,10 @@ public class WikiTablesDataProcessor {
   }
 }
 
-class DerivationLengthComparator implements Comparator<Formula> {
+class DerivationLengthComparator implements Comparator<Pair<Integer, Formula>> {
 
   @Override
-  public int compare(Formula o1, Formula o2) {
-    return Integer.compare(o1.toString().length(), o2.toString().length());
+  public int compare(Pair<Integer, Formula> o1, Pair<Integer, Formula> o2) {
+    return Integer.compare(o1.getFirst(), o2.getFirst());
   }
 }

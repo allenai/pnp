@@ -63,7 +63,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
     
-    maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(1)
+    maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     
@@ -100,7 +100,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     vocab.add(UNK)
     vocab.add(ENTITY)
     println(vocab.size + " words")
-    
+
+    // Print the vocabulary
     for (w <- vocab.items().asScala.sorted) {
       println("  " + w + " " + wordCounts.getCount(w) + " " + entityCounts.getCount(w))
     }
@@ -267,7 +268,9 @@ object WikiTablesSemanticParserCli {
       entityString.split('_').toList
     } else {
       val (typeName, entityName) = entityString.splitAt(lastDotInd)
-      List(typeName) ++ entityName.substring(1).split('_')
+      val tokens = entityName.substring(1).split('_').toList
+      // List(typeName) ++ tokens
+      tokens
     }
 
     // println("tokens: " + entityString + " " + entityTokens)

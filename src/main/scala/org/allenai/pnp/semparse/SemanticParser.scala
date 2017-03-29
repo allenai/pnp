@@ -294,10 +294,13 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           } else {
             // Option 2: copy entities using the similarity between their embedding
             // and the current attention vector.
+            val rawAttentionVector = Expression.transpose(wordAttentions * input.tokenMatrix)
             val entityChoiceScore = Expression.dotProduct(
                 entityWeights, rnnOutputDropout) + entityBias
-            concatenateArray(entityVectors.map(
-                v => Expression.dotProduct(v, attentionVector) + entityChoiceScore))
+
+            // Note that spanVector is all zeros for unlinked entities.
+            concatenateArray(entities.map(e => (wordAttentions * e.spanVector)
+                + Expression.dotProduct(e.vector, rawAttentionVector) + entityChoiceScore))
           }
 
           concatenateArray(Array(actionScores, entityScores))
