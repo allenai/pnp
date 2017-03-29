@@ -4,8 +4,6 @@ import java.io.*;
 import java.util.*;
 import java.util.zip.GZIPInputStream;
 
-import com.google.common.base.Preconditions;
-
 import edu.stanford.nlp.sempre.*;
 import edu.stanford.nlp.sempre.corenlp.CoreNLPAnalyzer;
 import edu.stanford.nlp.sempre.FuzzyMatchFn.FuzzyMatchFnMode;
@@ -106,16 +104,16 @@ public class WikiTablesDataProcessor {
     return prunedDataset;
   }
 
-  public static List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(CustomExample ex) {
+  public static List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(WikiTablesExample example) {
     List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = new ArrayList<>();
-    List<String> exTokens = ex.getTokens();
+    List<String> exTokens = example.sentence().getWords();
     EditDistanceFuzzyMatcher.opts.expandAbbreviations = true;
     EditDistanceFuzzyMatcher.opts.fuzzyMatchSubstring = true;
     EditDistanceFuzzyMatcher.opts.alsoReturnUnion = true;
     EditDistanceFuzzyMatcher.opts.alsoMatchPart = true;
     EditDistanceFuzzyMatcher.opts.fuzzyMatchMaxEditDistanceRatio = 0.3;
     
-    FuzzyMatcher matcher = new EditDistanceFuzzyMatcher((TableKnowledgeGraph) ex.context.graph);
+    FuzzyMatcher matcher = new EditDistanceFuzzyMatcher((TableKnowledgeGraph) example.getContext().graph);
     HashMap<Formula, Pair<Integer, Integer>> formulasPresent = new HashMap<>();
     for (int i=0; i <= exTokens.size()-1; i++) {
       for (int j=i+1; j <= exTokens.size(); j++) {
@@ -267,26 +265,6 @@ public class WikiTablesDataProcessor {
 
     double result = builder.valueEvaluator.getCompatibility(targetValue, pred);
     return result == 1;
-  }
-
-  public static void main(String[] args) {
-    //String path = "data/wikitables/wikitables_sample_small.examples";
-    String derivationsPath = "data/WikiTableQuestions/all_lfs";
-    String path = "data/WikiTableQuestions/data/training-before300.examples";
-    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, true, derivationsPath, 50, -1);
-    for (int i = 0; i < dataset.size(); i++) {
-      CustomExample ex = dataset.get(i);
-      System.out.println("Utterance: " + ex.utterance);
-      System.out.println("Formula: " + ex.targetFormula);
-      System.out.println("Answer: " + ex.targetValue);
-      List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = WikiTablesDataProcessor.getEntityLinking(ex);
-      for (Pair<Pair<Integer, Integer>, Formula> p: entityLinking) {
-        if (p.getFirst() == null)
-          System.out.println("Unlinked entity: " + p.getSecond());
-        else
-          System.out.println("Linked entity: " + p.getFirst().getFirst() + " " + p.getFirst().getSecond() + " " + p.getSecond());
-      }
-    }
   }
 }
 

@@ -22,6 +22,7 @@ class WikiTablesDataProcessorSpec extends FlatSpecLike with Matchers {
   val simplifier = ExpressionSimplifier.lambdaCalculus()
   val logicalFormParser = ExpressionParser.expression2();
 
+  /*
    "exampleFromJson" should "construct an example from the input json" in {
      TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions"
      val jsonString = """{
@@ -59,5 +60,6 @@ class WikiTablesDataProcessorSpec extends FlatSpecLike with Matchers {
      )
 
   }
+  */
 }
 
