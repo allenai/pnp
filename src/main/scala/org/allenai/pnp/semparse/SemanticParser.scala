@@ -48,28 +48,51 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     for {
       compGraph <- Pnp.computationGraph()
       _ = initializeRnns(compGraph)
-      inputEncoding = rnnEncode(compGraph, tokens)
-      entityEncoding = encodeEntities(compGraph, entityLinking, tokens)
-      //entityEncoding = null
+      inputEncoding = encodeInput(compGraph, entityLinking, tokens)
     } yield {
-      InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
-          inputEncoding._4, entityEncoding)
+      inputEncoding
     }
   }
+  
+  private def encodeInput(compGraph: CompGraph,
+      entityLinking: EntityLinking, tokens: Array[Int]): InputEncoding = {
+    
+    val wordEmbeddings = compGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
+    // Initialize example-specific embeddings for OOV tokens.
+    val exampleUnkEmbeddings = MutableMap[Int, Expression]()
+    def tokenIdToEmbedding(tokenId: Int): (Expression, Expression) = {
+      if (tokenId < vocab.size) {
+        val e = Expression.lookup(wordEmbeddings, tokenId)
+        (e, e)
+      } else {
+        Preconditions.checkState(config.distinctUnkVectors,
+            "Token id is OOV and distinctUnkVectors is false".asInstanceOf[Any])
+        if (!exampleUnkEmbeddings.contains(tokenId)) {
+          exampleUnkEmbeddings.put(tokenId, Expression.randomNormal(Dim(config.inputDim)))
+        }
+        val e = exampleUnkEmbeddings(tokenId)
+        (Expression.lookup(wordEmbeddings, vocab.size), e)
+      }
+    }
+    
+    val inputEncoding = rnnEncode(compGraph, tokens, tokenIdToEmbedding)
+    val entityEncoding = encodeEntities(compGraph, entityLinking, tokens, tokenIdToEmbedding)
+    InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
+        inputEncoding._4, entityEncoding)
+  }
 
-  private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int]
-    ): (ExpressionVector, Expression, Expression, Expression) = {
+  private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int],
+      tokenIdToEmbedding: Int => (Expression, Expression)
+      ): (ExpressionVector, Expression, Expression, Expression) = {
     import Expression.{ dropout, lookup, reshape }
 
-    val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
-    
-    val inputEmbeddings = tokens.map(x => lookup(wordEmbeddings, x)).toArray
+    val inputEmbeddings = tokens.map(tokenIdToEmbedding(_)).toArray
 
     // TODO: should we add dropout to the builders using the .set_dropout methods?
     forwardBuilder.startNewSequence()
     val fwOutputs = ListBuffer[Expression]()
     for (inputEmbedding <- inputEmbeddings) {
-      val fwOutput = forwardBuilder.addInput(inputEmbedding)
+      val fwOutput = forwardBuilder.addInput(inputEmbedding._1)
       val fwOutputDropout = if (dropoutProb > 0.0) {
         dropout(fwOutput, dropoutProb.asInstanceOf[Float])
       } else {
@@ -82,7 +105,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     backwardBuilder.startNewSequence()
     val bwOutputs = ListBuffer[Expression]()
     for (inputEmbedding <- inputEmbeddings.reverse) {
-      val bwOutput = backwardBuilder.addInput(inputEmbedding)
+      val bwOutput = backwardBuilder.addInput(inputEmbedding._1)
       val bwOutputDropout = if (dropoutProb > 0.0) {
         dropout(bwOutput, dropoutProb.asInstanceOf[Float])
       } else {
@@ -96,7 +119,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         x => concatenateArray(Array(x._1, x._2)))
  
     val sentEmbedding = concatenateArray(Array(fwOutputs.last, bwOutputs.last)) 
-    val inputMatrix = concatenateArray(inputEmbeddings.map(reshape(_, Dim(1, config.inputDim))).toArray)
+    val inputMatrix = concatenateArray(inputEmbeddings.map(x => reshape(x._2, Dim(1, config.inputDim))).toArray)
     val outputMatrix = concatenateArray(outputEmbeddings.map(reshape(_, Dim(1, 2 * config.hiddenDim))).toArray)
     
     // TODO: figure out how to initialize the decoder from both the
@@ -104,22 +127,20 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     (forwardBuilder.finalS, sentEmbedding, inputMatrix, outputMatrix)
   }
 
-  def encodeEntities(computationGraph: CompGraph,
-      entityLinking: EntityLinking, tokens: Seq[Int]): MultiMap[Type, EntityEncoding] = {
+  private def encodeEntities(computationGraph: CompGraph, entityLinking: EntityLinking, tokens: Seq[Int],
+      tokenIdToEmbedding: Int => (Expression, Expression)): MultiMap[Type, EntityEncoding] = {
     import Expression.{ input, lookup }
-
-    val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
     val output = ListBuffer[(Type, EntityEncoding)]()
     def encodeBOW(tokenIds: List[Int]): Expression = {
       var lastOutput: Expression = null
-      for (wordId <- tokenIds) {
-        val inputEmbedding = lookup(wordEmbeddings, wordId)
+      for (tokenId <- tokenIds) {
+        val inputEmbedding = tokenIdToEmbedding(tokenId)
 
         if (lastOutput == null) {
-          lastOutput = inputEmbedding
+          lastOutput = inputEmbedding._2
         } else {
-          lastOutput = lastOutput + inputEmbedding
+          lastOutput = lastOutput + inputEmbedding._2
         }
       }
       Preconditions.checkState(lastOutput != null)
@@ -267,6 +288,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
         actionHiddenWeights <- Pnp.param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
         actionHiddenWeights2 <- Pnp.param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
+        actionHiddenEntityWeights <- Pnp.param(SemanticParser.ACTION_HIDDEN_ENTITY + hole.t)
         attentionAndRnn = concatenateArray(Array(attentionVector, rnnOutputDropout))
         actionHidden = Expression.tanh(actionHiddenWeights * attentionAndRnn)
         actionHiddenDropout = if (dropoutProb > 0.0) {
@@ -294,13 +316,11 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           } else {
             // Option 2: copy entities using the similarity between their embedding
             // and the current attention vector.
-            val rawAttentionVector = Expression.transpose(wordAttentions * input.tokenMatrix)
-            val entityChoiceScore = Expression.dotProduct(
-                entityWeights, rnnOutputDropout) + entityBias
+            // val entityChoiceVector = actionHiddenEntityWeights * actionHidden
+            val entityChoiceVector = wordAttentions * input.tokenMatrix
 
             // Note that spanVector is all zeros for unlinked entities.
-            concatenateArray(entities.map(e => (wordAttentions * e.spanVector)
-                + Expression.dotProduct(e.vector, rawAttentionVector) + entityChoiceScore))
+            concatenateArray(entities.map(e => entityChoiceVector * e.vector))
           }
 
           concatenateArray(Array(actionScores, entityScores))
@@ -575,6 +595,7 @@ class SemanticParserConfig extends Serializable {
   var maxVars = 10
   
   var attentionCopyEntities = true
+  var distinctUnkVectors = false
 }
 
 object SemanticParser {
@@ -594,6 +615,7 @@ object SemanticParser {
   
   val ACTION_HIDDEN_WEIGHTS = "actionHidden"
   val ACTION_HIDDEN_ACTION = "actionHiddenOutput:"
+  val ACTION_HIDDEN_ENTITY = "actionHiddenEntityOutput:"
   
   val ENTITY_BIAS_PARAM = "entityBias:"
   val ENTITY_WEIGHTS_PARAM = "entityWeights:"
@@ -609,7 +631,8 @@ object SemanticParser {
 
     model.addParameter(ACTION_HIDDEN_WEIGHTS, Dim(config.actionHiddenDim, config.inputDim + config.hiddenDim))
 
-    model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size, Dim(config.inputDim))
+    // The last entry will be the unknown word.
+    model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size + 1, Dim(config.inputDim))
     
     for (t <- actionSpace.getTypes) {
       val actions = actionSpace.getTemplates(t)
@@ -622,6 +645,7 @@ object SemanticParser {
       model.addParameter(ATTENTION_ACTION_WEIGHTS_PARAM + t, Dim(dim, config.inputDim))
       
       model.addParameter(ACTION_HIDDEN_ACTION + t, Dim(dim, config.actionHiddenDim))
+      model.addParameter(ACTION_HIDDEN_ENTITY + t, Dim(config.inputDim, config.actionHiddenDim))
       
       model.addParameter(ENTITY_BIAS_PARAM + t, Dim(1))
       model.addParameter(ENTITY_WEIGHTS_PARAM + t, Dim(config.hiddenDim))
