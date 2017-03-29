@@ -14,18 +14,26 @@ import fig.basic.LispTree
  */
 case class WikiTablesExample(
   sentence: AnnotatedSentence,
-  logicalForms: Set[Expression2],
+  goldLogicalForm: Option[Expression2],
+  possibleLogicalForms: Set[Expression2],
   tableString: String,
   targetValue: Value
 ) {
 
+  val logicalForms = goldLogicalForm match {
+    case None => possibleLogicalForms
+    case Some(lf) => Set(lf)
+  }
+
   /**
    * Loads the knowledge graph into memory, from the `tableString` constructor argument.  We do not
    * keep a reference to this object, so it can get garbage collected when the caller is done with
-   * the object.
+   * the object.  TODO(matt): we might want to reconsider this, as it's slower than I thought it
+   * was.
    */
   def getContext(): ContextValue = {
-     new ContextValue(LispTree.proto.parseFromString(tableString).child(0))
+    val lispTree = LispTree.proto.parseFromString(tableString)
+     new ContextValue(LispTree.proto.parseFromString(tableString))
   }
 
   def isFormulaCorrect(pnpFormula: Expression2): Boolean = {

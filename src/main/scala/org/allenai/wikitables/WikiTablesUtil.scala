@@ -2,11 +2,13 @@ package org.allenai.wikitables
 
 import java.lang.Integer
 import java.nio.file.{Paths, Files}
+import java.nio.charset.StandardCharsets
 import java.util.HashSet
 import java.util.LinkedList
 import java.util.regex.Pattern
 import scala.collection.mutable
 import scala.collection.JavaConverters._
+import scala.io.Source
 
 import com.google.common.collect.Lists
 import com.jayantkrish.jklol.ccg.CcgExample
@@ -21,6 +23,7 @@ import com.jayantkrish.jklol.util.IndexedList
 import edu.stanford.nlp.sempre.Formula
 import edu.stanford.nlp.sempre.Formulas
 import edu.stanford.nlp.sempre.LambdaFormula
+import edu.stanford.nlp.sempre.Values
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import fig.basic.LispTree
 import fig.basic.Pair
@@ -28,6 +31,9 @@ import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
 import org.allenai.pnp.semparse.Span
+import org.json4s._
+import org.json4s.JsonDSL._
+import org.json4s.native.JsonMethods._
 
 /**
  * This object has two main functions: (1) loading and preprocessing data (including functionality
@@ -35,27 +41,100 @@ import org.allenai.pnp.semparse.Span
  * data structures and PNP data structures.
  */
 object WikiTablesUtil {
+  implicit val formats = DefaultFormats
   val UNK = "<UNK>"
   val ENTITY = "<ENTITY>"
   val preprocessingSuffix = ".preprocessed.json"
+  val simplifier = ExpressionSimplifier.lambdaCalculus()
 
   def readDatasetFromJson(filename: String): Seq[WikiTablesExample] = {
-    // TODO(matt)
-    Seq()
-  }
-
-  def convertCustomExampleToWikiTablesExample(example: CustomExample): WikiTablesExample = {
-    // TODO(matt)
-    WikiTablesExample(
-      new AnnotatedSentence(example.getTokens(), example.languageInfo.posTags),
-      Set(),
-      "",
-      null
-    )
+    val fileContents = Source.fromFile(filename).getLines.mkString(" ")
+    val json = parse(fileContents)
+    json.children.map(exampleFromJson)
   }
 
   def saveDatasetToJson(dataset: Seq[WikiTablesExample], filename: String) {
-    // TODO(matt)
+    val json: JValue = dataset.map(exampleToJson)
+    Files.write(Paths.get(filename), pretty(render(json)).getBytes(StandardCharsets.UTF_8))
+  }
+
+  def exampleToJson(example: WikiTablesExample): JValue = {
+    val goldLogicalFormJson = example.goldLogicalForm match {
+      case None => JNothing
+      case Some(lf) => ("gold logical form" -> WikiTablesUtil.toSempreLogicalForm(lf).toString): JValue
+    }
+    goldLogicalFormJson merge
+    ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
+      ("tokens" -> example.sentence.getWords.asScala) ~
+      ("posTags" -> example.sentence.getPosTags.asScala) ~
+      ("NER" -> example.sentence.getAnnotation("NER").asInstanceOf[Seq[Seq[String]]]) ~
+      ("table" -> example.tableString) ~
+      ("answer" -> example.targetValue.toLispTree.toString) ~
+      ("possible logical forms" -> example.possibleLogicalForms.map(WikiTablesUtil.toSempreLogicalForm).map(_.toString).toList)
+  }
+
+  def exampleFromJson(json: JValue): WikiTablesExample = {
+    // Just reading the JSON here.
+    val question = (json \ "question").extract[String]
+    val tokens = (json \ "tokens").extract[List[String]]
+    val posTags = (json \ "posTags").extract[List[String]]
+    val ner = (json \ "NER").extract[List[List[String]]]
+    val tableString = (json \ "table").extract[String]
+    val answerString = (json \ "answer").extract[String]
+    val goldLogicalFormString = (json \ "gold logical form") match {
+      case JNothing => None
+      case jval => Some(jval.extract[String])
+    }
+    val possibleLogicalFormStrings = (json \ "possible logical forms").extract[List[String]]
+
+    // Now we actually construct the objects.
+    val goldLogicalForm = goldLogicalFormString
+      .map(Formula.fromString).map(WikiTablesUtil.toPnpLogicalForm).map(simplifier.apply)
+    val possibleLogicalForms = possibleLogicalFormStrings
+      .map(Formula.fromString).map(WikiTablesUtil.toPnpLogicalForm).map(simplifier.apply).toSet
+    val sentence = new AnnotatedSentence(tokens.asJava, posTags.asJava, new java.util.HashMap())
+    sentence.getAnnotations().put("NER", ner)
+    new WikiTablesExample(
+      sentence,
+      goldLogicalForm,
+      possibleLogicalForms,
+      tableString,
+      Values.fromLispTree(LispTree.proto.parseFromString(answerString))
+    )
+  }
+
+  def convertCustomExampleToWikiTablesExample(example: CustomExample): WikiTablesExample = {
+    // First we worry about the sentence; tokens, pos tags, NER, etc.
+    val sentence = new AnnotatedSentence(
+      example.getTokens(),
+      example.languageInfo.posTags,
+      new java.util.HashMap[String, Object]  // need to pass this so we can modify it later
+    )
+    val ner = example.languageInfo.nerTags.asScala.zip(example.languageInfo.nerValues.asScala)
+    val filteredNer = ner.map { case (tag, label) => {
+      if (tag == "O" && label == null) Seq() else Seq(tag, label)
+    }}
+    sentence.getAnnotations().put("NER", filteredNer)
+
+    // Then we worry about the logical forms.
+    val goldLogicalForm = if (example.targetFormula == null) {
+      None
+    } else {
+      Some(simplifier.apply(WikiTablesUtil.toPnpLogicalForm(example.targetFormula)))
+    }
+    val possibleLogicalForms = example.alternativeFormulas.asScala
+      .map(WikiTablesUtil.toPnpLogicalForm)
+      .map(simplifier.apply)
+      .toSet
+
+    // Last, we get the target value and the context (as a string).
+    WikiTablesExample(
+      sentence,
+      goldLogicalForm,
+      possibleLogicalForms,
+      example.context.toLispTree().toString(),
+      example.targetValue
+    )
   }
 
   def getTokenCounts(examples: Iterable[WikiTablesExample]): CountAccumulator[String] = {
@@ -258,14 +337,16 @@ object WikiTablesUtil {
 
   def toSempreLogicalForm(expression: Expression2): String = {
     val simplifier = new ExpressionSimplifier(Lists.newArrayList(new VariableCanonicalizationReplacementRule()))
-    val simplifeidExpression = simplifier.apply(expression)
+    val simplifiedExpression = simplifier.apply(expression)
 
-    val aToZ = 'a' to 'z'
-    val variableNames = new LinkedList[String](aToZ.map(_.toString).asJava)
+    val variableNames = new LinkedList[String](Seq("x", "y", "z").asJava)
+    for (variable <- 'a' to 'w') {
+      variableNames.add(variable.toString)
+    }
     // Find all canonicalized bound variables
     val variableMap = new mutable.HashMap[String, String]()
     val fringe = new LinkedList[Expression2]()
-    fringe.add(simplifeidExpression)
+    fringe.add(simplifiedExpression)
     while (!fringe.isEmpty()) {
       val currentExpression = fringe.remove()
       val currentChildren = currentExpression.getSubexpressions()
@@ -280,9 +361,9 @@ object WikiTablesUtil {
       }
     }
 
-    var expressionString = expression.toString()
+    var expressionString = simplifiedExpression.toString()
     for (variable <- variableMap.keySet) {
-      val variableName = variableMap.get(variable)
+      val variableName = variableMap(variable)
       expressionString = expressionString.replaceAll(String.format("lambda \\(%s\\)", Pattern.quote(variable)),
                                                      String.format("lambda %s", variableName))
       expressionString = expressionString.replaceAll(String.format("%s", Pattern.quote(variable)),
