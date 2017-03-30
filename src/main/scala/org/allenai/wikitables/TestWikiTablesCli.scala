@@ -26,11 +26,11 @@ import org.allenai.pnp.Execution
 import org.allenai.pnp.semparse.SemanticParserState
 
 class TestWikiTablesCli extends AbstractCli() {
-  
+
   var testDataOpt: OptionSpec[String] = null
   var derivationsPathOpt: OptionSpec[String] = null
   var modelOpt: OptionSpec[String] = null
-  
+
   var beamSizeOpt: OptionSpec[Integer] = null
   var evaluateDpdOpt: OptionSpec[Void] = null
 
@@ -38,52 +38,49 @@ class TestWikiTablesCli extends AbstractCli() {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
-    
+
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     evaluateDpdOpt = parser.accepts("evaluateDpd")
   }
-  
+
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
-    
-    // Initialize expression processing for Wikitables logical forms. 
+
+    // Initialize expression processing for Wikitables logical forms.
     val simplifier = ExpressionSimplifier.lambdaCalculus()
     val comparator = new SimplificationComparator(simplifier)
     val logicalFormParser = ExpressionParser.expression2();
     val typeDeclaration = new WikiTablesTypeDeclaration()
 
-    // Read test data.
-    val testData = ListBuffer[CustomExample]()
-    if (options.has(testDataOpt)) {
-      for (filename <- options.valuesOf(testDataOpt).asScala) {
-        testData ++= WikiTablesDataProcessor.getDataset(filename, true, true, options.valueOf(derivationsPathOpt), 100, -1).asScala
-      }
-    }
-    
     // Read in serialized semantic parser
     val loader = new ModelLoader(options.valueOf(modelOpt))
     val model = PnpModel.load(loader)
     val parser = SemanticParser.load(loader, model)
     loader.done()
 
+    // Read test data.
+    val testData = options.valuesOf(testDataOpt).asScala.flatMap(filename => {
+      WikiTablesUtil.loadDataset(filename, true, options.valueOf(derivationsPathOpt), -1)
+    })
     println("Read " + testData.size + " test examples")
-    val testPreprocessed = testData.map(x => WikiTablesSemanticParserCli.preprocessExample(
-        x, parser.vocab, simplifier, logicalFormParser, typeDeclaration))
-    
+
+    val entityMap = testData.map(example => (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
+    testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab, entityMap(x), typeDeclaration))
+
     /*
     println("*** Validating test set action space ***")
     val testSeparatedLfs = WikiTablesSemanticParserCli.getCcgDataset(testPreprocessed)
     SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
     */
-        
-    val testResults = test(testPreprocessed, parser, options.valueOf(beamSizeOpt),
+
+    val testResults = test(testData, parser, options.valueOf(beamSizeOpt),
         options.has(evaluateDpdOpt), typeDeclaration, comparator)
     println("*** Evaluation results ***")
     println(testResults)
   }
 
   /** Evaluate the test accuracy of parser on examples. Logical
-    * forms are compared for equality using comparator.  
+    * forms are compared for equality using comparator.
     */
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser, beamSize: Int,
       evaluateDpd: Boolean, typeDeclaration: TypeDeclaration,
@@ -93,26 +90,25 @@ class TestWikiTablesCli extends AbstractCli() {
     var numCorrect = 0
     var numCorrectAt10 = 0
     for (e <- examples) {
-      val sent = e.getSentence
+      val sent = e.sentence
       println(sent.getWords.asScala.mkString(" "))
       println(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
 
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       val dist = parser.parse(sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
           entityLinking)
-      
+
       ComputationGraph.renew()
       val context = PnpInferenceContext.init(parser.model)
       val results = dist.beamSearch(beamSize, 75, Env.init, context)
-      
+
       val beam = results.executions.slice(0, 10)
       val correct = beam.map { x =>
         val expression = x.value.decodeExpression
-        
+
         val isCorrect = if (evaluateDpd) {
           // Evaluate the logical forms using the output of dynamic programming on denotations.
-          e.getLogicalForms.size > 0 && e.getLogicalForms.asScala.map(
-              x => comparator.equals(x, expression)).reduce(_ || _)
+          e.logicalForms.size > 0 && e.logicalForms.map(x => comparator.equals(x, expression)).reduce(_ || _)
         } else {
           // Evaluate the logical form by executing it.
           e.isFormulaCorrect(expression)
@@ -133,13 +129,13 @@ class TestWikiTablesCli extends AbstractCli() {
       if (correct.fold(false)(_ || _)) {
         numCorrectAt10 += 1
       }
-      
+
       // Print the attentions of the best predicted derivation
       if (beam.nonEmpty) {
-        printAttentions(beam(0).value, e.getSentence.getWords.asScala.toArray)
+        printAttentions(beam(0).value, e.sentence.getWords.asScala.toArray)
       }
     }
-    
+
     val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)
     loss
   }
@@ -163,7 +159,7 @@ class TestWikiTablesCli extends AbstractCli() {
         }
         color + tokens(j) + Console.RESET
       }
-      
+
       println("  " + tokenStrings.mkString(" ") + " " + templates(i))
     }
   }
