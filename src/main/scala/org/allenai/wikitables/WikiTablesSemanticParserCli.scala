@@ -316,26 +316,33 @@ object WikiTablesSemanticParserCli {
     for (linking <- sempreEntityLinking.asScala) {
       val entityString = linking.getSecond.toString
       val entityExpr = lfParser.parse(entityString)
-      val entityType = StaticAnalysis.inferType(entityExpr, typeDeclaration)
-      Preconditions.checkState(!SemanticParserUtils.isBadType(entityType),
-          "Found bad type %s for expression %s", entityType, entityExpr)
       
-      val template = ConstantTemplate(entityType, entityExpr)
+      // The entity linking may contain whole logical forms, which at
+      // the moment are restricted to the form (or entity1 entity2).
+      // These are problematic because the parser can generate that expression
+      // multiple ways. Filter them out for now.
+      if (entityExpr.isConstant()) {
+        val entityType = StaticAnalysis.inferType(entityExpr, typeDeclaration)
+            Preconditions.checkState(!SemanticParserUtils.isBadType(entityType),
+                "Found bad type %s for expression %s", entityType, entityExpr)
+                
+        val template = ConstantTemplate(entityType, entityExpr)
       
-      val span = if (linking.getFirst() != null) {
-        val start = linking.getFirst().getFirst()
-        val end = linking.getFirst().getSecond()
-        Some(Span(start, end))
-      } else {
-        None
-      }
+        val span = if (linking.getFirst() != null) {
+          val start = linking.getFirst().getFirst()
+          val end = linking.getFirst().getSecond()
+          Some(Span(start, end))
+        } else {
+          None
+        }
 
-      // Tokens in the names of entities are also encoded with the
-      // example-specific vocabulary.
-      val entityTokens = tokenizeEntity(entityString)
-      val entityTokenIds = entityTokens.map(tokenToId(_)).toList
-      val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-      builder += ((span, entity, entityTokenIds, 0.1))
+        // Tokens in the names of entities are also encoded with the
+        // example-specific vocabulary.
+        val entityTokens = tokenizeEntity(entityString)
+        val entityTokenIds = entityTokens.map(tokenToId(_)).toList
+        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
+        builder += ((span, entity, entityTokenIds, 0.1))
+      }
     }
 
     val entityLinking = new EntityLinking(builder.toList)
