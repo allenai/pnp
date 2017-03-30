@@ -31,3 +31,6 @@ data/WikiTableQuestions
 lib/dynet*
 lib/jollyday.jar
 lib/stanford-corenlp-*models.jar
+
+# Preprocessed data
+*.preprocessed.json

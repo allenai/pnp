@@ -13,8 +13,6 @@ import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.training.DefaultLogFunction
 import edu.cmu.dynet._
-import edu.stanford.nlp.sempre.LanguageAnalyzer
-import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import joptsimple.OptionParser
 import joptsimple.OptionSet
@@ -58,12 +56,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   // Initialize expression processing for Wikitables logical forms.
   val simplifier = ExpressionSimplifier.lambdaCalculus()
   val comparator = new SimplificationComparator(simplifier)
-  val logicalFormParser = ExpressionParser.expression2();
+  val logicalFormParser = ExpressionParser.expression2()
   val typeDeclaration = new WikiTablesTypeDeclaration()
-
-  CustomExample.opts.allowNoAnnotation = true;
-  TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions";
-  LanguageAnalyzer.opts.languageAnalyzer = "corenlp.CoreNLPAnalyzer";
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()

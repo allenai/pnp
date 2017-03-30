@@ -23,7 +23,9 @@ import com.jayantkrish.jklol.util.IndexedList
 import edu.stanford.nlp.sempre.Formula
 import edu.stanford.nlp.sempre.Formulas
 import edu.stanford.nlp.sempre.LambdaFormula
+import edu.stanford.nlp.sempre.LanguageAnalyzer
 import edu.stanford.nlp.sempre.Values
+import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import fig.basic.LispTree
 import fig.basic.Pair
@@ -31,8 +33,8 @@ import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
 import org.allenai.pnp.semparse.Span
-import org.json4s._
 import org.json4s.JsonDSL._
+import org.json4s._
 import org.json4s.native.JsonMethods._
 
 /**
@@ -46,6 +48,10 @@ object WikiTablesUtil {
   val ENTITY = "<ENTITY>"
   val preprocessingSuffix = ".preprocessed.json"
   val simplifier = ExpressionSimplifier.lambdaCalculus()
+
+  CustomExample.opts.allowNoAnnotation = true
+  TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions"
+  LanguageAnalyzer.opts.languageAnalyzer = "corenlp.CoreNLPAnalyzer"
 
   def readDatasetFromJson(filename: String): Seq[WikiTablesExample] = {
     val fileContents = Source.fromFile(filename).getLines.mkString(" ")
