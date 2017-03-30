@@ -6,8 +6,6 @@ import joptsimple.OptionParser
 import edu.cmu.dynet.Initialize
 import joptsimple.OptionSpec
 import joptsimple.OptionSet
-import scala.collection.mutable.ListBuffer
-import edu.stanford.nlp.sempre.tables.test.CustomExample
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
@@ -21,8 +19,6 @@ import org.allenai.pnp.semparse.SemanticParserLoss
 import edu.cmu.dynet.ComputationGraph
 import org.allenai.pnp.Env
 import edu.cmu.dynet.ModelLoader
-import org.allenai.pnp.semparse.SemanticParserUtils
-import org.allenai.pnp.Execution
 import org.allenai.pnp.semparse.SemanticParserState
 
 class TestWikiTablesCli extends AbstractCli() {
@@ -36,7 +32,6 @@ class TestWikiTablesCli extends AbstractCli() {
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
-    derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
 
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
@@ -60,7 +55,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
     // Read test data.
     val testData = options.valuesOf(testDataOpt).asScala.flatMap(filename => {
-      WikiTablesUtil.loadDataset(filename, true, options.valueOf(derivationsPathOpt), -1)
+      WikiTablesUtil.loadDataset(filename, false, null, -1)
     })
     println("Read " + testData.size + " test examples")
 

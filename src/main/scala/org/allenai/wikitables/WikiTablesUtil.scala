@@ -1,9 +1,7 @@
 package org.allenai.wikitables
 
-import java.lang.Integer
 import java.nio.file.{Paths, Files}
 import java.nio.charset.StandardCharsets
-import java.util.HashSet
 import java.util.LinkedList
 import java.util.regex.Pattern
 import scala.collection.mutable
@@ -289,7 +287,7 @@ object WikiTablesUtil {
     // 2. An EntityLinking
     val words = example.sentence.getWords().asScala
     val unkedWords = words.map(x => if (vocab.contains(x)) x else UNK)
-    val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toList
+    val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toArray
 
     // Compute an entity linking.
     val entityLinking = sempreEntityLinkingToPnpEntityLinking(sempreEntityLinking, vocab, typeDeclaration)
