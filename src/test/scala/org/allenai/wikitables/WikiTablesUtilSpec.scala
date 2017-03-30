@@ -84,7 +84,8 @@ class WikiTablesUtilSpec extends FlatSpecLike with Matchers {
   "exampleToJson" should "construct correct json" in {
     val example = WikiTablesUtil.convertCustomExampleToWikiTablesExample(customExample)
     val expectedJson =
-      ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
+      ("id" -> "nt-39") ~
+        ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
         ("tokens" -> example.sentence.getWords.asScala) ~
         ("posTags" -> example.sentence.getPosTags.asScala) ~
         ("NER" -> example.sentence.getAnnotation("NER").asInstanceOf[Seq[Seq[String]]]) ~
