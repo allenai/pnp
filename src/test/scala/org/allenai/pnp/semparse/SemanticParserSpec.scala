@@ -174,8 +174,9 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   it should "distinguish unked entities" in {
     val model2 = PnpModel.init(true)
     val config2 = new SemanticParserConfig()
+    config2.attentionCopyEntities = true
+    config2.entityLinkingLearnedSimilarity = true
     config2.distinctUnkVectors = true
-    config2.attentionCopyEntities = false
     val parser2 = SemanticParser.create(lexicon, vocab, config2, model2)
     
     val entities = List(("foo", "foo:e"), ("bar", "bar:e"), ("baz", "baz:e"))

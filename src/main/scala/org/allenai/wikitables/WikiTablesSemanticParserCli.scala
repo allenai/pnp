@@ -34,6 +34,8 @@ import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import org.allenai.pnp.semparse.ActionSpace
 import org.allenai.pnp.semparse.SemanticParserConfig
+import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
+import com.google.common.base.Preconditions
 
 /** Command line program for training a semantic parser 
   * on the WikiTables data set.
@@ -156,7 +158,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
-    config.attentionCopyEntities = false
+    config.attentionCopyEntities = true
+    config.entityLinkingLearnedSimilarity = true
     config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
     
@@ -312,8 +315,11 @@ object WikiTablesSemanticParserCli {
     val builder = ListBuffer[(Option[Span], Entity, List[Int], Double)]()
     for (linking <- sempreEntityLinking.asScala) {
       val entityString = linking.getSecond.toString
-      val entityExpr = Expression2.constant(entityString)
-      val entityType = typeDeclaration.getType(entityString)
+      val entityExpr = lfParser.parse(entityString)
+      val entityType = StaticAnalysis.inferType(entityExpr, typeDeclaration)
+      Preconditions.checkState(!SemanticParserUtils.isBadType(entityType),
+          "Found bad type %s for expression %s", entityType, entityExpr)
+      
       val template = ConstantTemplate(entityType, entityExpr)
       
       val span = if (linking.getFirst() != null) {
