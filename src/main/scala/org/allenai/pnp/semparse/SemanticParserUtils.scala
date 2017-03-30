@@ -76,7 +76,7 @@ object SemanticParserUtils {
     }
   }
 
-  private def isBadType(t: Type): Boolean = {
+  def isBadType(t: Type): Boolean = {
     if (t.isAtomic) {
       if (t.hasTypeVariables || t.equals(TypeDeclaration.TOP) || t.equals(TypeDeclaration.BOTTOM)) {
         true

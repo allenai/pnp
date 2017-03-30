@@ -1,13 +1,36 @@
 package org.allenai.wikitables
 
-import java.nio.file.{Paths, Files}
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.util.LinkedList
 import java.util.regex.Pattern
-import scala.collection.mutable
+
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.io.Source
 
+import org.allenai.pnp.semparse.ConstantTemplate
+import org.allenai.pnp.semparse.Entity
+import org.allenai.pnp.semparse.EntityLinking
+import org.allenai.pnp.semparse.SemanticParserUtils
+import org.allenai.pnp.semparse.Span
+import org.json4s.DefaultFormats
+import org.json4s.JNothing
+import org.json4s.JValue
+import org.json4s.JsonDSL.jobject2assoc
+import org.json4s.JsonDSL.pair2Assoc
+import org.json4s.JsonDSL.pair2jvalue
+import org.json4s.JsonDSL.seq2jvalue
+import org.json4s.JsonDSL.string2jvalue
+import org.json4s.jvalue2extractable
+import org.json4s.jvalue2monadic
+import org.json4s.native.JsonMethods.parse
+import org.json4s.native.JsonMethods.pretty
+import org.json4s.native.JsonMethods.render
+import org.json4s.string2JsonInput
+
+import com.google.common.base.Preconditions
 import com.google.common.collect.Lists
 import com.jayantkrish.jklol.ccg.CcgExample
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
@@ -18,6 +41,7 @@ import com.jayantkrish.jklol.ccg.lambda2.VariableCanonicalizationReplacementRule
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
+
 import edu.stanford.nlp.sempre.Formula
 import edu.stanford.nlp.sempre.Formulas
 import edu.stanford.nlp.sempre.LambdaFormula
@@ -27,13 +51,6 @@ import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import fig.basic.LispTree
 import fig.basic.Pair
-import org.allenai.pnp.semparse.ConstantTemplate
-import org.allenai.pnp.semparse.Entity
-import org.allenai.pnp.semparse.EntityLinking
-import org.allenai.pnp.semparse.Span
-import org.json4s.JsonDSL._
-import org.json4s._
-import org.json4s.native.JsonMethods._
 
 /**
  * This object has two main functions: (1) loading and preprocessing data (including functionality
@@ -68,7 +85,8 @@ object WikiTablesUtil {
       case Some(lf) => ("gold logical form" -> WikiTablesUtil.toSempreLogicalForm(lf).toString): JValue
     }
     goldLogicalFormJson merge
-    ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
+    ("id" -> example.id) ~
+      ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
       ("tokens" -> example.sentence.getWords.asScala) ~
       ("posTags" -> example.sentence.getPosTags.asScala) ~
       ("NER" -> example.sentence.getAnnotation("NER").asInstanceOf[Seq[Seq[String]]]) ~
@@ -79,6 +97,7 @@ object WikiTablesUtil {
 
   def exampleFromJson(json: JValue): WikiTablesExample = {
     // Just reading the JSON here.
+    val id = (json \ "id").extract[String]
     val question = (json \ "question").extract[String]
     val tokens = (json \ "tokens").extract[List[String]]
     val posTags = (json \ "posTags").extract[List[String]]
@@ -99,6 +118,7 @@ object WikiTablesUtil {
     val sentence = new AnnotatedSentence(tokens.asJava, posTags.asJava, new java.util.HashMap())
     sentence.getAnnotations().put("NER", ner)
     new WikiTablesExample(
+      id,
       sentence,
       goldLogicalForm,
       possibleLogicalForms,
@@ -133,6 +153,7 @@ object WikiTablesUtil {
 
     // Last, we get the target value and the context (as a string).
     WikiTablesExample(
+      example.id,
       sentence,
       goldLogicalForm,
       possibleLogicalForms,
@@ -225,7 +246,12 @@ object WikiTablesUtil {
       entityString.split('_').toList
     } else {
       val (typeName, entityName) = entityString.splitAt(lastDotInd)
-      List(typeName) ++ entityName.substring(1).split('_')
+      val tokens = entityName.substring(1).split('_').toList
+      // Return the type prefixed to the tokens
+      // List(typeName) ++ tokens
+
+      // Return only the tokens
+      tokens
     }
 
     // println("tokens: " + entityString + " " + entityTokens)
@@ -234,43 +260,39 @@ object WikiTablesUtil {
 
   def sempreEntityLinkingToPnpEntityLinking(
     sempreEntityLinking: Seq[Pair[Pair[Integer, Integer], Formula]],
-    vocab: IndexedList[String],
+    tokenToId: String => Int,
     typeDeclaration: WikiTablesTypeDeclaration
-  ) = {
+    ): EntityLinking = {
     val builder = mutable.ListBuffer[(Option[Span], Entity, List[Int], Double)]()
     for (linking <- sempreEntityLinking) {
       val entityString = linking.getSecond.toString
-      val entityExpr = Expression2.constant(entityString)
-      val entityType = typeDeclaration.getType(entityString)
-      val template = ConstantTemplate(entityType, entityExpr)
-      // Note: Passing a constant score of 0.1 for all matches
-      if (linking.getFirst() == null) {
-        val entityTokens = tokenizeEntity(entityString)
-        val entityTokenIds = entityTokens.map(x =>
-          if (vocab.contains(x)) {
-            vocab.getIndex(x)
-          } else {
-            vocab.getIndex(UNK)
-          } ).toList
-        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-        builder += ((None, entity, entityTokenIds, 0.1))
-      } else {
-        val i = linking.getFirst().getFirst()
-        val j = linking.getFirst().getSecond()
-        // val entityTokenIds = tokenIds.slice(i, j)
+      val entityExpr = ExpressionParser.expression2().parse(entityString)
 
-        // XXX: The vocabulary isn't constructed to contain the tokens
-        // found in entities. This should be fixed.
-        val entityTokens = tokenizeEntity(entityString)
-        val entityTokenIds = entityTokens.map(x =>
-          if (vocab.contains(x)) {
-            vocab.getIndex(x)
-          } else {
-            vocab.getIndex(UNK)
-          } ).toList
+      // The entity linking may contain whole logical forms, which at
+      // the moment are restricted to the form (or entity1 entity2).
+      // These are problematic because the parser can generate that expression
+      // multiple ways. Filter them out for now.
+      if (entityExpr.isConstant()) {
+        val entityType = StaticAnalysis.inferType(entityExpr, typeDeclaration)
+        Preconditions.checkState(!SemanticParserUtils.isBadType(entityType),
+            "Found bad type %s for expression %s", entityType, entityExpr)
 
+        val template = ConstantTemplate(entityType, entityExpr)
+
+        val span = if (linking.getFirst() != null) {
+          val start = linking.getFirst().getFirst()
+          val end = linking.getFirst().getSecond()
+          Some(Span(start, end))
+        } else {
+          None
+        }
+
+        // Tokens in the names of entities are also encoded with the
+        // example-specific vocabulary.
+        val entityTokens = tokenizeEntity(entityString)
+        val entityTokenIds = entityTokens.map(tokenToId(_)).toList
         val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-        builder += ((Some(Span(i, j)), entity, entityTokenIds, 0.1))
+        builder += ((span, entity, entityTokenIds, 0.1))
       }
     }
     new EntityLinking(builder.toList)
@@ -285,12 +307,29 @@ object WikiTablesUtil {
     // All we do here is add some annotations to the example.  Those annotations are:
     // 1. Token ids, computed using the vocab
     // 2. An EntityLinking
+    
+    // Each example has its own vocabulary which is comprised of the
+    // parser's vocab plus new entries for OOV tokens found in
+    // this example's question or entities.
+    val exampleVocab = IndexedList.create[String]
+    def tokenToId(token: String): Int = {
+      if (vocab.contains(token)) {
+        vocab.getIndex(token)
+      } else {
+        exampleVocab.add(token)
+        vocab.size() + exampleVocab.getIndex(token)
+      }
+    }
+
+    // Use UNK in the tokens to identify which tokens were OOV.
+    // However, each UNKed token is assigned a distinct token id.
     val words = example.sentence.getWords().asScala
     val unkedWords = words.map(x => if (vocab.contains(x)) x else UNK)
-    val tokenIds = unkedWords.map(x => vocab.getIndex(x)).toArray
+    val tokenIds = words.map(tokenToId(_)).toArray
 
     // Compute an entity linking.
-    val entityLinking = sempreEntityLinkingToPnpEntityLinking(sempreEntityLinking, vocab, typeDeclaration)
+    val entityLinking = sempreEntityLinkingToPnpEntityLinking(sempreEntityLinking,
+        tokenToId, typeDeclaration)
 
     val annotations = example.sentence.getAnnotations()
     annotations.put("originalTokens", example.sentence.getWords().asScala.toList)

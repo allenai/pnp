@@ -17,15 +17,20 @@ case class EntityLinking(matches: List[(Option[Span], Entity, List[Int], Double)
       linkedMatches.map(x => (x._2, (x._1, x._3, x._4))))
   // Find matches with max score.
   val bestEntityMatches = entityMatches.map(x => (x._1, x._2.maxBy(_._3)))
-  val bestEntityMatchesList = bestEntityMatches.map(x => (x._2._1, x._1, x._2._2, x._2._3)).toList 
+  val bestEntityMatchesList = bestEntityMatches.map(x => (x._2._1, x._1, x._2._2, x._2._3)).toList
   
-  def getEntitiesWithType(t: Type): List[Entity] = {
-    entities.filter(_.t.equals(t))
+  val entityTypes = entities.map(_.t).toSet
+  val entitiesWithType = entityTypes.map(t => (t, entities.filter(_.t.equals(t)).toArray)).toMap
+  
+  def getEntitiesWithType(t: Type): Array[Entity] = {
+    entitiesWithType.getOrElse(t, Array())
   }
 }
 
 case class Entity(val expr: Expression2, val t: Type,
     val template: Template, val names: List[List[Int]]) {
+  
+  val allNameTokens = names.flatten.toSet
 }
 
 class EntityDict(val map: MultiMap[List[Int], Entity]) {

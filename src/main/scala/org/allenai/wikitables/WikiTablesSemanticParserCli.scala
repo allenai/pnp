@@ -1,7 +1,17 @@
 package org.allenai.wikitables
 
-import java.lang.Integer
 import scala.collection.JavaConverters._
+
+import org.allenai.pnp.Env
+import org.allenai.pnp.LoglikelihoodTrainer
+import org.allenai.pnp.PnpExample
+import org.allenai.pnp.PnpModel
+import org.allenai.pnp.semparse.ActionSpace
+import org.allenai.pnp.semparse.ConstantTemplate
+import org.allenai.pnp.semparse.EntityLinking
+import org.allenai.pnp.semparse.SemanticParser
+import org.allenai.pnp.semparse.SemanticParserConfig
+import org.allenai.pnp.semparse.SemanticParserUtils
 
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -10,25 +20,12 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
-import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.training.DefaultLogFunction
+
 import edu.cmu.dynet._
-import edu.stanford.nlp.sempre.tables.test.CustomExample
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
-
-import org.allenai.pnp.Env
-import org.allenai.pnp.LoglikelihoodTrainer
-import org.allenai.pnp.PnpExample
-import org.allenai.pnp.PnpModel
-import org.allenai.pnp.semparse.ActionSpace
-import org.allenai.pnp.semparse.ConstantTemplate
-import org.allenai.pnp.semparse.Entity
-import org.allenai.pnp.semparse.EntityLinking
-import org.allenai.pnp.semparse.SemanticParser
-import org.allenai.pnp.semparse.SemanticParserConfig
-import org.allenai.pnp.semparse.SemanticParserUtils
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -63,8 +60,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
-
-    maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
+    
+    maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
 
@@ -76,12 +73,13 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     val trainingData = options.valuesOf(trainingDataOpt).asScala.flatMap(filename => {
-      loadDataset(filename, includeDerivationsForTrain, options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt))
+      loadDataset(filename, includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
+          options.valueOf(maxDerivationsOpt))
     })
 
     println("Read " + trainingData.size + " training examples")
-
-    val entityMap = trainingData.map(example => (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
+    val entityMap = trainingData.map(example =>
+      (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
     val vocab = computeVocabulary(entityMap)
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
@@ -143,7 +141,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
-    config.attentionCopyEntities = false
+    config.attentionCopyEntities = true
+    config.entityLinkingLearnedSimilarity = true
+    config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
 
     if (!options.has(skipActionSpaceValidationOpt)) {

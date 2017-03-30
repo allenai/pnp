@@ -10,38 +10,121 @@ import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.training.NullLogFunction
 import com.jayantkrish.jklol.util.IndexedList
 import edu.cmu.dynet._
+import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
+import com.jayantkrish.jklol.ccg.lambda2.Expression2
+import com.jayantkrish.jklol.training.DefaultLogFunction
+import org.allenai.pnp.LoglikelihoodTrainer
+import org.allenai.pnp.PnpExample
+import com.google.common.base.Preconditions
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
+import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 
 class SemanticParserSpec extends FlatSpec with Matchers {
   
   Initialize.initialize()
  
   val dataStrings = List(
-      ("state", "state:<e,t>"),
-      ("city", "city:<e,t>"),
-      ("biggest city", "(argmax:<<e,t>,e> city:<e,t>)"),
-      ("texas", "texas:e"),
-      ("major city", "(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
+      ("state", List(), "state:<e,t>"),
+      ("city", List(), "city:<e,t>"),
+      ("biggest city", List(), "(argmax:<<e,t>,e> city:<e,t>)"),
+      ("texas", List(), "texas:e"), 
+      ("major city", List(), "(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))"),
+      ("city in texas", List(), "(lambda ($0) (and:<t*,t> (city:<e,t> $0) (loc:<e,<e,t>> $0 texas:e)))")
   )
 
   val exprParser = ExpressionParser.expression2()
   val typeDeclaration = ExplicitTypeDeclaration.getDefault()
+  val simplifier = ExpressionSimplifier.lambdaCalculus()
 
-  val data = dataStrings.map(x => (x._1.split(" "), exprParser.parse(x._2)))
-
-  val lexicon = ActionSpace.fromExpressions(data.map(_._2), typeDeclaration, true)
   val vocab = IndexedList.create[String]
-  for (d <- data) {
-    vocab.addAll(d._1.toList.asJava)
+  for (d <- dataStrings) {
+    vocab.addAll(d._1.split(" ").toList.asJava)
   }
+
+  val data = dataStrings.map(x => encodeExample(x._1, x._2, x._3))
+
+  val lexicon = ActionSpace.fromExpressions(data.map(_.lf), typeDeclaration, false)
   val model = PnpModel.init(true)
   val config = new SemanticParserConfig()
   val parser = SemanticParser.create(lexicon, vocab, config, model)
+  
+  /**
+   * Creates a training example for the semantic parser given a
+   * simplified string format that is easy to write down.
+   */
+  def encodeExample(tokenString: String, entities: List[(String, String)], lfString: String
+      ): SemanticParserExample = {
+    
+    val myVocab = IndexedList.create[String]
+    def tokenToId(token: String): Int = {
+      if (vocab.contains(token)) {
+        vocab.getIndex(token)
+      } else {
+        myVocab.add(token)
+        vocab.size + myVocab.getIndex(token)
+      }
+    }
+    
+    val tokens = tokenString.split(" ")
+    val tokenIds = tokens.map(tokenToId(_)).toArray
+    
+    val entityLinkingList = for {
+      (entityName, entityLfString) <- entities
+    } yield {
+      val entityTokenIds = entityName.split(" ").map(tokenToId(_)).toList
+      val entityLf = exprParser.parse(entityLfString)
+      val entityType = StaticAnalysis.inferType(entityLf, typeDeclaration)
+      val template = ConstantTemplate(entityType, entityLf)
+      val entity = Entity(entityLf, entityType, template, List(entityTokenIds))
+      
+      val span: Option[Span] = None
+     
+      (span, entity, entityTokenIds, 0.1)
+    }
 
-  "SemanticParser" should "generate application templates" in {
-    println(lexicon.typeTemplateMap)
+    val lf = simplifier.apply(exprParser.parse(lfString)) 
+    SemanticParserExample(tokenIds, EntityLinking(entityLinkingList), lf)  
+  }
+  
+  /**
+   * Train {@code parser} on a collection of examples.
+   */
+  def train(examples: Seq[SemanticParserExample], parser: SemanticParser): Unit = {
+    val pnpExamples = for {
+      ex <- examples
+      unconditional = parser.generateExpression(ex.tokenIds, ex.entityLinking)
+      oracle <- parser.getLabelScore(ex.lf, ex.entityLinking, typeDeclaration)
+    } yield {
+      PnpExample(unconditional, unconditional, Env.init, oracle)
+    }
+    Preconditions.checkState(pnpExamples.size == examples.size)
+
+    // Train model
+    val model = parser.model
+    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    val trainer = new LoglikelihoodTrainer(50, 5, true, model, sgd,
+        new NullLogFunction())
+    trainer.train(pnpExamples.toList)
+  }
+  
+  /**
+   * Assert that parser's highest-scoring predicted logical form
+   * is correct for {@code example}.
+   */
+  def assertPredictionCorrect(example: SemanticParserExample, parser: SemanticParser): Unit = {
+    ComputationGraph.renew()
+    val context = PnpInferenceContext.init(parser.model)
+    val results = parser.parse(example.tokenIds, example.entityLinking)
+      .beamSearch(5, 50, Env.init, context).executions
+          
+    results.size should be > 0
+    
+    val predictedLf = simplifier.apply(results(0).value.decodeExpression)
+    val correctLf = simplifier.apply(example.lf)    
+    predictedLf should equal(correctLf)
   }
 
-  it should "decode expressions to template sequences" in {
+  "SemanticParser" should "decode expressions to template sequences" in {
     val e = exprParser.parse(
         "(argmax:<<e,t>,e> (lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0))))")
     // This method will throw an error if it can't decode the expression properly. 
@@ -80,4 +163,43 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     results.length should be(2)
     results.map(_.value).toSet should equal(labels)
   }
+  
+  it should "achieve zero training error" in {
+    train(data, parser)
+    for (x <- data) {
+      assertPredictionCorrect(x, parser)
+    }
+  }
+  
+  it should "distinguish unked entities" in {
+    val model2 = PnpModel.init(true)
+    val config2 = new SemanticParserConfig()
+    config2.attentionCopyEntities = true
+    config2.entityLinkingLearnedSimilarity = true
+    config2.distinctUnkVectors = true
+    val parser2 = SemanticParser.create(lexicon, vocab, config2, model2)
+    
+    val entities = List(("foo", "foo:e"), ("bar", "bar:e"), ("baz", "baz:e"))
+    val trainingData = List(("foo", entities, "foo:e"),
+        ("bar", entities, "bar:e"),
+        ("city in bar", entities, "(lambda ($0) (and:<t*,t> (city:<e,t> $0) (loc:<e,<e,t>> $0 bar:e)))"),
+        ("city in foo", entities, "(lambda ($0) (and:<t*,t> (city:<e,t> $0) (loc:<e,<e,t>> $0 foo:e)))"))
+
+    val testData = List(("baz", entities, "baz:e"),
+        ("city in baz", entities, "(lambda ($0) (and:<t*,t> (city:<e,t> $0) (loc:<e,<e,t>> $0 baz:e)))"))
+    val trainingExamples = trainingData.map(x => encodeExample(x._1, x._2, x._3)) ++ data  
+    val testExamples = testData.map(x => encodeExample(x._1, x._2, x._3))
+    
+    train(trainingExamples, parser2)
+    
+    for (x <- trainingExamples) {
+      assertPredictionCorrect(x, parser2)
+    }
+
+    for (x <- testExamples) {
+      assertPredictionCorrect(x, parser2)
+    }
+  }
 }
+
+case class SemanticParserExample(tokenIds: Array[Int], entityLinking: EntityLinking, lf: Expression2)

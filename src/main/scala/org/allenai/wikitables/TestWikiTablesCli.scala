@@ -1,25 +1,26 @@
 package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
-import com.jayantkrish.jklol.cli.AbstractCli
-import joptsimple.OptionParser
-import edu.cmu.dynet.Initialize
-import joptsimple.OptionSpec
-import joptsimple.OptionSet
-import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
-import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
-import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
-import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
-import org.allenai.pnp.semparse.EntityLinking
-import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
-import org.allenai.pnp.semparse.SemanticParser
-import org.allenai.pnp.PnpModel
-import org.allenai.pnp.PnpInferenceContext
-import org.allenai.pnp.semparse.SemanticParserLoss
-import edu.cmu.dynet.ComputationGraph
+
 import org.allenai.pnp.Env
-import edu.cmu.dynet.ModelLoader
+import org.allenai.pnp.PnpInferenceContext
+import org.allenai.pnp.PnpModel
+import org.allenai.pnp.semparse.EntityLinking
+import org.allenai.pnp.semparse.SemanticParser
+import org.allenai.pnp.semparse.SemanticParserLoss
 import org.allenai.pnp.semparse.SemanticParserState
+
+import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
+import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
+import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
+import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
+import com.jayantkrish.jklol.cli.AbstractCli
+
+import edu.cmu.dynet._
+import joptsimple.OptionParser
+import joptsimple.OptionSet
+import joptsimple.OptionSpec
 
 class TestWikiTablesCli extends AbstractCli() {
 
@@ -29,6 +30,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
   var beamSizeOpt: OptionSpec[Integer] = null
   var evaluateDpdOpt: OptionSpec[Void] = null
+  var maxDerivationsOpt: OptionSpec[Integer] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -36,6 +38,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     evaluateDpdOpt = parser.accepts("evaluateDpd")
+    maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
   }
 
   override def run(options: OptionSet): Unit = {
@@ -55,7 +58,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
     // Read test data.
     val testData = options.valuesOf(testDataOpt).asScala.flatMap(filename => {
-      WikiTablesUtil.loadDataset(filename, false, null, -1)
+      WikiTablesUtil.loadDataset(filename, false, null, options.valueOf(maxDerivationsOpt))
     })
     println("Read " + testData.size + " test examples")
 
@@ -86,6 +89,7 @@ class TestWikiTablesCli extends AbstractCli() {
     var numCorrectAt10 = 0
     for (e <- examples) {
       val sent = e.sentence
+      println("example id: " + e.id)
       println(sent.getWords.asScala.mkString(" "))
       println(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
 
@@ -108,7 +112,7 @@ class TestWikiTablesCli extends AbstractCli() {
           // Evaluate the logical form by executing it.
           e.isFormulaCorrect(expression)
         }
-
+        
         if (isCorrect) {
           println("* " + x.logProb.formatted("%02.3f") + "  " + expression)
           true
@@ -125,6 +129,20 @@ class TestWikiTablesCli extends AbstractCli() {
         numCorrectAt10 += 1
       }
 
+      // Re-parse with a label oracle to find the highest-scoring correct parses.
+      val oracle = parser.getMultiLabelScore(e.logicalForms, entityLinking, typeDeclaration)
+      if (oracle.isDefined) { 
+        val oracleContext = PnpInferenceContext.init(parser.model).addExecutionScore(oracle.get)
+        val oracleResults = dist.beamSearch(beamSize, 75, Env.init, oracleContext)
+            
+        oracleResults.executions.map { x =>
+        val expression = x.value.decodeExpression
+        println("o " + x.logProb.formatted("%02.3f") + "  " + expression)
+        }
+      } else {
+        println("  No correct logical forms in oracle.")
+      }
+      
       // Print the attentions of the best predicted derivation
       if (beam.nonEmpty) {
         printAttentions(beam(0).value, e.sentence.getWords.asScala.toArray)

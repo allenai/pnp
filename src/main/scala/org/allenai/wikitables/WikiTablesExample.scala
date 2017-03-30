@@ -13,6 +13,7 @@ import fig.basic.LispTree
  * This currently does not hold a syntactic parse or dependencies. But we may need them in the future.
  */
 case class WikiTablesExample(
+  id: String,
   sentence: AnnotatedSentence,
   goldLogicalForm: Option[Expression2],
   possibleLogicalForms: Set[Expression2],
