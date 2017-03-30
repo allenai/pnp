@@ -185,7 +185,7 @@ object WikiTablesUtil {
     // Vocab consists of all words that appear more than once in
     // the training data and in the name of any entity.
     val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
-    vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
+    // vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
     vocab.add(UNK)
     vocab.add(ENTITY)
     println(vocab.size + " words")
