@@ -1,21 +1,18 @@
 package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
-import java.util.HashSet
 
 import org.allenai.pnp.Env
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.PnpExample
 import org.allenai.pnp.PnpModel
+import org.allenai.pnp.semparse.ActionSpace
 import org.allenai.pnp.semparse.ConstantTemplate
-import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
 import org.allenai.pnp.semparse.SemanticParser
+import org.allenai.pnp.semparse.SemanticParserConfig
 import org.allenai.pnp.semparse.SemanticParserUtils
-import org.allenai.pnp.semparse.Span
-import com.google.common.collect.Maps
-import com.jayantkrish.jklol.ccg.CcgExample
+
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
@@ -23,21 +20,14 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
-import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.training.DefaultLogFunction
-import com.jayantkrish.jklol.util.CountAccumulator
-import com.jayantkrish.jklol.util.IndexedList
+
 import edu.cmu.dynet._
-import edu.stanford.nlp.sempre.tables.test.CustomExample
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
-import org.allenai.pnp.semparse.ActionSpace
-import org.allenai.pnp.semparse.SemanticParserConfig
-import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
-import com.google.common.base.Preconditions
 
-/** Command line program for training a semantic parser 
+/** Command line program for training a semantic parser
   * on the WikiTables data set.
   * runMain org.allenai.wikitables.WikiTablesSemanticParserCli -trainingData TRAIN-DATA-PATH
   *                                                           [-testData TEST-DATA-PATH]
@@ -45,20 +35,26 @@ import com.google.common.base.Preconditions
   * If derivationsPath is not specified, Sempre will be used to parse utterances (this will be SLOW!)
   */
 class WikiTablesSemanticParserCli extends AbstractCli() {
-  
-  import WikiTablesSemanticParserCli._
-  
+
+  import WikiTablesUtil._
+
   var trainingDataOpt: OptionSpec[String] = null
   // Path to the directory containing the correct logical forms
   var derivationsPathOpt: OptionSpec[String] = null
   var modelOutputOpt: OptionSpec[String] = null
-  
+
   var maxDerivationsOpt: OptionSpec[Integer] = null
   var epochsOpt: OptionSpec[Integer] = null
   var beamSizeOpt: OptionSpec[Integer] = null
-  
+
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
+
+  // Initialize expression processing for Wikitables logical forms.
+  val simplifier = ExpressionSimplifier.lambdaCalculus()
+  val comparator = new SimplificationComparator(simplifier)
+  val logicalFormParser = ExpressionParser.expression2()
+  val typeDeclaration = new WikiTablesTypeDeclaration()
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -68,64 +64,51 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
-    
+
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
+  }
+
+  def initializeTrainingData(options: OptionSet) = {
+    // Read and preprocess data
+    val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
+    val trainingData = options.valuesOf(trainingDataOpt).asScala.flatMap(filename => {
+      loadDataset(filename, includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
+          options.valueOf(maxDerivationsOpt))
+    })
+
+    println("Read " + trainingData.size + " training examples")
+    val entityMap = trainingData.map(example =>
+      (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
+    val vocab = computeVocabulary(entityMap)
+
+    // Eliminate those examples that Sempre did not find correct logical forms for.
+    val filteredTrainingData = trainingData.filter(!_.logicalForms.isEmpty)
+    // preprocessExample modifies the `annotations` data structure in example.sentence, adding
+    // some things to it.  We don't need a `map`, just a `foreach`.
+    filteredTrainingData.foreach(x => preprocessExample(x, vocab, entityMap(x), typeDeclaration))
+    println("Found correct logical forms for " + filteredTrainingData.size + " training examples")
+
+    println("Preprocessed:")
+    for (example <- filteredTrainingData) {
+      println(example.sentence.getWords)
+      println(example.logicalForms)
+    }
+    (filteredTrainingData, vocab)
   }
 
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
-    // Initialize expression processing for Wikitables logical forms. 
-    val simplifier = ExpressionSimplifier.lambdaCalculus()
-    val comparator = new SimplificationComparator(simplifier)
-    val logicalFormParser = ExpressionParser.expression2();
-    val typeDeclaration = new WikiTablesTypeDeclaration()
+    val (trainingData, vocab) = initializeTrainingData(options)
 
-    // Read and preprocess data
-    val trainingData = ListBuffer[CustomExample]()
-    val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
-    for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      trainingData ++= WikiTablesDataProcessor.getDataset(filename, true,
-          includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
-          100, options.valueOf(maxDerivationsOpt)).asScala
-    }
-
-    println("Read " + trainingData.size + " training examples")
-    val wordCounts = getTokenCounts(trainingData)
-    val allEntities = trainingData.map(ex => getEntities(ex)).flatten.toList
-    val entityCounts = getEntityTokenCounts(allEntities)
-
-    val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
-    // vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(1.9)))
-    vocab.add(UNK)
-    vocab.add(ENTITY)
-    println(vocab.size + " words")
-
-    // Print the vocabulary
-    for (w <- vocab.items().asScala.sorted) {
-      println("  " + w + " " + wordCounts.getCount(w) + " " + entityCounts.getCount(w))
-    }
-
-    // Eliminate those examples that Sempre did not find correct logical forms for.
-    val logicalFormPresent = (ex: CustomExample) => !ex.alternativeFormulas.isEmpty || ex.targetFormula != null
-    val trainPreprocessed = trainingData.filter(logicalFormPresent).map(
-        x => preprocessExample(x, vocab, simplifier, logicalFormParser, typeDeclaration))
-    println("Found correct logical forms for " + trainPreprocessed.size + " training examples")
-
-    println("Preprocessed:")
-    for (ex <- trainPreprocessed) {
-      println(ex.getSentence.getWords)
-      println(ex.getLogicalForms)
-    }
-    
     // Generate the action space of the semantic parser from the logical
     // forms that are well-typed.
-    val trainingLfs = trainPreprocessed.map(_.getLogicalForms.asScala).flatten
+    val trainingLfs = trainingData.map(_.logicalForms).flatten
     println("*** Validating types ***")
     val wellTypedTrainingLfs = trainingLfs.filter(lf =>
       SemanticParserUtils.validateTypes(lf, typeDeclaration))
-      
+
     println("*** Generating action space ***")
     val actionSpace = ActionSpace.fromExpressions(wellTypedTrainingLfs, typeDeclaration, false)
 
@@ -162,9 +145,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.entityLinkingLearnedSimilarity = true
     config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
-    
+
     if (!options.has(skipActionSpaceValidationOpt)) {
-      val trainSeparatedLfs = getCcgDataset(trainPreprocessed)
+      val trainSeparatedLfs = getCcgDataset(trainingData)
 
       println("*** Validating train set action space ***")
       SemanticParserUtils.validateActionSpace(trainSeparatedLfs, parser, typeDeclaration)
@@ -172,76 +155,30 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       println("Skipping action space validation")
     }
 
-    val trainedModel = train(trainPreprocessed, parser, typeDeclaration,
+    val trainedModel = train(trainingData, parser, typeDeclaration,
         options.valueOf(epochsOpt), options.valueOf(beamSizeOpt))
-    
+
     // TODO: serialization
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
     model.save(saver)
     parser.save(saver)
     saver.done()
-  }  
-}
-
-object WikiTablesSemanticParserCli {
-  
-  val UNK = "<UNK>"
-  val ENTITY = "<ENTITY>"
-
-  def main(args: Array[String]): Unit = {
-    (new WikiTablesSemanticParserCli()).run(args)
-  }
-
-  def getTokenCounts(examples: Seq[CustomExample]): CountAccumulator[String] = {
-    val acc = CountAccumulator.create[String]
-    for (ex <- examples) {
-      ex.getTokens.asScala.map(x => acc.increment(x, 1.0)) 
-    }
-    acc
-  }
-
-  def getEntityTokenCounts(entityNames: List[String]): CountAccumulator[String] = {
-    val acc = CountAccumulator.create[String]
-    for (entityString <- entityNames) {
-      tokenizeEntity(entityString).map(x => acc.increment(x, 1.0))
-    }
-    acc
-  }
-
-  def getEntities(ex: CustomExample): List[String] = {
-    val sempreEntityLinking = WikiTablesDataProcessor.getEntityLinking(ex)
-    sempreEntityLinking.asScala.map(p => p.getSecond().toString).toList
-  }
-
-
-  /** Returns a modified dataset that has CcgExamples, with one logical form per example.
-    * Useful for reusing existing methods for validating types and action spaces, etc.
-    */
-  def getCcgDataset(dataset: Seq[WikiTablesExample]): Seq[CcgExample] = {
-    val ccgDataset = for {
-      ex <- dataset
-      lf <- ex.getLogicalForms.asScala
-      ccgExample = new CcgExample(ex.getSentence, null, null, lf)
-    } yield {
-      ccgExample
-    }
-    ccgDataset
   }
 
   /** Train the parser by maximizing the likelihood of examples.
-    * Returns a model with the trained parameters. 
+    * Returns a model with the trained parameters.
     */
   def train(examples: Seq[WikiTablesExample], parser: SemanticParser,
       typeDeclaration: TypeDeclaration, epochs: Int, beamSize: Int): PnpModel = {
-    
+
     parser.dropoutProb = 0.5
     val pnpExamples = for {
       x <- examples
-      sent = x.getSentence
-      tokenIds = sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
-      entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
+      sentence = x.sentence
+      tokenIds = sentence.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
+      entityLinking = sentence.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       unconditional = parser.generateExpression(tokenIds, entityLinking)
-      oracle <- parser.getMultiLabelScore(x.getLogicalForms.asScala, entityLinking, typeDeclaration)
+      oracle <- parser.getMultiLabelScore(x.logicalForms, entityLinking, typeDeclaration)
     } yield {
       PnpExample(unconditional, unconditional, Env.init, oracle)
     }
@@ -258,113 +195,11 @@ object WikiTablesSemanticParserCli {
     parser.dropoutProb = -1
     model
   }
+}
 
-  /**
-   * Converts the id of an entity to a sequence of
-   * tokens in its "name." The tokens will have the form
-   * [type, token1, token2, ..]. For example:
-   * "fb:row.row.player_name" -> ["fb:row.row", "player", "name"]
-   */
-  def tokenizeEntity(entityString: String): List[String] = {
-    val lastDotInd = entityString.lastIndexOf(".")
-    val entityTokens = if (lastDotInd == -1) {
-      entityString.split('_').toList
-    } else {
-      val (typeName, entityName) = entityString.splitAt(lastDotInd)
-      val tokens = entityName.substring(1).split('_').toList
-      // Return the type prefixed to the tokens
-      // List(typeName) ++ tokens
+object WikiTablesSemanticParserCli {
 
-      // Return only the tokens
-      tokens
-    }
-
-    // println("tokens: " + entityString + " " + entityTokens)
-    entityTokens
-  }
-  
-  /**
-   * Converts a {@code CustomExample} into a {@code WikiTablesExample}. 
-   */
-  def preprocessExample(ex: CustomExample, vocab: IndexedList[String],
-                        simplifier: ExpressionSimplifier,
-                        lfParser: ExpressionParser[Expression2],
-                        typeDeclaration: WikiTablesTypeDeclaration): WikiTablesExample = {
-    val sent = new AnnotatedSentence(ex.getTokens(), ex.languageInfo.posTags)
-
-    // Each example has its own vocabulary which is comprised of the
-    // parser's vocab plus new entries for OOV tokens found in
-    // this example's question or entities.
-    val exampleVocab = IndexedList.create[String]
-    def tokenToId(token: String): Int = {
-      if (vocab.contains(token)) {
-        vocab.getIndex(token)
-      } else {
-        exampleVocab.add(token)
-        vocab.size() + exampleVocab.getIndex(token)
-      }
-    }
-
-    // Use UNK in the tokens to identify which tokens were OOV.
-    // However, each UNKed token is assigned a distinct token id.
-    val unkedWords = sent.getWords.asScala.map(
-        x => if (vocab.contains(x)) { x } else { WikiTablesSemanticParserCli.UNK })
-    val tokenIds = sent.getWords.asScala.map(tokenToId(_))
-    
-    val sempreEntityLinking = WikiTablesDataProcessor.getEntityLinking(ex)
-    val builder = ListBuffer[(Option[Span], Entity, List[Int], Double)]()
-    for (linking <- sempreEntityLinking.asScala) {
-      val entityString = linking.getSecond.toString
-      val entityExpr = lfParser.parse(entityString)
-      
-      // The entity linking may contain whole logical forms, which at
-      // the moment are restricted to the form (or entity1 entity2).
-      // These are problematic because the parser can generate that expression
-      // multiple ways. Filter them out for now.
-      if (entityExpr.isConstant()) {
-        val entityType = StaticAnalysis.inferType(entityExpr, typeDeclaration)
-            Preconditions.checkState(!SemanticParserUtils.isBadType(entityType),
-                "Found bad type %s for expression %s", entityType, entityExpr)
-                
-        val template = ConstantTemplate(entityType, entityExpr)
-      
-        val span = if (linking.getFirst() != null) {
-          val start = linking.getFirst().getFirst()
-          val end = linking.getFirst().getSecond()
-          Some(Span(start, end))
-        } else {
-          None
-        }
-
-        // Tokens in the names of entities are also encoded with the
-        // example-specific vocabulary.
-        val entityTokens = tokenizeEntity(entityString)
-        val entityTokenIds = entityTokens.map(tokenToId(_)).toList
-        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-        builder += ((span, entity, entityTokenIds, 0.1))
-      }
-    }
-
-    val entityLinking = new EntityLinking(builder.toList)
-
-    val annotations = Maps.newHashMap[String, Object](sent.getAnnotations)
-    annotations.put("originalTokens", sent.getWords.asScala.toList)
-    annotations.put("tokenIds", tokenIds.toArray)
-    annotations.put("entityLinking", entityLinking)
-
-    val unkedSentence = new AnnotatedSentence(unkedWords.toList.asJava,
-        sent.getPosTags, annotations)
-
-    val correctLogicalForms = {
-      if (ex.targetFormula == null) {
-        ex.alternativeFormulas.asScala.map { x => WikiTablesUtil.toPnpLogicalForm(x) }
-      } else {
-        // This means we have the gold annotation available.
-        Seq(WikiTablesUtil.toPnpLogicalForm(ex.targetFormula))
-      }
-    }
-    val parsedLogicalForms = correctLogicalForms.map {x => simplifier.apply(x)}
-    new WikiTablesExample(ex.getId, unkedSentence, new HashSet[Expression2](parsedLogicalForms.asJava),
-                          ex.context, ex.targetValue);
+  def main(args: Array[String]): Unit = {
+    (new WikiTablesSemanticParserCli()).run(args)
   }
 }

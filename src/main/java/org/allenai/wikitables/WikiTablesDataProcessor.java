@@ -27,7 +27,6 @@ import edu.stanford.nlp.sempre.Formula;
 import edu.stanford.nlp.sempre.FuzzyMatchFn.FuzzyMatchFnMode;
 import edu.stanford.nlp.sempre.Grammar;
 import edu.stanford.nlp.sempre.JoinFn;
-import edu.stanford.nlp.sempre.LanguageAnalyzer;
 import edu.stanford.nlp.sempre.ListValue;
 import edu.stanford.nlp.sempre.NumberFn;
 import edu.stanford.nlp.sempre.ParserState;
@@ -37,8 +36,10 @@ import edu.stanford.nlp.sempre.Value;
 import edu.stanford.nlp.sempre.corenlp.CoreNLPAnalyzer;
 import edu.stanford.nlp.sempre.tables.StringNormalizationUtils;
 import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph;
+import edu.stanford.nlp.sempre.tables.TableValueEvaluator;
 import edu.stanford.nlp.sempre.tables.TableValuePreprocessor;
 import edu.stanford.nlp.sempre.tables.dpd.DPDParser;
+import edu.stanford.nlp.sempre.tables.lambdadcs.LambdaDCSExecutor;
 import edu.stanford.nlp.sempre.tables.match.EditDistanceFuzzyMatcher;
 import edu.stanford.nlp.sempre.tables.match.FuzzyMatcher;
 import edu.stanford.nlp.sempre.tables.test.CustomExample;
@@ -52,9 +53,6 @@ public class WikiTablesDataProcessor {
   public static List<CustomExample> getDataset(String path, boolean inSempreFormat,
                                                boolean includeDerivations, String derivationsPath,
                                                int beamSize, int numDerivationsLimit) {
-    CustomExample.opts.allowNoAnnotation = true;
-    TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions";
-    LanguageAnalyzer.opts.languageAnalyzer = "corenlp.CoreNLPAnalyzer";
     CoreNLPAnalyzer.opts.annotators = Arrays.asList(new String[] {"tokenize", "ssplit", "pos", "lemma", "ner"});
     EditDistanceFuzzyMatcher.opts.expandAbbreviations = true;
     EditDistanceFuzzyMatcher.opts.fuzzyMatchSubstring = true;
@@ -114,16 +112,16 @@ public class WikiTablesDataProcessor {
     return dataset;
   }
 
-  public static List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(CustomExample ex) {
+  public static List<Pair<Pair<Integer, Integer>, Formula>> getEntityLinking(WikiTablesExample example) {
     List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = new ArrayList<>();
-    List<String> exTokens = ex.getTokens();
+    List<String> exTokens = example.sentence().getWords();
     EditDistanceFuzzyMatcher.opts.expandAbbreviations = true;
     EditDistanceFuzzyMatcher.opts.fuzzyMatchSubstring = true;
     EditDistanceFuzzyMatcher.opts.alsoReturnUnion = true;
     EditDistanceFuzzyMatcher.opts.alsoMatchPart = true;
     EditDistanceFuzzyMatcher.opts.fuzzyMatchMaxEditDistanceRatio = 0.3;
     
-    FuzzyMatcher matcher = new EditDistanceFuzzyMatcher((TableKnowledgeGraph) ex.context.graph);
+    FuzzyMatcher matcher = new EditDistanceFuzzyMatcher((TableKnowledgeGraph) example.getContext().graph);
     HashMap<Formula, Pair<Integer, Integer>> formulasPresent = new HashMap<>();
     for (int i=0; i <= exTokens.size()-1; i++) {
       for (int j=i+1; j <= exTokens.size(); j++) {
@@ -228,6 +226,8 @@ public class WikiTablesDataProcessor {
     DPDParser.opts.dpdParserBeamSize = beamSize;
     Builder.opts.executor = "tables.lambdadcs.LambdaDCSExecutor";
     Builder.opts.valueEvaluator = "tables.TableValueEvaluator";
+    LambdaDCSExecutor.opts.genericDateValue = true;
+    TableValueEvaluator.opts.allowMismatchedTypes = true;
     TargetValuePreprocessor.opts.targetValuePreprocessor = "tables.TableValuePreprocessor";
     StringNormalizationUtils.opts.numberCanStartAnywhere = true;
     StringNormalizationUtils.opts.num2CanStartAnywhere = true;
@@ -295,26 +295,6 @@ public class WikiTablesDataProcessor {
 
     double result = builder.valueEvaluator.getCompatibility(targetValue, pred);
     return result == 1;
-  }
-
-  public static void main(String[] args) {
-    //String path = "data/wikitables/wikitables_sample_small.examples";
-    String derivationsPath = "data/WikiTableQuestions/all_lfs";
-    String path = "data/WikiTableQuestions/data/training-before300.examples";
-    List<CustomExample> dataset = WikiTablesDataProcessor.getDataset(path, true, true, derivationsPath, 50, -1);
-    for (int i = 0; i < dataset.size(); i++) {
-      CustomExample ex = dataset.get(i);
-      System.out.println("Utterance: " + ex.utterance);
-      System.out.println("Formula: " + ex.targetFormula);
-      System.out.println("Answer: " + ex.targetValue);
-      List<Pair<Pair<Integer, Integer>, Formula>> entityLinking = WikiTablesDataProcessor.getEntityLinking(ex);
-      for (Pair<Pair<Integer, Integer>, Formula> p: entityLinking) {
-        if (p.getFirst() == null)
-          System.out.println("Unlinked entity: " + p.getSecond());
-        else
-          System.out.println("Linked entity: " + p.getFirst().getFirst() + " " + p.getFirst().getSecond() + " " + p.getSecond());
-      }
-    }
   }
 }
 
