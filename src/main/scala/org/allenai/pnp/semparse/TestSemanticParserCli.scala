@@ -71,7 +71,7 @@ class TestSemanticParserCli extends AbstractCli() {
 
     println("*** Running Evaluation ***")
     val results = test(testPreprocessed, parser, options.valueOf(beamSizeOpt),
-        typeDeclaration, simplifier, comparator)
+        typeDeclaration, simplifier, comparator, println)
   }
   
   /** Evaluate the test accuracy of parser on examples. Logical
@@ -79,17 +79,17 @@ class TestSemanticParserCli extends AbstractCli() {
    */
   def test(examples: Seq[CcgExample], parser: SemanticParser, beamSize: Int,
       typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
-      comparator: ExpressionComparator): SemanticParserLoss = {
-    println("")
+      comparator: ExpressionComparator, print: String => Unit): SemanticParserLoss = {
+    print("")
     var numCorrect = 0
     var numCorrectAt10 = 0
     for (e <- examples) {
       ComputationGraph.renew()
       val context = PnpInferenceContext.init(parser.model)
 
-      println(e.getSentence.getWords.asScala.mkString(" "))
-      println(e.getSentence.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
-      println("expected: " + e.getLogicalForm)
+      print(e.getSentence.getWords.asScala.mkString(" "))
+      print(e.getSentence.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
+      print("expected: " + e.getLogicalForm)
       
       val sent = e.getSentence
       val dist = parser.parse(
@@ -101,10 +101,10 @@ class TestSemanticParserCli extends AbstractCli() {
       val correct = beam.map { x =>
         val simplified = simplifier.apply(x.value.decodeExpression)
         if (comparator.equals(e.getLogicalForm, simplified)) {
-          println("* " + x.logProb.formatted("%02.3f") + "  " + simplified)
+          print("* " + x.logProb.formatted("%02.3f") + "  " + simplified)
           true
         } else {
-          println("  " + x.logProb.formatted("%02.3f") + "  " + simplified)
+          print("  " + x.logProb.formatted("%02.3f") + "  " + simplified)
           false
         }
       }
@@ -145,13 +145,13 @@ class TestSemanticParserCli extends AbstractCli() {
           
             color + tokens(j) + Console.RESET
           }
-          println("  " + tokenStrings.mkString(" ") + " " + templates(i))
+          print("  " + tokenStrings.mkString(" ") + " " + templates(i))
         }
       }
     }
     
     val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)
-    println(loss)
+    print(loss.toString)
     loss
   }
 }
