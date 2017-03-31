@@ -34,7 +34,7 @@ case class WikiTablesExample(
    */
   def getContext(): ContextValue = {
     val lispTree = LispTree.proto.parseFromString(tableString)
-     new ContextValue(LispTree.proto.parseFromString(tableString))
+    new ContextValue(LispTree.proto.parseFromString(tableString))
   }
 
   def isFormulaCorrect(pnpFormula: Expression2): Boolean = {

@@ -238,7 +238,17 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       List()
     }
     
+    // Call .getContext on every example that we'll use during error
+    // evaluation. This preprocesses the corresponding table using
+    // corenlp and (I think) caches the result somewhere in Sempre.
+    // This will happen during the error evaluation of training anyway,
+    // but doing it up-front makes the training timers more useful. 
+    println("Preprocessing context for train/dev evaluation examples.")
+    trainErrorExamples.foreach(x => x.getContext)
+    devExamples.foreach(x => x.getContext)
+    
     // Train model
+    println("Training...")
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,
