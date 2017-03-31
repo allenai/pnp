@@ -22,7 +22,7 @@ class WikiTablesEntityLinker {
 
   def loadDataset(filename: String,
       examples: Seq[WikiTablesExample]
-  ): Map[WikiTablesExample, RawEntityLinking] = {
+  ): Vector[RawEntityLinking] = {
     val preprocessedFile = filename + PREPROCESSING_SUFFIX
     
     val entityLinkings = if (Files.exists(Paths.get(preprocessedFile))) {
@@ -37,8 +37,7 @@ class WikiTablesEntityLinker {
         "Wrong number of entity linkings (%s) for examples (%s). Filename: %s",
         entityLinkings.size.toString, examples.size.toString, filename)
 
-    val entityLinkingsMap = entityLinkings.map(x => (x.id, x)).toMap
-    examples.map(x => (x, entityLinkingsMap(x.id))).toMap
+    entityLinkings.toVector
   }
   
   def getEntityLinking(example: WikiTablesExample): RawEntityLinking = {
@@ -160,7 +159,7 @@ class WikiTablesEntityLinker {
 
 object WikiTablesEntityLinker {
    
-  val PREPROCESSING_SUFFIX = "entities.json"
+  val PREPROCESSING_SUFFIX = ".entities.json"
   
   def numberToFormula(n: Double): Formula = {
     if (n.toInt == n) {

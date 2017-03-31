@@ -181,9 +181,9 @@ object WikiTablesUtil {
     acc
   }
 
-  def computeVocabulary(trainingDataWithEntities: Map[WikiTablesExample, RawEntityLinking]) = {
-    val wordCounts = getTokenCounts(trainingDataWithEntities.keys)
-    val allEntities = trainingDataWithEntities.values.map(_.links).flatten.map(_._2.toString)
+  def computeVocabulary(trainingDataWithEntities: Seq[(WikiTablesExample, RawEntityLinking)]) = {
+    val wordCounts = getTokenCounts(trainingDataWithEntities.map(_._1))
+    val allEntities = trainingDataWithEntities.map(_._2.links).flatten.map(_._2.toString)
     val entityCounts = getEntityTokenCounts(allEntities)
     // Vocab consists of all words that appear more than once in
     // the training data and in the name of any entity.
@@ -236,7 +236,7 @@ object WikiTablesUtil {
       pnpDataset
     }
   }
-
+  
   /**
    * Converts the id of an entity to a sequence of
    * tokens in its "name." The tokens will have the form
