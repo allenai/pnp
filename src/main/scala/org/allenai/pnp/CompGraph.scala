@@ -24,4 +24,3 @@ object CompGraph {
     new CompGraph(model, Map(), Map(), false)
   }
 }
-

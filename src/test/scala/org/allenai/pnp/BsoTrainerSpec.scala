@@ -69,7 +69,7 @@ class BsoTrainerSpec extends FlatSpec with Matchers {
       d <- indexedData
     } yield {
       val unconditional = seq2seq.applyEncoded(d._1)
-      val oracle = seq2seq.generateLabelCostEncoded(d._2)
+      val oracle = seq2seq.getMarginCostEncoded(d._2)
       PnpExample(unconditional, unconditional, Env.init, oracle)
     }
 

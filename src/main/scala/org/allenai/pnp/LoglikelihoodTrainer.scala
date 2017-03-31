@@ -7,6 +7,7 @@ import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.training.LogFunction
 
 import edu.cmu.dynet._
+import scala.util.Random
 
 class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleExecutions: Boolean,
     val model: PnpModel, val trainer: Trainer, val log: LogFunction) {
@@ -18,7 +19,8 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
       var loss = 0.0
       var searchErrors = 0
       log.notifyIterationStart(i)
-      for (example <- examples) {
+
+      for (example <- Random.shuffle(examples)) {
         ComputationGraph.renew()
 
         val env = example.env

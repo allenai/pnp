@@ -2,6 +2,7 @@ package org.allenai.dqa.labeling
 
 import scala.collection.JavaConverters._
 import org.allenai.pnp._
+import org.allenai.pnp.ExecutionScore.ExecutionScore
 
 import com.google.common.collect.HashMultimap
 import com.google.common.collect.Multimap
@@ -81,7 +82,7 @@ class LabelingExecutor(diagramTypes: IndexedList[String], parts: IndexedList[Str
       label <- permittedLabels
     } yield {
       val params = parameter(cg.getParameter(PART_PREFIX + label))
-      val featureVector = input(Dim(partFeatureDim), diagram.features.getFeatures(part))
+      val featureVector = input(Dim(partFeatureDim), diagram.features.getFeatures(part).matching)
       dotProduct(params, featureVector)
     }
 

@@ -1,5 +1,7 @@
 package org.allenai.pnp
 
+import ExecutionScore.ExecutionScore
+
 /** A training example for neural probabilistic programs. An example
   * consists of a conditional and an unconditional program, and an
   * environment in which these programs execute. An additional

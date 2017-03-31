@@ -7,8 +7,12 @@ import scala.collection.mutable.{Map => MutableMap}
 import scala.collection.mutable.MultiMap
 import scala.collection.mutable.{Set => MutableSet}
 import scala.collection.mutable.SetBuilder
-import org.allenai.pnp._
-import org.allenai.pnp.Pnp._
+
+import org.allenai.pnp.CompGraph
+import org.allenai.pnp.Env
+import org.allenai.pnp.ExecutionScore.ExecutionScore
+import org.allenai.pnp.Pnp
+import org.allenai.pnp.PnpModel
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -17,6 +21,7 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
 import edu.cmu.dynet._
+import org.allenai.pnp.util.Trie
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
@@ -104,15 +109,11 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
     val wordEmbeddings = computationGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
 
-    val output = ListBuffer[(Type, EntityEncoding)]()
-    for (entityMatch <- entityLinking.bestEntityMatchesList) {
-      val span = entityMatch._1
-      val entity = entityMatch._2
-      val name = entityMatch._3
-      val score = entityMatch._4
+    def encodeBOW(tokenIds: List[Int]): Expression = {
+      Preconditions.checkArgument(tokenIds.length > 0)
 
       var lastOutput: Expression = null
-      for (wordId <- name) {
+      for (wordId <- tokenIds) {
         val inputEmbedding = lookup(wordEmbeddings, wordId)
         if (lastOutput == null) {
           lastOutput = inputEmbedding
@@ -120,8 +121,19 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           lastOutput = lastOutput + inputEmbedding
         }
       }
-      Preconditions.checkState(lastOutput != null)
-      
+
+      // Entity encoding is average of the representations of the corresponding span.
+      lastOutput / tokenIds.length
+    }
+
+    val output = ListBuffer[(Type, EntityEncoding)]()
+    for (entityMatch <- entityLinking.bestEntityMatchesList) {
+      val span = entityMatch._1
+      val entity = entityMatch._2
+      val tokenIds = entityMatch._3
+      val score = entityMatch._4
+      val encoding = encodeBOW(tokenIds)
+
       val spanVector = new FloatVector(tokens.length)
       for (i <- 0 until tokens.length) {
         val value = if (i >= span.start && i < span.end) { 1.0 } else { 0.0 }
@@ -129,7 +141,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       }
       val spanExpression = input(Dim(tokens.length), spanVector)
 
-      output += ((entity.t, EntityEncoding(entity, lastOutput, span, spanExpression)))
+      output += ((entity.t, EntityEncoding(entity, encoding, span, spanExpression)))
     }
 
     SemanticParser.seqToMultimap(output)
@@ -155,10 +167,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       
       // Choose the root type for the logical form given the
       // final output of the LSTM.
-      rootWeights <- param(SemanticParser.ROOT_WEIGHTS_PARAM)
-      rootBias <- param(SemanticParser.ROOT_BIAS_PARAM)
+      rootWeights <- Pnp.param(SemanticParser.ROOT_WEIGHTS_PARAM)
+      rootBias <- Pnp.param(SemanticParser.ROOT_BIAS_PARAM)
       rootScores = (rootWeights * input.sentEmbedding) + rootBias
-      rootType <- choose(actionSpace.rootTypes, rootScores, state)
+      rootType <- Pnp.choose(actionSpace.rootTypes, rootScores, state)
       
       // Recursively generate a logical form using an LSTM to
       // select logical form templates to expand on typed holes
@@ -176,7 +188,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val startRnnState = builder.state()
 
     for {
-      beginActionsParam <- param(SemanticParser.BEGIN_ACTIONS + startState.unfilledHoleIds(0).t)
+      beginActionsParam <- Pnp.param(SemanticParser.BEGIN_ACTIONS + startState.unfilledHoleIds(0).t)
       e <- parse(input, builder, beginActionsParam, startRnnState, startState)
     } yield {
       e
@@ -227,7 +239,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val nextRnnState = builder.state
       for {
         // Compute an attention vector
-        attentionWeights <- param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
+        attentionWeights <- Pnp.param(SemanticParser.ATTENTION_WEIGHTS_PARAM)
         wordAttentions = Expression.transpose(
           Expression.softmax(input.encodedTokenMatrix * attentionWeights * rnnOutputDropout))
 
@@ -245,8 +257,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         rnnActionScores = actionWeights * rnnOutputDropout
         */
 
-        actionHiddenWeights <- param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
-        actionHiddenWeights2 <- param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
+        actionHiddenWeights <- Pnp.param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
+        actionHiddenWeights2 <- Pnp.param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
         attentionAndRnn = concatenateArray(Array(attentionVector, rnnOutputDropout))
         actionHidden = Expression.tanh(actionHiddenWeights * attentionAndRnn)
         actionHiddenDropout = if (dropoutProb > 0.0) {
@@ -260,8 +272,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         actionScores = Expression.pickrange(actionHiddenScores, 0, baseTemplates.length)
 
         // Score the entity templates
-        entityBias <- param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
-        entityWeights <- param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
+        entityBias <- Pnp.param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
+        entityWeights <- Pnp.param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
         allScores = if (entities.size > 0) {
           // TODO: How should we score these entities using attentions?
           /*
@@ -280,7 +292,13 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         // the parser's state with. The tag for this choice is 
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
-        templateTuple <- choose(allTemplates.zipWithIndex.toArray, allScores, state)
+        _ = if (allTemplates.size == 0) {
+          println("Warning: no actions from hole " + hole)
+        } else {
+          ()
+        }
+        
+        templateTuple <- Pnp.choose(allTemplates.zipWithIndex.toArray, allScores, state)
         nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
         // Get the LSTM input parameters associated with the chosen
@@ -369,17 +387,53 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     Some((actionTypes.toList, actions.toList))
   }
   
-  /** Generate an execution oracle that constrains the
+  /** Generate an execution score that constrains the
     * parser to generate exp. This oracle can be used 
-    * to supervise the parser.
+    * to supervise the parser when training with loglikelihood.
     */
-  def generateExecutionOracle(exp: Expression2, entityLinking: EntityLinking,
+  def getLabelScore(exp: Expression2, entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration): Option[SemanticParserExecutionScore] = {
     for {
       (holeTypes, templates) <- generateActionSequence(exp, entityLinking, typeDeclaration)
     } yield {
-      new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray)
+      new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray,
+          Double.NegativeInfinity)
     }
+  }
+  
+  def getMarginScore(exp: Expression2, entityLinking: EntityLinking,
+      typeDeclaration: TypeDeclaration): Option[SemanticParserExecutionScore] = {
+    for {
+      (holeTypes, templates) <- generateActionSequence(exp, entityLinking, typeDeclaration)
+    } yield {
+      new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray, 1.0)
+    }
+  }
+  
+  /**
+   * Generate an execution score that constrains the parser
+   * to produce any expression in {@code exprs}. This oracle
+   * can be used to supervise the parser when training with
+   * loglikelihood with weak supervision, i.e., when multiple
+   * logical forms may be correct.
+   */
+  def getMultiLabelScore(exprs: Iterable[Expression2], entityLinking: EntityLinking,
+      typeDeclaration: TypeDeclaration): Option[SemanticParserMultiExecutionScore] = {
+    val oracles = for {
+      lf <- exprs
+      oracle <- getLabelScore(lf, entityLinking, typeDeclaration)
+    } yield {
+      oracle
+    }
+
+    if (oracles.size > 0) {
+      val score = new SemanticParserMultiExecutionScore(oracles, Double.NegativeInfinity)
+      Some(score)
+    } else {
+      None
+    }
+    
+    
   }
   
   /**
@@ -404,7 +458,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   * templates. 
   */
 class SemanticParserExecutionScore(val holeTypes: Array[Type],
-    val templates: Array[Template])
+    val templates: Array[Template], val incorrectCost: Double)
 extends ExecutionScore {
 
   val rootType = holeTypes(0)
@@ -420,7 +474,7 @@ extends ExecutionScore {
         if (choice.asInstanceOf[Type].equals(rootType)) {
           0.0
         } else {
-          Double.NegativeInfinity
+          incorrectCost
         }
       } else {
         val actionInd = state.numActions
@@ -432,10 +486,10 @@ extends ExecutionScore {
               (actionInd == 0 || state.templates.zip(myTemplates).map(x => x._1.equals(x._2)).reduce(_ && _))) { 
             0.0
           } else {
-            Double.NegativeInfinity
+            incorrectCost
           }
         } else {
-          Double.NegativeInfinity
+          incorrectCost
         }
       }
     } else {
@@ -448,6 +502,62 @@ class MaxExecutionScore(val scores: Seq[ExecutionScore]) extends ExecutionScore 
   def apply(tag: Any, choice: Any, env: Env): Double = {
     return scores.map(s => s.apply(tag, choice, env)).max
   }
+}
+
+class SemanticParserMultiExecutionScore(val scores: Iterable[SemanticParserExecutionScore],
+    val incorrectCost: Double)
+  extends ExecutionScore {
+  
+  val trie = new Trie[AnyRef]()
+  
+  for (score <- scores) {
+    val key = List(score.rootType) ++ score.templates
+    trie.insert(key)
+  }
+  
+  def apply(tag: Any, choice: Any, env: Env): Double = {
+    if (tag != null && tag.isInstanceOf[SemanticParserState]) {
+      val state = tag.asInstanceOf[SemanticParserState]
+      val key = if (state.hasRootType) {
+        Array(state.rootType) ++ state.getTemplates
+      } else {
+        Array()
+      }
+
+      val trieNodeId = trie.lookup(key)      
+      if (trieNodeId.isDefined) {
+        val nextStates = trie.getNextMap(trieNodeId.get)
+
+        // First action is a type. Remaining actions are templates, but they
+        // come paired with an index that the parser uses for selection purposes.
+        val action: AnyRef = if (state.hasRootType) {
+          choice.asInstanceOf[(Template, Int)]._1
+        } else {
+          choice.asInstanceOf[Type]
+        }
+
+        if (nextStates.contains(action)) {
+          0.0
+        } else {
+          incorrectCost
+        }
+      } else {
+        incorrectCost
+      }
+    } else {
+      0.0
+    }
+  }
+}
+
+class SemanticParserConfig extends Serializable {
+  var inputDim = 200
+  var hiddenDim = 100
+  var actionDim = 100
+  var actionHiddenDim = 100
+  var maxVars = 10
+  
+  var attentionCopyEntities = true
 }
 
 object SemanticParser {
