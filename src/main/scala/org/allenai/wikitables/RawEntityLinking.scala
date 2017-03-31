@@ -10,15 +10,15 @@ import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.SemanticParserUtils
 import com.google.common.base.Preconditions
 import scala.collection.mutable.ListBuffer
+import spray.json._
 
 /**
  * A raw entity linking. These linkings are mostly generated 
  * by Sempre, and need to be preprocessed before they can be
  * used in the semantic parser.
  */
-case class RawEntityLinking(links: List[(Option[Span], Formula)]) {
+case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
 
-  
   def toEntityLinking(tokenToId: String => Int,
     typeDeclaration: WikiTablesTypeDeclaration): EntityLinking = {
 
@@ -50,4 +50,23 @@ case class RawEntityLinking(links: List[(Option[Span], Formula)]) {
     }
     new EntityLinking(builder.toList)
   }
+}
+
+/**
+ * Protocol for serializing entity linkings to json.
+ */
+object RawEntityLinkingJsonProtocol extends DefaultJsonProtocol {
+  implicit val spanFormat = jsonFormat2(Span)
+  
+  implicit object FormulaJsonFormat extends RootJsonFormat[Formula] {
+    def write(f: Formula) =
+      JsString(f.toString())
+
+    def read(value: JsValue) = value match {
+      case JsString(s) => Formula.fromString(s)
+      case _ => deserializationError("formula expected")
+    }
+  }
+  
+  implicit val entityLinkingFormat = jsonFormat2(RawEntityLinking)
 }

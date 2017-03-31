@@ -11,16 +11,36 @@ import scala.collection.mutable.{Set => MutableSet}
 import org.allenai.pnp.semparse.Span
 import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import scala.util.Try
+import java.nio.file.Paths
+import java.nio.file.Files
+import com.google.common.base.Preconditions
 
 class WikiTablesEntityLinker {
   
   import WikiTablesEntityLinker._
 
-  /*
-  def loadDataset(filename: String): Map[String, RawEntityLinking] = {
+  def loadDataset(filename: String,
+      examples: Seq[WikiTablesExample]
+  ): Map[WikiTablesExample, RawEntityLinking] = {
+    val preprocessedFile = filename + PREPROCESSING_SUFFIX
     
+    val entityLinkings = if (Files.exists(Paths.get(preprocessedFile))) {
+      readDatasetFromJson(preprocessedFile)
+    } else {
+      examples.map(getEntityLinking)
+    }
+    
+    Preconditions.checkState(examples.size == entityLinkings.size,
+        "Wrong number of entity linkings (%s) for examples (%s). Filename: %s",
+        entityLinkings.size.toString, examples.size.toString, filename)
+        
+    val entityLinkingsMap = entityLinkings.map(x => (x.id, x)).toMap
+    examples.map(x => (x, entityLinkingsMap(x.id))).toMap
   }
-  */
+
+  def readDatasetFromJson(filename: String): Seq[RawEntityLinking] = {
+      
+  }
   
   def getEntityLinking(example: WikiTablesExample): RawEntityLinking = {
     val links = ListBuffer[(Option[Span], Formula)]()
@@ -97,7 +117,7 @@ class WikiTablesEntityLinker {
       }
     }
 
-    return RawEntityLinking(links.toList)
+    return RawEntityLinking(example.id, links.toList)
   }
   
   def getNerEntityLinking(ner: List[List[String]]): Seq[(Option[Span], Formula)] = {
@@ -110,7 +130,7 @@ class WikiTablesEntityLinker {
         if (value != null) {
           val formulas = tag match {
             // either null or 1.0, 6.0, etc.
-            case "ORDINAL" | "NUMBER" | "PERCENT" | "DURATION" => tryParseNumber(value)
+            case "ORDINAL" | "NUMBER" | "PERCENT" | "DURATION" | "MONEY" => tryParseNumber(value)
             // Dates have 180X, 2002, PRESENT_REF, 2010-05, 2012-SU, XXXX-03-06, 2002/2012
             case "DATE" => tryParseDate(value)
             // T03:59
@@ -141,6 +161,8 @@ class WikiTablesEntityLinker {
 
 object WikiTablesEntityLinker {
    
+  val PREPROCESSING_SUFFIX = "entities.json"
+  
   def numberToFormula(n: Double): Formula = {
     if (n.toInt == n) {
       Formula.fromString(n.toInt.toString)
