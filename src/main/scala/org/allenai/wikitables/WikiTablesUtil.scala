@@ -186,8 +186,10 @@ object WikiTablesUtil {
     val allEntities = trainingDataWithEntities.map(_._2.links).flatten.map(_._2.toString)
     val entityCounts = getEntityTokenCounts(allEntities)
     // Vocab consists of all words that appear more than once in
-    // the training data and in the name of any entity.
+    // the training data.
     val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
+    // This line adds in words that appear in the names of entities.
+    // Adding these to the vocabulary seems to cause massive overfitting.
     // vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
     vocab.add(UNK)
     vocab.add(ENTITY)
