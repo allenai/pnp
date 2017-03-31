@@ -11,6 +11,10 @@ import org.allenai.pnp.semparse.SemanticParserUtils
 import com.google.common.base.Preconditions
 import scala.collection.mutable.ListBuffer
 import spray.json._
+import scala.io.Source
+import java.nio.file.Paths
+import java.nio.file.Files
+import java.nio.charset.StandardCharsets
 
 /**
  * A raw entity linking. These linkings are mostly generated 
@@ -52,21 +56,16 @@ case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
   }
 }
 
-/**
- * Protocol for serializing entity linkings to json.
- */
-object RawEntityLinkingJsonProtocol extends DefaultJsonProtocol {
-  implicit val spanFormat = jsonFormat2(Span)
+object RawEntityLinking {
+  import WikiTablesJsonFormat._
   
-  implicit object FormulaJsonFormat extends RootJsonFormat[Formula] {
-    def write(f: Formula) =
-      JsString(f.toString())
-
-    def read(value: JsValue) = value match {
-      case JsString(s) => Formula.fromString(s)
-      case _ => deserializationError("formula expected")
-    }
+  def fromJsonFile(filename: String): Seq[RawEntityLinking] = {
+    val content = Source.fromFile(filename).getLines.mkString(" ")
+    content.parseJson.convertTo[List[RawEntityLinking]]
   }
-  
-  implicit val entityLinkingFormat = jsonFormat2(RawEntityLinking)
+
+  def toJsonFile(filename: String, linkings: Seq[RawEntityLinking]): Unit = {
+    val json = linkings.toArray.toJson
+    Files.write(Paths.get(filename), json.prettyPrint.getBytes(StandardCharsets.UTF_8))
+  }
 }

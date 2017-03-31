@@ -14,6 +14,7 @@ import scala.util.Try
 import java.nio.file.Paths
 import java.nio.file.Files
 import com.google.common.base.Preconditions
+import scala.io.Source
 
 class WikiTablesEntityLinker {
   
@@ -25,21 +26,19 @@ class WikiTablesEntityLinker {
     val preprocessedFile = filename + PREPROCESSING_SUFFIX
     
     val entityLinkings = if (Files.exists(Paths.get(preprocessedFile))) {
-      readDatasetFromJson(preprocessedFile)
+      RawEntityLinking.fromJsonFile(preprocessedFile)
     } else {
-      examples.map(getEntityLinking)
+      val linkings = examples.map(getEntityLinking)
+      RawEntityLinking.toJsonFile(preprocessedFile, linkings)
+      linkings
     }
-    
+
     Preconditions.checkState(examples.size == entityLinkings.size,
         "Wrong number of entity linkings (%s) for examples (%s). Filename: %s",
         entityLinkings.size.toString, examples.size.toString, filename)
-        
+
     val entityLinkingsMap = entityLinkings.map(x => (x.id, x)).toMap
     examples.map(x => (x, entityLinkingsMap(x.id))).toMap
-  }
-
-  def readDatasetFromJson(filename: String): Seq[RawEntityLinking] = {
-      
   }
   
   def getEntityLinking(example: WikiTablesExample): RawEntityLinking = {
@@ -167,7 +166,7 @@ object WikiTablesEntityLinker {
     if (n.toInt == n) {
       Formula.fromString(n.toInt.toString)
     } else {
-      Formula.fromString(n.toString)
+      Formula.fromString(n.formatted("%.3f"))
     }
   }
  

@@ -9,7 +9,13 @@ class WikiTablesEntityLinkerSpec extends FlatSpecLike with Matchers {
   import WikiTablesEntityLinker._ 
 
   def toFormulas(s: Seq[Any]): Seq[Formula] = {
-    s.map(x => Formula.fromString(x.toString))
+    s.map{ x => 
+      if (x.isInstanceOf[Double]) {
+        Formula.fromString(x.formatted("%.3f"))
+      } else {
+        Formula.fromString(x.toString)
+      }
+    }
   }
 
   "tryParseNumber" should "convert ordinal formats" in {
