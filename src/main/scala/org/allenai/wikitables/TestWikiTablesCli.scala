@@ -71,27 +71,34 @@ class TestWikiTablesCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
     */
 
-    val testResults = test(testData, parser, options.valueOf(beamSizeOpt),
-        options.has(evaluateDpdOpt), typeDeclaration, comparator)
+    val testResults = TestWikiTablesCli.test(testData, parser, options.valueOf(beamSizeOpt),
+        options.has(evaluateDpdOpt), true, typeDeclaration, comparator, println)
     println("*** Evaluation results ***")
     println(testResults)
   }
+}
+
+object TestWikiTablesCli {
+
+  def main(args: Array[String]): Unit = {
+    (new TestWikiTablesCli()).run(args)
+  }
 
   /** Evaluate the test accuracy of parser on examples. Logical
-    * forms are compared for equality using comparator.
-    */
+   * forms are compared for equality using comparator.
+   */
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser, beamSize: Int,
-      evaluateDpd: Boolean, typeDeclaration: TypeDeclaration,
-      comparator: ExpressionComparator): SemanticParserLoss = {
+      evaluateDpd: Boolean, evaluateOracle: Boolean, typeDeclaration: TypeDeclaration,
+      comparator: ExpressionComparator, print: Any => Unit): SemanticParserLoss = {
 
-    println("")
+    print("")
     var numCorrect = 0
     var numCorrectAt10 = 0
     for (e <- examples) {
       val sent = e.sentence
-      println("example id: " + e.id)
-      println(sent.getWords.asScala.mkString(" "))
-      println(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
+      print("example id: " + e.id)
+      print(sent.getWords.asScala.mkString(" "))
+      print(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
 
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       val dist = parser.parse(sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
@@ -114,10 +121,10 @@ class TestWikiTablesCli extends AbstractCli() {
         }
         
         if (isCorrect) {
-          println("* " + x.logProb.formatted("%02.3f") + "  " + expression)
+          print("* " + x.logProb.formatted("%02.3f") + "  " + expression)
           true
         } else {
-          println("  " + x.logProb.formatted("%02.3f") + "  " + expression)
+          print("  " + x.logProb.formatted("%02.3f") + "  " + expression)
           false
         }
       }
@@ -130,22 +137,24 @@ class TestWikiTablesCli extends AbstractCli() {
       }
 
       // Re-parse with a label oracle to find the highest-scoring correct parses.
-      val oracle = parser.getMultiLabelScore(e.logicalForms, entityLinking, typeDeclaration)
-      if (oracle.isDefined) { 
-        val oracleContext = PnpInferenceContext.init(parser.model).addExecutionScore(oracle.get)
-        val oracleResults = dist.beamSearch(beamSize, 75, Env.init, oracleContext)
+      if (evaluateOracle) {
+        val oracle = parser.getMultiLabelScore(e.logicalForms, entityLinking, typeDeclaration)
+        if (oracle.isDefined) { 
+          val oracleContext = PnpInferenceContext.init(parser.model).addExecutionScore(oracle.get)
+          val oracleResults = dist.beamSearch(beamSize, 75, Env.init, oracleContext)
             
-        oracleResults.executions.map { x =>
-        val expression = x.value.decodeExpression
-        println("o " + x.logProb.formatted("%02.3f") + "  " + expression)
+          oracleResults.executions.map { x =>
+            val expression = x.value.decodeExpression
+            print("o " + x.logProb.formatted("%02.3f") + "  " + expression)
+          }
+        } else {
+          print("  No correct logical forms in oracle.")
         }
-      } else {
-        println("  No correct logical forms in oracle.")
       }
-      
+
       // Print the attentions of the best predicted derivation
       if (beam.nonEmpty) {
-        printAttentions(beam(0).value, e.sentence.getWords.asScala.toArray)
+        printAttentions(beam(0).value, e.sentence.getWords.asScala.toArray, print)
       }
     }
 
@@ -153,7 +162,8 @@ class TestWikiTablesCli extends AbstractCli() {
     loss
   }
 
-  def printAttentions(state: SemanticParserState, tokens: Array[String]): Unit = {
+  def printAttentions(state: SemanticParserState, tokens: Array[String],
+      print: Any => Unit): Unit = {
     val templates = state.getTemplates
     val attentions = state.getAttentions
     for (i <- 0 until templates.length) {
@@ -173,14 +183,7 @@ class TestWikiTablesCli extends AbstractCli() {
         color + tokens(j) + Console.RESET
       }
 
-      println("  " + tokenStrings.mkString(" ") + " " + templates(i))
+      print("  " + tokenStrings.mkString(" ") + " " + templates(i))
     }
-  }
-}
-
-object TestWikiTablesCli {
-
-  def main(args: Array[String]): Unit = {
-    (new TestWikiTablesCli()).run(args)
   }
 }

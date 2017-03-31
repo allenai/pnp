@@ -26,6 +26,8 @@ import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import com.jayantkrish.jklol.util.IndexedList
+import scala.util.Random
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -39,9 +41,13 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   import WikiTablesUtil._
 
   var trainingDataOpt: OptionSpec[String] = null
+  var devDataOpt: OptionSpec[String] = null
   // Path to the directory containing the correct logical forms
   var derivationsPathOpt: OptionSpec[String] = null
+  // Path for the final model. 
   var modelOutputOpt: OptionSpec[String] = null
+  // Directory for intermediate models produced during training.
+  var modelOutputDirOpt: OptionSpec[String] = null
 
   var maxDerivationsOpt: OptionSpec[Integer] = null
   var epochsOpt: OptionSpec[Integer] = null
@@ -58,8 +64,10 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
+    devDataOpt = parser.accepts("devData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
+    modelOutputDirOpt = parser.accepts("modelDir").withRequiredArg().ofType(classOf[String])
     
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
@@ -96,11 +104,32 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
     (filteredTrainingData, vocab)
   }
+  
+  def initializeDevelopmentData(options: OptionSet, vocab: IndexedList[String]): Seq[WikiTablesExample] = {
+    val devData = if (options.has(devDataOpt)) {
+      options.valuesOf(devDataOpt).asScala.flatMap(filename => {
+        WikiTablesUtil.loadDataset(filename, false, null, 0)
+      })
+    } else {
+      List()
+    }
+
+    println("Read " + devData.size + " development examples")
+
+    val entityMap = devData.map(example => (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
+    devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, entityMap(x), typeDeclaration))
+    
+    devData
+  }
 
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
+    // Read training data
     val (trainingData, vocab) = initializeTrainingData(options)
+
+    // Read development data (if provided)
+    val devData = initializeDevelopmentData(options, vocab)
 
     // Generate the action space of the semantic parser from the logical
     // forms that are well-typed.
@@ -155,10 +184,15 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       println("Skipping action space validation")
     }
 
-    val trainedModel = train(trainingData, parser, typeDeclaration,
-        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt))
+    val modelOutputDir = if (options.has(modelOutputDirOpt)) { 
+      Some(options.valueOf(modelOutputDirOpt))
+    } else {
+      None
+    }
 
-    // TODO: serialization
+    train(trainingData, devData, parser, typeDeclaration, simplifier,
+        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), modelOutputDir)
+
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
     model.save(saver)
     parser.save(saver)
@@ -168,12 +202,13 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   /** Train the parser by maximizing the likelihood of examples.
     * Returns a model with the trained parameters.
     */
-  def train(examples: Seq[WikiTablesExample], parser: SemanticParser,
-      typeDeclaration: TypeDeclaration, epochs: Int, beamSize: Int): PnpModel = {
+  def train(trainingExamples: Seq[WikiTablesExample], devExamples: Seq[WikiTablesExample],
+      parser: SemanticParser, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
+      epochs: Int, beamSize: Int, modelDir: Option[String]): Unit = {
 
     parser.dropoutProb = 0.5
     val pnpExamples = for {
-      x <- examples
+      x <- trainingExamples
       sentence = x.sentence
       tokenIds = sentence.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       entityLinking = sentence.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
@@ -185,15 +220,24 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     println(pnpExamples.size + " training examples after oracle generation.")
 
+    // If we have dev examples, subsample the same number of training examples
+    // for evaluating parser accuracy as training progresses.
+    val trainErrorExamples = if (devExamples.size > 0) {
+      Random.shuffle(trainingExamples).slice(0, Math.min(devExamples.size, trainingExamples.size))
+    } else {
+      List()
+    }
+    
     // Train model
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,
+        devExamples, beamSize, typeDeclaration, new SimplificationComparator(simplifier))
     val trainer = new LoglikelihoodTrainer(epochs, beamSize, true, model, sgd,
-        new DefaultLogFunction())
+        logFunction)
     trainer.train(pnpExamples.toList)
 
     parser.dropoutProb = -1
-    model
   }
 }
 
