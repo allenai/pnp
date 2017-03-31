@@ -77,17 +77,17 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
   }
 
-  def initializeTrainingData(options: OptionSet) = {
+  def initializeTrainingData(options: OptionSet, entityLinker: WikiTablesEntityLinker) = {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     val trainingData = options.valuesOf(trainingDataOpt).asScala.flatMap(filename => {
       loadDataset(filename, includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
           options.valueOf(maxDerivationsOpt))
     })
-
+    
     println("Read " + trainingData.size + " training examples")
     val entityMap = trainingData.map(example =>
-      (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
+      (example, entityLinker.getEntityLinking(example))).toMap
     val vocab = computeVocabulary(entityMap)
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
@@ -105,7 +105,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     (filteredTrainingData, vocab)
   }
   
-  def initializeDevelopmentData(options: OptionSet, vocab: IndexedList[String]): Seq[WikiTablesExample] = {
+  def initializeDevelopmentData(options: OptionSet, entityLinker: WikiTablesEntityLinker,
+      vocab: IndexedList[String]): Seq[WikiTablesExample] = {
     val devData = if (options.has(devDataOpt)) {
       options.valuesOf(devDataOpt).asScala.flatMap(filename => {
         WikiTablesUtil.loadDataset(filename, false, null, 0)
@@ -116,7 +117,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     println("Read " + devData.size + " development examples")
 
-    val entityMap = devData.map(example => (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
+    val entityMap = devData.map(example => (example, entityLinker.getEntityLinking(example))).toMap
     devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, entityMap(x), typeDeclaration))
     
     devData
@@ -125,11 +126,13 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
+    val entityLinker = new WikiTablesEntityLinker()
+    
     // Read training data
-    val (trainingData, vocab) = initializeTrainingData(options)
+    val (trainingData, vocab) = initializeTrainingData(options, entityLinker)
 
     // Read development data (if provided)
-    val devData = initializeDevelopmentData(options, vocab)
+    val devData = initializeDevelopmentData(options, entityLinker, vocab)
 
     // Generate the action space of the semantic parser from the logical
     // forms that are well-typed.

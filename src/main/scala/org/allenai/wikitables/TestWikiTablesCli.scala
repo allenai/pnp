@@ -49,6 +49,7 @@ class TestWikiTablesCli extends AbstractCli() {
     val comparator = new SimplificationComparator(simplifier)
     val logicalFormParser = ExpressionParser.expression2();
     val typeDeclaration = new WikiTablesTypeDeclaration()
+    val entityLinker = new WikiTablesEntityLinker()
 
     // Read in serialized semantic parser
     val loader = new ModelLoader(options.valueOf(modelOpt))
@@ -62,7 +63,7 @@ class TestWikiTablesCli extends AbstractCli() {
     })
     println("Read " + testData.size + " test examples")
 
-    val entityMap = testData.map(example => (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
+    val entityMap = testData.map(example => (example, entityLinker.getEntityLinking(example))).toMap
     testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab, entityMap(x), typeDeclaration))
 
     /*
