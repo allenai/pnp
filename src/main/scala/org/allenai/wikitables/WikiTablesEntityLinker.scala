@@ -10,9 +10,12 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.mutable.{Set => MutableSet}
 import org.allenai.pnp.semparse.Span
 import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
+import scala.util.Try
 
 class WikiTablesEntityLinker {
   
+  import WikiTablesEntityLinker._
+
   /*
   def loadDataset(filename: String): Map[String, RawEntityLinking] = {
     
@@ -71,6 +74,11 @@ class WikiTablesEntityLinker {
       }
     }
     */
+
+    val nerFormulas = getNerEntityLinking(example.sentence
+        .getAnnotation(WikiTablesUtil.NER_ANNOTATION).asInstanceOf[List[List[String]]])
+    links ++= nerFormulas
+    foundFormulas ++= nerFormulas.map(_._2)
     
     val entityFormulas = matcher.getAllFormulas(FuzzyMatchFnMode.ENTITY).asScala
     // TODO: these are unused, not sure why.
@@ -91,4 +99,89 @@ class WikiTablesEntityLinker {
 
     return RawEntityLinking(links.toList)
   }
+  
+  def getNerEntityLinking(ner: List[List[String]]): Seq[(Option[Span], Formula)] = {
+    val formulaIndexMap = ListBuffer[(Formula, Int)]()
+    for ((t,i) <- ner.zipWithIndex) {
+      if (t.length > 0) {
+        val tag = t(0)
+        val value = t(1)
+        
+        if (value != null) {
+          val formulas = tag match {
+            // either null or 1.0, 6.0, etc.
+            case "ORDINAL" | "NUMBER" | "PERCENT" | "DURATION" => tryParseNumber(value)
+            // Dates have 180X, 2002, PRESENT_REF, 2010-05, 2012-SU, XXXX-03-06, 2002/2012
+            case "DATE" => tryParseDate(value)
+            // T03:59
+            case "TIME" => tryParseTime(value)
+          
+            case _ => Seq()
+          }
+
+          formulaIndexMap ++= formulas.map(x => (x, i))
+        }
+      }
+    }
+    
+    // Associate a span with each formula.
+    // This code assumes that any given formula only occurs in
+    // a single span in the text.
+    val allFormulas = formulaIndexMap.map(_._1).toSet
+    val formulasWithSpans = allFormulas.map{ x =>
+      val indexes = formulaIndexMap.filter(_._1 == x).map(_._2)
+      val start = indexes.min
+      val end = indexes.max
+      (Some(Span(start, end)), x)
+    }
+
+    formulasWithSpans.toList
+  }
+}
+
+object WikiTablesEntityLinker {
+   
+  def numberToFormula(n: Double): Formula = {
+    if (n.toInt == n) {
+      Formula.fromString(n.toInt.toString)
+    } else {
+      Formula.fromString(n.toString)
+    }
+  }
+ 
+  def tryParseNumber(s: String): Seq[Formula] = {
+    val parts = s.split("[-/]")
+    val values = for {
+      p <- parts
+      replaced = p.replaceAll("[^0-9E.]", "")
+      o = Try(replaced.toDouble).toOption
+      if o.isDefined
+    } yield {
+      o.get
+    }
+
+    values.map(numberToFormula)
+  }
+  
+  def tryParseDate(s: String): Seq[Formula] = {
+    val parts = s.split("[-/]")
+    val values = for {
+      p <- parts
+      replaced = p.replaceAll("X", "0").replaceAll("[^0-9E.]", "")
+      o = Try(replaced.toDouble).toOption
+      if o.isDefined
+    } yield {
+      o.get
+    }
+
+    values.map(numberToFormula)
+  }
+
+  def tryParseTime(s: String): Seq[Formula] = {
+    // Time references in WikiTables tend to be to cells
+    // of the table, and therefore don't need to be linked
+    // to special formulas. Leaving this hook here for future
+    // use if necessary.
+    Seq()
+  } 
 }

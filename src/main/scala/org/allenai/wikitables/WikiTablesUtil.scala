@@ -63,6 +63,9 @@ object WikiTablesUtil {
   val ENTITY = "<ENTITY>"
   val preprocessingSuffix = ".preprocessed.json"
   val simplifier = ExpressionSimplifier.lambdaCalculus()
+  
+  // Names of annotations
+  val NER_ANNOTATION = "NER"
 
   CustomExample.opts.allowNoAnnotation = true
   TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions"
@@ -89,7 +92,7 @@ object WikiTablesUtil {
       ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
       ("tokens" -> example.sentence.getWords.asScala) ~
       ("posTags" -> example.sentence.getPosTags.asScala) ~
-      ("NER" -> example.sentence.getAnnotation("NER").asInstanceOf[Seq[Seq[String]]]) ~
+      ("NER" -> example.sentence.getAnnotation(NER_ANNOTATION).asInstanceOf[Seq[Seq[String]]]) ~
       ("table" -> example.tableString) ~
       ("answer" -> example.targetValue.toLispTree.toString) ~
       ("possible logical forms" -> example.possibleLogicalForms.map(WikiTablesUtil.toSempreLogicalForm).map(_.toString).toList)
@@ -116,7 +119,7 @@ object WikiTablesUtil {
     val possibleLogicalForms = possibleLogicalFormStrings
       .map(Formula.fromString).map(WikiTablesUtil.toPnpLogicalForm).map(simplifier.apply).toSet
     val sentence = new AnnotatedSentence(tokens.asJava, posTags.asJava, new java.util.HashMap())
-    sentence.getAnnotations().put("NER", ner)
+    sentence.getAnnotations().put(NER_ANNOTATION, ner)
     new WikiTablesExample(
       id,
       sentence,
@@ -138,7 +141,7 @@ object WikiTablesUtil {
     val filteredNer = ner.map { case (tag, label) => {
       if (tag == "O" && label == null) Seq() else Seq(tag, label)
     }}
-    sentence.getAnnotations().put("NER", filteredNer)
+    sentence.getAnnotations().put(NER_ANNOTATION, filteredNer)
 
     // Then we worry about the logical forms.
     val goldLogicalForm = if (example.targetFormula == null) {
