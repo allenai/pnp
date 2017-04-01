@@ -85,53 +85,35 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   def initializeTrainingData(options: OptionSet, entityLinker: WikiTablesEntityLinker) = {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
-    val trainingDataBuffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
-    for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      val examples = loadDataset(filename, includeDerivationsForTrain,
-          options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt))
-      val linkings = entityLinker.loadDataset(filename, examples)
-      val linkingsMap = linkings.map(x => (x.id, x)).toMap
-      trainingDataBuffer ++= examples.map(x => (x, linkingsMap(x.id)))
-    }
-    val trainingData = trainingDataBuffer.toVector
+    val trainingData = loadDatasets(options.valuesOf(trainingDataOpt).asScala,
+        includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
+        options.valueOf(maxDerivationsOpt))
     
     println("Read " + trainingData.size + " training examples")
     val vocab = computeVocabulary(trainingData)
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
-    val filteredTrainingData = trainingData.filter(!_._1.logicalForms.isEmpty)
+    val filteredTrainingData = trainingData.filter(!_.ex.logicalForms.isEmpty)
     // preprocessExample modifies the `annotations` data structure in example.sentence, adding
     // some things to it.  We don't need a `map`, just a `foreach`.
-    filteredTrainingData.foreach(x => preprocessExample(x._1, vocab, x._2, typeDeclaration))
+    filteredTrainingData.foreach(x => preprocessExample(x, vocab, typeDeclaration))
     println("Found correct logical forms for " + filteredTrainingData.size + " training examples")
 
     println("Preprocessed:")
     for (example <- filteredTrainingData) {
-      println(example._1.sentence.getWords)
-      println(example._1.logicalForms)
+      println(example.ex.sentence.getWords)
+      println(example.ex.logicalForms)
     }
-    (filteredTrainingData.map(_._1), vocab)
+    (filteredTrainingData.map(_.ex), vocab)
   }
 
   def initializeDevelopmentData(options: OptionSet, entityLinker: WikiTablesEntityLinker,
       vocab: IndexedList[String]): Seq[WikiTablesExample] = {
-    val devData = if (options.has(devDataOpt)) {
-      val buffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
-      for (filename <- options.valuesOf(devDataOpt).asScala) {
-        val examples = loadDataset(filename, false, null, 0)
-        val linkings = entityLinker.loadDataset(filename, examples)
-        val linkingsMap = linkings.map(x => (x.id, x)).toMap
-        buffer ++= examples.map(x => (x, linkingsMap(x.id)))
-      }
-      buffer.toVector
-    } else {
-      Vector()
-    }
-
+    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala,  false, null, 0)
     println("Read " + devData.size + " development examples")
 
-    devData.foreach(x => WikiTablesUtil.preprocessExample(x._1, vocab, x._2, typeDeclaration))
-    devData.map(_._1)
+    devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, typeDeclaration))
+    devData.map(_.ex)
   }
 
   override def run(options: OptionSet): Unit = {

@@ -59,19 +59,11 @@ class TestWikiTablesCli extends AbstractCli() {
     loader.done()
 
     // Read test data.
-    val buffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
-    for (filename <- options.valuesOf(testDataOpt).asScala) {
-      val examples = WikiTablesUtil.loadDataset(
-          filename, false, null, options.valueOf(maxDerivationsOpt))
-      val linkings = entityLinker.loadDataset(filename, examples)
-      val linkingsMap = linkings.map(x => (x.id, x)).toMap
-      buffer ++= examples.map(x => (x, linkingsMap(x.id)))
-    }
-    val testData = buffer.toVector
+    val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
+        false, null, options.valueOf(maxDerivationsOpt))
     println("Read " + testData.size + " test examples")
 
-    testData.foreach(x => WikiTablesUtil.preprocessExample(
-        x._1, parser.vocab, x._2, typeDeclaration)) 
+    testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab, typeDeclaration)) 
 
     /*
     println("*** Validating test set action space ***")
@@ -79,7 +71,7 @@ class TestWikiTablesCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
     */
 
-    val testResults = TestWikiTablesCli.test(testData.map(_._1),
+    val testResults = TestWikiTablesCli.test(testData.map(_.ex),
         parser, options.valueOf(beamSizeOpt), options.has(evaluateDpdOpt),
         true, typeDeclaration, comparator, println)
     println("*** Evaluation results ***")

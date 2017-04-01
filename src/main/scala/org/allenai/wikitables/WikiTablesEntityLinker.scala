@@ -50,8 +50,8 @@ class WikiTablesEntityLinker {
     EditDistanceFuzzyMatcher.opts.alsoMatchPart = true;
     EditDistanceFuzzyMatcher.opts.fuzzyMatchMaxEditDistanceRatio = 0.3;
 
-    val matcher = new EditDistanceFuzzyMatcher(example.getContext().graph
-        .asInstanceOf[TableKnowledgeGraph]);
+    val graph = example.getContext().graph.asInstanceOf[TableKnowledgeGraph]
+    val matcher = new EditDistanceFuzzyMatcher(graph);
 
     // We don't actually use the spans of formulas at the moment.
     /*

@@ -2,17 +2,17 @@
 
 SCRIPT_DIR="experiments/wikitables/scripts/"
 # Training data.
-# TRAIN="data/WikiTableQuestions/data/subsamples/random-split_1-train_1000.examples"
-TRAIN="data/WikiTableQuestions/data/random-split-1-train.examples"
+TRAIN="data/WikiTableQuestions/data/subsamples/random-split_1-train_100.examples"
+# TRAIN="data/WikiTableQuestions/data/random-split-1-train.examples"
 # Development data used for evaluating model accuracy as training progresses.
-TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
-# TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_100.examples"
+# TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
+TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_100.examples"
 # Development data for evaluating the final trained model.
 # DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_1000.examples"
 DEV="data/WikiTableQuestions/data/random-split-1-dev.examples"
 DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
 
-EXPERIMENT_NAME="all_005"
+EXPERIMENT_NAME="kg_001"
 EXPERIMENT_DIR="experiments/wikitables/output/$EXPERIMENT_NAME/"
 
 EPOCHS=20

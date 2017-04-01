@@ -51,6 +51,7 @@ import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import fig.basic.LispTree
 import fig.basic.Pair
+import scala.collection.mutable.ListBuffer
 
 /**
  * This object has two main functions: (1) loading and preprocessing data (including functionality
@@ -181,9 +182,9 @@ object WikiTablesUtil {
     acc
   }
 
-  def computeVocabulary(trainingDataWithEntities: Seq[(WikiTablesExample, RawEntityLinking)]) = {
-    val wordCounts = getTokenCounts(trainingDataWithEntities.map(_._1))
-    val allEntities = trainingDataWithEntities.map(_._2.links).flatten.map(_._2.toString)
+  def computeVocabulary(trainingDataWithEntities: Seq[RawExample]) = {
+    val wordCounts = getTokenCounts(trainingDataWithEntities.map(_.ex))
+    val allEntities = trainingDataWithEntities.map(_.linking.links).flatten.map(_._2.toString)
     val entityCounts = getEntityTokenCounts(allEntities)
     // Vocab consists of all words that appear more than once in
     // the training data.
@@ -239,6 +240,30 @@ object WikiTablesUtil {
     }
   }
   
+  def loadDatasets(
+      filenames: Seq[String],
+      includeDerivationsForTrain: Boolean,
+      derivationsPath: String,
+      derivationsLimit: Int
+    ): Vector[RawExample] = {
+    // The entity linker can become a parameter in the future
+    // if it starts accepting parameters.
+    val entityLinker = new WikiTablesEntityLinker()
+    val trainingDataBuffer = ListBuffer[RawExample]()
+    for (filename <- filenames) {
+      val examples = loadDataset(filename, includeDerivationsForTrain,
+          derivationsPath, derivationsLimit)
+      val linkings = entityLinker.loadDataset(filename, examples)
+      val tables = Table.loadDataset(filename, examples)
+      
+      val linkingsMap = linkings.map(x => (x.id, x)).toMap
+      val tablesMap = tables.map(x => (x.id, x)).toMap
+      trainingDataBuffer ++= examples.map(x => RawExample(x, linkingsMap(x.id),
+          tablesMap(x.tableString)))
+    }
+    trainingDataBuffer.toVector
+  }
+    
   /**
    * Converts the id of an entity to a sequence of
    * tokens in its "name." The tokens will have the form
@@ -264,9 +289,8 @@ object WikiTablesUtil {
   }
 
   def preprocessExample(
-    example: WikiTablesExample,
+    example: RawExample,
     vocab: IndexedList[String],
-    sempreEntityLinking: RawEntityLinking,
     typeDeclaration: WikiTablesTypeDeclaration
   ) {
     // All we do here is add some annotations to the example.  Those annotations are:
@@ -288,15 +312,15 @@ object WikiTablesUtil {
 
     // Use UNK in the tokens to identify which tokens were OOV.
     // However, each UNKed token is assigned a distinct token id.
-    val words = example.sentence.getWords().asScala
+    val words = example.ex.sentence.getWords().asScala
     val unkedWords = words.map(x => if (vocab.contains(x)) x else UNK)
     val tokenIds = words.map(tokenToId(_)).toArray
 
     // Compute an entity linking.
-    val entityLinking = sempreEntityLinking.toEntityLinking(tokenToId, typeDeclaration)
+    val entityLinking = example.linking.toEntityLinking(tokenToId, typeDeclaration)
 
-    val annotations = example.sentence.getAnnotations()
-    annotations.put("originalTokens", example.sentence.getWords().asScala.toList)
+    val annotations = example.ex.sentence.getAnnotations()
+    annotations.put("originalTokens", example.ex.sentence.getWords().asScala.toList)
     annotations.put("tokenIds", tokenIds)
     annotations.put("entityLinking", entityLinking)
   }

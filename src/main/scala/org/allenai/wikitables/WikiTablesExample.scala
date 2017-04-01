@@ -56,3 +56,5 @@ case class WikiTablesExample(
     sentence + " [\n" + logicalForms.map(_.toString).mkString(" ") + "\n]"
   }
 }
+
+case class RawExample(ex: WikiTablesExample, linking: RawEntityLinking, table: Table)
