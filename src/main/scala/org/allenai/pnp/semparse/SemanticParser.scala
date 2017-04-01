@@ -133,8 +133,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val entities = entityLinking.getEntitiesWithType(t)
       val entityLinkingFeaturizedParam = Expression.parameter(computationGraph.getParameter(
           ENTITY_LINKING_FEATURIZED_PARAM + t))
-      val entityScores = entities.map(e => scoreEntityTokensMatch(e, entityLinking.getBestEntitySpan(e),
-          tokens, tokenEmbeddings, tokenIdToEmbedding, entityLinkingFeaturizedParam))
+      val entityScores = entities.map(e => scoreEntityTokensMatch(e,
+          tokens, tokenEmbeddings, tokenIdToEmbedding, entityLinking, entityLinkingFeaturizedParam))
       
       val entityScoreMatrix = Expression.concatenateCols(new ExpressionVector(entityScores))
       
@@ -155,36 +155,33 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     EntityEncoding(typedEntityTokenMatrices.toMap, entityEmbeddingMatrices.toMap, entityLinking)
   }
 
-  private def scoreEntityTokensMatch(entity: Entity, entitySpan: Option[Span], tokens: Array[Int],
+  private def scoreEntityTokensMatch(entity: Entity, tokens: Array[Int],
       tokenEmbeddings: Array[Expression], tokenIdToEmbedding: Int => Expression,
-      entityLinkingFeaturizedParam: Expression): Expression = {
+      entityLinking: EntityLinking, entityLinkingFeaturizedParam: Expression): Expression = {
     
     val inVocabNameTokens = entity.nameTokensSet.filter(_ < vocab.size)
     val entityNameEmbeddings = inVocabNameTokens.map(tokenIdToEmbedding(_)).toArray
     
     val tokenScores = tokens.zipWithIndex.map(t =>
-      scoreEntityTokenMatch(entity, entitySpan, t._1,
+      scoreEntityTokenMatch(entity, t._1,
           tokenEmbeddings(t._2), t._2, entityNameEmbeddings,
           entityLinkingFeaturizedParam))
-    Expression.concatenate(new ExpressionVector(tokenScores))
+
+    var tokenScoresExpr = Expression.concatenate(new ExpressionVector(tokenScores))
+    if (config.entityTokenFeatures) {
+      val (dim, floatVector) = entityLinking.getTokenFeatures(entity)
+      val featureMatrix = Expression.input(dim, floatVector)
+
+      tokenScoresExpr += featureMatrix * entityLinkingFeaturizedParam
+    }
+
+    tokenScoresExpr
   }
 
-  private def scoreEntityTokenMatch(entity: Entity, entitySpan: Option[Span], tokenId: Int,
+  private def scoreEntityTokenMatch(entity: Entity, tokenId: Int,
       tokenEmbedding: Expression, tokenIndex: Int, entityNameEmbeddings: Array[Expression],
       entityLinkingFeaturizedParam: Expression): Expression = {
     var score = Expression.input(0.0f)
-    
-    if (config.attentionCopyEntities) {
-      // TODO: we should really build a feature vector here and make
-      // entityLinkingFeaturizedParam a vector of parameters.
-      if (entitySpan.isDefined && entitySpan.get.contains(tokenIndex)) {
-        score = score + Expression.pick(entityLinkingFeaturizedParam, 0)
-      }
-
-      if (entity.nameTokensSet.contains(tokenId)) {
-        score = score + Expression.pick(entityLinkingFeaturizedParam, 1)
-      }
-    }
 
     if (config.entityLinkingLearnedSimilarity && tokenId < vocab.size) {
       if (entityNameEmbeddings.size > 0) {
@@ -221,7 +218,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     for {
       // Encode input tokens using an LSTM.
       input <- encode(tokens, entityLinking)
-      
+
       state = SemanticParserState.start
       
       // Choose the root type for the logical form given the
@@ -619,8 +616,10 @@ class SemanticParserConfig extends Serializable {
   var actionDim = 100
   var actionHiddenDim = 100
   var maxVars = 10
+
+  var entityTokenFeatures = false
+  var entityTokenFeatureDim = 1
   
-  var attentionCopyEntities = true
   var entityLinkingLearnedSimilarity = false
   var distinctUnkVectors = false
 }
@@ -683,7 +682,7 @@ object SemanticParser {
       model.addLookupParameter(ENTITY_LOOKUP_PARAM + t, 1, Dim(config.actionDim))
 
       // TODO: generate features with some dimensionality.
-      model.addParameter(ENTITY_LINKING_FEATURIZED_PARAM + t, Dim(2))
+      model.addParameter(ENTITY_LINKING_FEATURIZED_PARAM + t, Dim(config.entityTokenFeatureDim))
     }
 
     model.addLookupParameter(ENTITY_TYPE_INPUT_PARAM, actionSpace.typeIndex.size,

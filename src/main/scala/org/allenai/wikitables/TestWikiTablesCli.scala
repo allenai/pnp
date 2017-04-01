@@ -51,6 +51,9 @@ class TestWikiTablesCli extends AbstractCli() {
     val logicalFormParser = ExpressionParser.expression2();
     val typeDeclaration = new WikiTablesTypeDeclaration()
     val entityLinker = new WikiTablesEntityLinker()
+    
+    // XXX: this needs to get serialized with the semantic parser.
+    val featureGenerator = EntityTokenFeatureGenerator.getWikitablesGenerator()
 
     // Read in serialized semantic parser
     val loader = new ModelLoader(options.valueOf(modelOpt))
@@ -63,7 +66,8 @@ class TestWikiTablesCli extends AbstractCli() {
         false, null, options.valueOf(maxDerivationsOpt))
     println("Read " + testData.size + " test examples")
 
-    testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab, typeDeclaration)) 
+    testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab,
+        featureGenerator, typeDeclaration)) 
 
     /*
     println("*** Validating test set action space ***")

@@ -15,6 +15,8 @@ import scala.io.Source
 import java.nio.file.Paths
 import java.nio.file.Files
 import java.nio.charset.StandardCharsets
+import edu.cmu.dynet.FloatVector
+import edu.cmu.dynet.Dim
 
 /**
  * A raw entity linking. These linkings are mostly generated 
@@ -23,10 +25,11 @@ import java.nio.charset.StandardCharsets
  */
 case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
 
-  def toEntityLinking(tokenToId: String => Int,
+  def toEntityLinking(tokens: Seq[Int], tokenToId: String => Int,
+    featureGenerator: EntityTokenFeatureGenerator,
     typeDeclaration: WikiTablesTypeDeclaration): EntityLinking = {
 
-    val builder = ListBuffer[(Option[Span], Entity, List[Int], Double)]()
+    val builder = ListBuffer[(Entity, Dim, FloatVector)]()
     for (link <- links) {
       val entityString = link._2.toString
       val entityExpr = ExpressionParser.expression2().parse(entityString)
@@ -49,10 +52,18 @@ case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
         val entityTokens = WikiTablesUtil.tokenizeEntity(entityString)
         val entityTokenIds = entityTokens.map(tokenToId(_)).toList
         val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-        builder += ((span, entity, entityTokenIds, 0.1))
+        
+        // Generate entity/token features.
+        val (dim, featureMatrix) = featureGenerator.apply(tokens, entity, span)
+        
+        builder += ((entity, dim, featureMatrix))
       }
     }
-    new EntityLinking(builder.toList)
+    
+    val entities = builder.map(_._1).toArray
+    val features = builder.map(x => (x._2, x._3)).toArray
+
+    new EntityLinking(entities, features)
   }
 }
 

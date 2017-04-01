@@ -12,7 +12,7 @@ TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_100.exampl
 DEV="data/WikiTableQuestions/data/random-split-1-dev.examples"
 DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
 
-EXPERIMENT_NAME="kg_001"
+EXPERIMENT_NAME="kg_002"
 EXPERIMENT_DIR="experiments/wikitables/output/$EXPERIMENT_NAME/"
 
 EPOCHS=20

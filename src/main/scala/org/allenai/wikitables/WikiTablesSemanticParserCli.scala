@@ -31,6 +31,7 @@ import scala.util.Random
 import scala.collection.mutable.ListBuffer
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.BsoTrainer
+import org.allenai.wikitables.EntityTokenFeatureGenerator.EntityTokenFeatureFunction
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -82,7 +83,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
   }
 
-  def initializeTrainingData(options: OptionSet, entityLinker: WikiTablesEntityLinker) = {
+  def initializeTrainingData(options: OptionSet,
+      featureGen: EntityTokenFeatureGenerator) = {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     val trainingData = loadDatasets(options.valuesOf(trainingDataOpt).asScala,
@@ -96,7 +98,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val filteredTrainingData = trainingData.filter(!_.ex.logicalForms.isEmpty)
     // preprocessExample modifies the `annotations` data structure in example.sentence, adding
     // some things to it.  We don't need a `map`, just a `foreach`.
-    filteredTrainingData.foreach(x => preprocessExample(x, vocab, typeDeclaration))
+    filteredTrainingData.foreach(x => preprocessExample(x, vocab, featureGen, typeDeclaration))
     println("Found correct logical forms for " + filteredTrainingData.size + " training examples")
 
     println("Preprocessed:")
@@ -107,25 +109,25 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     (filteredTrainingData.map(_.ex), vocab)
   }
 
-  def initializeDevelopmentData(options: OptionSet, entityLinker: WikiTablesEntityLinker,
+  def initializeDevelopmentData(options: OptionSet, featureGen: EntityTokenFeatureGenerator,
       vocab: IndexedList[String]): Seq[WikiTablesExample] = {
     val devData = loadDatasets(options.valuesOf(devDataOpt).asScala,  false, null, 0)
     println("Read " + devData.size + " development examples")
 
-    devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, typeDeclaration))
+    devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, featureGen, typeDeclaration))
     devData.map(_.ex)
   }
 
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
-    val entityLinker = new WikiTablesEntityLinker()
-    
+    val featureGenerator = EntityTokenFeatureGenerator.getWikitablesGenerator()
+
     // Read training data
-    val (trainingData, vocab) = initializeTrainingData(options, entityLinker)
+    val (trainingData, vocab) = initializeTrainingData(options, featureGenerator)
 
     // Read development data (if provided)
-    val devData = initializeDevelopmentData(options, entityLinker, vocab)
+    val devData = initializeDevelopmentData(options, featureGenerator, vocab)
 
     // Generate the action space of the semantic parser from the logical
     // forms that are well-typed.
@@ -166,7 +168,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
-    config.attentionCopyEntities = true
+    config.entityTokenFeatures = true
+    config.entityTokenFeatureDim = featureGenerator.numFeatures
     config.entityLinkingLearnedSimilarity = true
     config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
