@@ -105,7 +105,7 @@ object TestWikiTablesCli {
     var numCorrectAt10 = 0
     for (e <- examples) {
       val sent = e.sentence
-      print("example id: " + e.id)
+      print("example id: " + e.id +  " " + e.tableString)
       print(sent.getWords.asScala.mkString(" "))
       print(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
 

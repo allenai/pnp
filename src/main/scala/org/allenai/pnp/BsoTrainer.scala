@@ -66,7 +66,6 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
     val losses = ListBuffer[Expression]()
     while (queue.queue.size > 0 &&
         (maxIters < 0 || numIters < maxIters)) {
-      // println(numIters + " " + queue.queue.size)
 
       // TODO: check this
       val beamSize = queue.queue.size
@@ -93,6 +92,8 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
       log.stopTimer("bso/beam_search/get_executions")
 
       var nextBeamSize = -1
+      // println(numIters + " " + queue.queue.size + " inc: " + queue.incorrectQueue.size
+      //  + " c:" + queue.correctQueue.size)
 
       // Check for a margin violation. Note that the cost (margin)
       // of worstIncorrectEx is included in worstIncorrectEx.logProb.
@@ -114,7 +115,7 @@ class BsoTrainer(val epochs: Int, val beamSize: Int, val maxIters: Int,
         nextBeamSize = 1
         
         log.stopTimer("bso/beam_search/margin_violation")
-      } else {
+      } else {        
         // No margin violation. Queue up all beam executions for 
         // the next search step.
         for (i <- 0 until beamSize) {

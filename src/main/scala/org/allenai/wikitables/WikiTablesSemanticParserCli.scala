@@ -29,6 +29,8 @@ import joptsimple.OptionSpec
 import com.jayantkrish.jklol.util.IndexedList
 import scala.util.Random
 import scala.collection.mutable.ListBuffer
+import org.allenai.pnp.LoglikelihoodTrainer
+import org.allenai.pnp.BsoTrainer
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -53,6 +55,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var maxDerivationsOpt: OptionSpec[Integer] = null
   var epochsOpt: OptionSpec[Integer] = null
   var beamSizeOpt: OptionSpec[Integer] = null
+  var lasoOpt: OptionSpec[Void] = null
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
@@ -73,6 +76,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
+    lasoOpt = parser.accepts("laso")
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
@@ -201,7 +205,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     train(trainingData, devData, parser, typeDeclaration, simplifier,
-        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), modelOutputDir)
+        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), options.has(lasoOpt),
+        modelOutputDir)
 
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
     model.save(saver)
@@ -214,7 +219,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     */
   def train(trainingExamples: Seq[WikiTablesExample], devExamples: Seq[WikiTablesExample],
       parser: SemanticParser, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
-      epochs: Int, beamSize: Int, modelDir: Option[String]): Unit = {
+      epochs: Int, beamSize: Int, laso: Boolean, modelDir: Option[String]): Unit = {
 
     parser.dropoutProb = 0.5
     val pnpExamples = for {
@@ -223,7 +228,11 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       tokenIds = sentence.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       entityLinking = sentence.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       unconditional = parser.generateExpression(tokenIds, entityLinking)
-      oracle <- parser.getMultiLabelScore(x.logicalForms, entityLinking, typeDeclaration)
+      oracle <- if (laso) {
+        parser.getMultiMarginScore(x.logicalForms, entityLinking, typeDeclaration)
+      } else {
+        parser.getMultiLabelScore(x.logicalForms, entityLinking, typeDeclaration)
+      }
     } yield {
       PnpExample(unconditional, unconditional, Env.init, oracle)
     }
@@ -248,15 +257,23 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     devExamples.foreach(x => x.getContext)
     
     // Train model
-    println("Training...")
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,
         devExamples, beamSize, typeDeclaration, new SimplificationComparator(simplifier))
-    val trainer = new LoglikelihoodTrainer(epochs, beamSize, true, model, sgd,
-        logFunction)
-    trainer.train(pnpExamples.toList)
-
+    
+    if (laso) {
+      println("Running LaSO training...")
+      model.locallyNormalized = false
+      val trainer = new BsoTrainer(epochs, beamSize, 50, model, sgd, logFunction)
+      trainer.train(pnpExamples.toList)
+    } else {
+      println("Running loglikelihood training...")
+      model.locallyNormalized = true
+      val trainer = new LoglikelihoodTrainer(epochs, beamSize, true, model, sgd,
+          logFunction)
+      trainer.train(pnpExamples.toList)
+    }
     parser.dropoutProb = -1
   }
 }

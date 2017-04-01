@@ -21,6 +21,8 @@ class ActionSpace(
     val rootTypes: Array[Type],
     val allTypes: Set[Type]
     ) extends Serializable {
+  
+  val typeIndex = IndexedList.create(allTypes.asJava)
 
   def getTemplates(t: Type): Vector[Template] = {
     typeTemplateMap.getOrElse(t, Set.empty).toVector

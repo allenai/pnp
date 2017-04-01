@@ -7,14 +7,15 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import scala.collection.mutable.ListBuffer
 
 case class EntityLinking(matches: List[(Option[Span], Entity, List[Int], Double)]) {
-  // Some matches may have null span. They correspond to floating rules.
   val entities: List[Entity] = matches.map(_._2).toSet.toList
+  /*
   val linkedMatches: List[(Span, Entity, List[Int], Double)] =
     matches.filter(x => x._1 != None).map(x => (x._1.get, x._2, x._3, x._4))
   val unlinkedMatches: List[(Entity, List[Int], Double)] =
     matches.filter(x => x._1 == None).map(x => (x._2, x._3, x._4))
+   */
   val entityMatches = SemanticParser.seqToMultimap(
-      linkedMatches.map(x => (x._2, (x._1, x._3, x._4))))
+      matches.map(x => (x._2, (x._1, x._3, x._4))))
   // Find matches with max score.
   val bestEntityMatches = entityMatches.map(x => (x._1, x._2.maxBy(_._3)))
   val bestEntityMatchesList = bestEntityMatches.map(x => (x._2._1, x._1, x._2._2, x._2._3)).toList
@@ -25,12 +26,22 @@ case class EntityLinking(matches: List[(Option[Span], Entity, List[Int], Double)
   def getEntitiesWithType(t: Type): Array[Entity] = {
     entitiesWithType.getOrElse(t, Array())
   }
+  
+  def getBestEntitySpan(e: Entity): Option[Span] = {
+    for {
+      m <- bestEntityMatches.get(e)
+      s <- m._1
+    } yield {
+      s
+    }
+  }
 }
 
 case class Entity(val expr: Expression2, val t: Type,
     val template: Template, val names: List[List[Int]]) {
-  
-  val allNameTokens = names.flatten.toSet
+
+  val nameTokens = names.flatten.toArray
+  val nameTokensSet = names.flatten.toSet
 }
 
 class EntityDict(val map: MultiMap[List[Int], Entity]) {
@@ -59,4 +70,12 @@ class EntityDict(val map: MultiMap[List[Int], Entity]) {
   }
 }
 
-case class Span(val start: Int, val end: Int) 
+case class Span(val start: Int, val end: Int) {
+
+  /**
+   * True if {@code index} is contained within this span.
+   */
+  def contains(index: Int): Boolean = {
+    index >= start && index < end
+  }
+}

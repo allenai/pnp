@@ -24,6 +24,12 @@ import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 
+// Jayant notes:
+// 1. partial entity name matches are a problem. E.g., one entity is "temagami lorraine mine",
+// and the other is "temagami". Both have equivalent scores for matching the string "temagami",
+// but the second score should be greater.
+// 2. getting the column applicable to a cell is a problem
+// 3.
 /** A parser mapping token sequences to a distribution over
   * logical forms.
   */
@@ -69,7 +75,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val entityEncoding = encodeEntities(compGraph, entityLinking, tokens, tokenIdToEmbedding)
     val inputEncoding = rnnEncode(compGraph, tokens, tokenIdToEmbedding)
     InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
-        inputEncoding._4, entityLinking, entityEncoding)
+        inputEncoding._4, entityEncoding)
   }
 
   private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int],
@@ -117,8 +123,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   }
 
   private def encodeEntities(computationGraph: CompGraph, entityLinking: EntityLinking,
-      tokens: Array[Int], tokenIdToEmbedding: Int => Expression
-      ): Map[Type, Expression] = {
+      tokens: Array[Int], tokenIdToEmbedding: Int => Expression): EntityEncoding = {
 
     val tokenEmbeddings = tokens.map(tokenIdToEmbedding(_))
     
@@ -128,37 +133,56 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val entities = entityLinking.getEntitiesWithType(t)
       val entityLinkingFeaturizedParam = Expression.parameter(computationGraph.getParameter(
           ENTITY_LINKING_FEATURIZED_PARAM + t))
-      val entityScores = entities.map(scoreEntityTokensMatch(_, tokens, tokenEmbeddings,
-          tokenIdToEmbedding, entityLinkingFeaturizedParam))
+      val entityScores = entities.map(e => scoreEntityTokensMatch(e, entityLinking.getBestEntitySpan(e),
+          tokens, tokenEmbeddings, tokenIdToEmbedding, entityLinkingFeaturizedParam))
       
       val entityScoreMatrix = Expression.concatenateCols(new ExpressionVector(entityScores))
+      
       (t, entityScoreMatrix)
     }
+    
+    val entityEmbeddingMatrices = for {
+      t <- entityLinking.entityTypes
+    } yield {
+      val entities = entityLinking.getEntitiesWithType(t)
+          
+      val entityEmbeddings = entities.map(e => encodeBow(e, tokenIdToEmbedding))
+      val entityEmbeddingMatrix = Expression.concatenateCols(new ExpressionVector(entityEmbeddings))
+      
+      (t, entityEmbeddingMatrix)
+    }
 
-    typedEntityTokenMatrices.toMap
+    EntityEncoding(typedEntityTokenMatrices.toMap, entityEmbeddingMatrices.toMap, entityLinking)
   }
-  
-  private def scoreEntityTokensMatch(entity: Entity, tokens: Array[Int],
+
+  private def scoreEntityTokensMatch(entity: Entity, entitySpan: Option[Span], tokens: Array[Int],
       tokenEmbeddings: Array[Expression], tokenIdToEmbedding: Int => Expression,
       entityLinkingFeaturizedParam: Expression): Expression = {
     
-    val inVocabNameTokens = entity.allNameTokens.filter(_ < vocab.size)
+    val inVocabNameTokens = entity.nameTokensSet.filter(_ < vocab.size)
     val entityNameEmbeddings = inVocabNameTokens.map(tokenIdToEmbedding(_)).toArray
     
-    val tokenScores = tokens.zip(tokenEmbeddings).map(t =>
-      scoreEntityTokenMatch(entity, t._1, t._2, entityNameEmbeddings,
+    val tokenScores = tokens.zipWithIndex.map(t =>
+      scoreEntityTokenMatch(entity, entitySpan, t._1,
+          tokenEmbeddings(t._2), t._2, entityNameEmbeddings,
           entityLinkingFeaturizedParam))
     Expression.concatenate(new ExpressionVector(tokenScores))
   }
 
-  private def scoreEntityTokenMatch(entity: Entity, tokenId: Int,
-      tokenEmbedding: Expression, entityNameEmbeddings: Array[Expression],
+  private def scoreEntityTokenMatch(entity: Entity, entitySpan: Option[Span], tokenId: Int,
+      tokenEmbedding: Expression, tokenIndex: Int, entityNameEmbeddings: Array[Expression],
       entityLinkingFeaturizedParam: Expression): Expression = {
     var score = Expression.input(0.0f)
     
     if (config.attentionCopyEntities) {
-      if (entity.allNameTokens.contains(tokenId)) {
-        score = score + entityLinkingFeaturizedParam
+      // TODO: we should really build a feature vector here and make
+      // entityLinkingFeaturizedParam a vector of parameters.
+      if (entitySpan.isDefined && entitySpan.get.contains(tokenIndex)) {
+        score = score + Expression.pick(entityLinkingFeaturizedParam, 0)
+      }
+
+      if (entity.nameTokensSet.contains(tokenId)) {
+        score = score + Expression.pick(entityLinkingFeaturizedParam, 1)
       }
     }
 
@@ -177,7 +201,11 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
     score
   }
-  
+
+  private def encodeBow(entity: Entity, tokenIdToEmbedding: Int => Expression): Expression = {
+    entity.nameTokens.map(tokenIdToEmbedding).reduce(_ + _) / entity.nameTokens.length
+  }
+
   def generateExpression(tokens: Array[Int], entityLinking: EntityLinking): Pnp[Expression2] = {
     for {
       state <- parse(tokens, entityLinking)
@@ -253,9 +281,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       }
       val baseTemplates = actionTemplates ++ variableTemplates
 
-      val entities = input.entityLinking.getEntitiesWithType(hole.t)
+      val entities = input.entityEncoding.entityLinking.getEntitiesWithType(hole.t)
       val entityTemplates = entities.map(_.template)
-      val entityTokenMatrix = input.tokenEntityScoreMatrices.getOrElse(hole.t, null)
+      val entityTokenMatrix = input.entityEncoding.tokenEntityScoreMatrices.getOrElse(hole.t, null)
 
       val allTemplates = baseTemplates ++ entityTemplates
 
@@ -337,6 +365,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         actionInput = if (index < baseTemplates.length) {
           Expression.lookup(actionLookup, templateTuple._2)
         } else {
+          // TODO: using a single parameter vector for all entities seems suboptimal. 
           Expression.lookup(entityLookup, 0)
         }
 
@@ -445,6 +474,17 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
    */
   def getMultiLabelScore(exprs: Iterable[Expression2], entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration): Option[SemanticParserMultiExecutionScore] = {
+    getMultiScore(exprs, entityLinking, typeDeclaration, Double.NegativeInfinity)
+  }
+
+  def getMultiMarginScore(exprs: Iterable[Expression2], entityLinking: EntityLinking,
+      typeDeclaration: TypeDeclaration): Option[SemanticParserMultiExecutionScore] = {
+    getMultiScore(exprs, entityLinking, typeDeclaration, 1.0)
+  }
+  
+  private def getMultiScore(exprs: Iterable[Expression2], entityLinking: EntityLinking,
+      typeDeclaration: TypeDeclaration, incorrectCost: Double
+      ): Option[SemanticParserMultiExecutionScore] = {
     val oracles = for {
       lf <- exprs
       oracle <- getLabelScore(lf, entityLinking, typeDeclaration)
@@ -453,14 +493,13 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
 
     if (oracles.size > 0) {
-      val score = new SemanticParserMultiExecutionScore(oracles, Double.NegativeInfinity)
+      val score = new SemanticParserMultiExecutionScore(oracles, incorrectCost)
       Some(score)
     } else {
       None
     }
-    
-    
   }
+
   
   /**
    * Serialize this parser into {@code saver}. This method
@@ -610,9 +649,10 @@ object SemanticParser {
   val ENTITY_LOOKUP_PARAM = "entityLookup:"
   
   val ENTITY_LINKING_FEATURIZED_PARAM = "entityLinkingFeaturized:"
+  val ENTITY_TYPE_INPUT_PARAM = "entityTypeInput"
   
-  def create(actionSpace: ActionSpace, vocab: IndexedList[String], config: SemanticParserConfig,
-      model: PnpModel): SemanticParser = {
+  def create(actionSpace: ActionSpace, vocab: IndexedList[String],
+      config: SemanticParserConfig, model: PnpModel): SemanticParser = {
     // Initialize model
     // TODO: document these parameters.
     model.addParameter(ROOT_WEIGHTS_PARAM, Dim(actionSpace.rootTypes.length, 2 * config.hiddenDim))
@@ -623,8 +663,6 @@ object SemanticParser {
 
     // The last entry will be the unknown word.
     model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size + 1, Dim(config.inputDim))
-    
-    
     
     for (t <- actionSpace.getTypes) {
       val actions = actionSpace.getTemplates(t)
@@ -645,8 +683,11 @@ object SemanticParser {
       model.addLookupParameter(ENTITY_LOOKUP_PARAM + t, 1, Dim(config.actionDim))
 
       // TODO: generate features with some dimensionality.
-      model.addParameter(ENTITY_LINKING_FEATURIZED_PARAM + t, Dim(1))
+      model.addParameter(ENTITY_LINKING_FEATURIZED_PARAM + t, Dim(2))
     }
+
+    model.addLookupParameter(ENTITY_TYPE_INPUT_PARAM, actionSpace.typeIndex.size,
+        Dim(config.inputDim))
 
     // Forward and backward RNNs for encoding the input token sequence
     val forwardBuilder = new LstmBuilder(1, config.inputDim, config.hiddenDim, model.model)
@@ -679,13 +720,21 @@ object SemanticParser {
 }
 
 /**
- * The row dimension of tokenMatrix, encodedTokenMatrix and tokenEntityScoreMatrices 
- * corresponds to tokens. 
+ * The row dimension of tokenMatrix, encodedTokenMatrix and 
+ * tokenEntityScoreMatrices corresponds to tokens. 
  */
 case class InputEncoding(val tokens: Array[Int], val rnnState: ExpressionVector,
     val sentEmbedding: Expression, val tokenMatrix: Expression, val encodedTokenMatrix: Expression,
-    val entityLinking: EntityLinking, val tokenEntityScoreMatrices: Map[Type, Expression]) {
+    val entityEncoding: EntityEncoding) {
 }
+
+/**
+ * The columns of tokenEntityScoreMatrices and entityEmbeddingMatrices
+ * correspond to entities of that type, in the same order as in
+ * entityLinking. 
+ */
+case class EntityEncoding(val tokenEntityScoreMatrices: Map[Type, Expression],
+    val entityEmbeddingMatrices: Map[Type, Expression], val entityLinking: EntityLinking)
 
 class ExpressionDecodingException extends RuntimeException {
   
