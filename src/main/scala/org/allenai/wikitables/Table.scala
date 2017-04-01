@@ -24,16 +24,16 @@ object Table {
   
   import WikiTablesJsonFormat._
   
-  def knowledgeGraphToTable(graph: TableKnowledgeGraph): Table = {
+  def knowledgeGraphToTable(id: String, graph: TableKnowledgeGraph): Table = {
     val columns = graph.columns.asScala.map(c =>
       Column(c.relationNameValue.id, c.originalString)).toList
     val cells = graph.columns.asScala.map(c => 
       c.children.asScala.map(x => Cell(x.properties.id, x.properties.originalString)).toList
     ).toList
     
-    Table(graph.filename, columns, cells)
+    Table(id, columns, cells)
   }
-  
+
   def fromJsonFile(filename: String): Seq[Table] = {
     val content = Source.fromFile(filename).getLines.mkString(" ")
     content.parseJson.convertTo[List[Table]]
@@ -54,7 +54,7 @@ object Table {
       val tables = tableStrings.map { tableString => 
         val contextValue = new ContextValue(LispTree.proto.parseFromString(tableString))
         val graph = contextValue.graph.asInstanceOf[TableKnowledgeGraph]
-        knowledgeGraphToTable(graph)
+        knowledgeGraphToTable(tableString, graph)
       }
       
       Table.toJsonFile(preprocessedFile, tables)
