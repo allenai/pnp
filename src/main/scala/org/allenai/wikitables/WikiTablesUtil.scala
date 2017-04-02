@@ -291,7 +291,7 @@ object WikiTablesUtil {
   def preprocessExample(
     example: RawExample,
     vocab: IndexedList[String],
-    featureGenerator: EntityTokenFeatureGenerator,
+    featureGenerator: SemanticParserFeatureGenerator,
     typeDeclaration: WikiTablesTypeDeclaration
   ) {
     // All we do here is add some annotations to the example.  Those annotations are:
@@ -318,8 +318,8 @@ object WikiTablesUtil {
     val tokenIds = words.map(tokenToId(_)).toArray
 
     // Compute an entity linking.
-    val entityLinking = example.linking.toEntityLinking(tokenIds, tokenToId,
-        featureGenerator, typeDeclaration)
+    val entityLinking = example.linking.toEntityLinking(words, tokenToId,
+        featureGenerator, example.table, typeDeclaration)
 
     val annotations = example.ex.sentence.getAnnotations()
     annotations.put("originalTokens", example.ex.sentence.getWords().asScala.toList)

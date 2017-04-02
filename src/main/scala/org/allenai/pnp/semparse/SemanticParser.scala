@@ -23,6 +23,7 @@ import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
+import org.allenai.wikitables.SemanticParserFeatureGenerator
 
 // Jayant notes:
 // 1. partial entity name matches are a problem. E.g., one entity is "temagami lorraine mine",
@@ -168,7 +169,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           entityLinkingFeaturizedParam))
 
     var tokenScoresExpr = Expression.concatenate(new ExpressionVector(tokenScores))
-    if (config.entityTokenFeatures) {
+    if (config.featureGenerator.isDefined) {
       val (dim, floatVector) = entityLinking.getTokenFeatures(entity)
       val featureMatrix = Expression.input(dim, floatVector)
 
@@ -617,8 +618,7 @@ class SemanticParserConfig extends Serializable {
   var actionHiddenDim = 100
   var maxVars = 10
 
-  var entityTokenFeatures = false
-  var entityTokenFeatureDim = 1
+  var featureGenerator: Option[SemanticParserFeatureGenerator] = None
   
   var entityLinkingLearnedSimilarity = false
   var distinctUnkVectors = false
@@ -638,7 +638,7 @@ object SemanticParser {
   
   val ATTENTION_WEIGHTS_PARAM = "attentionWeights:"
   val ATTENTION_ACTION_WEIGHTS_PARAM = "attentionActionWeights:"
-  
+
   val ACTION_HIDDEN_WEIGHTS = "actionHidden"
   val ACTION_HIDDEN_ACTION = "actionHiddenOutput:"
   val ACTION_HIDDEN_ENTITY = "actionHiddenEntityOutput:"
@@ -681,8 +681,10 @@ object SemanticParser {
       model.addParameter(ENTITY_WEIGHTS_PARAM + t, Dim(config.hiddenDim))
       model.addLookupParameter(ENTITY_LOOKUP_PARAM + t, 1, Dim(config.actionDim))
 
-      // TODO: generate features with some dimensionality.
-      model.addParameter(ENTITY_LINKING_FEATURIZED_PARAM + t, Dim(config.entityTokenFeatureDim))
+      if (config.featureGenerator.isDefined) {
+        model.addParameter(ENTITY_LINKING_FEATURIZED_PARAM + t,
+            Dim(config.featureGenerator.get.numFeatures))
+      }
     }
 
     model.addLookupParameter(ENTITY_TYPE_INPUT_PARAM, actionSpace.typeIndex.size,

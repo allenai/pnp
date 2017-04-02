@@ -17,6 +17,8 @@ public class WikiTablesTypeDeclaration extends AbstractTypeDeclaration {
   public static final Type CELL_TYPE = Type.createAtomic("c");
   public static final Type PART_TYPE = Type.createAtomic("p");
   public static final Type VAR_TYPE = Type.createAtomic("v");
+  
+  public static final Type COL_FUNCTION_TYPE = Type.parseFrom("<c,r>");
 
   private static final String[][] FUNCTION_TYPES = {
     // Atomic types

@@ -14,9 +14,17 @@ import fig.basic.LispTree
 import spray.json._
 import java.nio.charset.StandardCharsets
 
-case class Table(id: String, columns: List[Column], cells: List[List[Cell]])
-case class Column(id: String, originalString: String)
-case class Cell(id: String, originalString: String)
+case class Table(id: String, columns: List[Column], cells: List[List[Cell]]) {
+  def getColumn(colId: String): Option[(Column, Int)] = {
+    columns.zipWithIndex.find(x => x._1.id == colId)
+  }
+}
+case class Column(id: String, originalString: String) {
+  def idTokens = WikiTablesUtil.tokenizeEntity(id)
+}
+case class Cell(id: String, originalString: String) {
+  def idTokens = WikiTablesUtil.tokenizeEntity(id)
+}
 
 object Table {
   

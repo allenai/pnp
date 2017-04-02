@@ -31,7 +31,7 @@ import scala.util.Random
 import scala.collection.mutable.ListBuffer
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.BsoTrainer
-import org.allenai.wikitables.EntityTokenFeatureGenerator.EntityTokenFeatureFunction
+import org.allenai.wikitables.SemanticParserFeatureGenerator.EntityTokenFeatureFunction
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -84,7 +84,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   }
 
   def initializeTrainingData(options: OptionSet,
-      featureGen: EntityTokenFeatureGenerator) = {
+      featureGen: SemanticParserFeatureGenerator) = {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     val trainingData = loadDatasets(options.valuesOf(trainingDataOpt).asScala,
@@ -109,7 +109,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     (filteredTrainingData.map(_.ex), vocab)
   }
 
-  def initializeDevelopmentData(options: OptionSet, featureGen: EntityTokenFeatureGenerator,
+  def initializeDevelopmentData(options: OptionSet, featureGen: SemanticParserFeatureGenerator,
       vocab: IndexedList[String]): Seq[WikiTablesExample] = {
     val devData = loadDatasets(options.valuesOf(devDataOpt).asScala,  false, null, 0)
     println("Read " + devData.size + " development examples")
@@ -121,7 +121,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
-    val featureGenerator = EntityTokenFeatureGenerator.getWikitablesGenerator()
+    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator()
 
     // Read training data
     val (trainingData, vocab) = initializeTrainingData(options, featureGenerator)
@@ -168,8 +168,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
-    config.entityTokenFeatures = true
-    config.entityTokenFeatureDim = featureGenerator.numFeatures
+    config.featureGenerator = Some(featureGenerator)
     config.entityLinkingLearnedSimilarity = true
     config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)

@@ -51,14 +51,12 @@ class TestWikiTablesCli extends AbstractCli() {
     val logicalFormParser = ExpressionParser.expression2();
     val typeDeclaration = new WikiTablesTypeDeclaration()
     val entityLinker = new WikiTablesEntityLinker()
-    
-    // XXX: this needs to get serialized with the semantic parser.
-    val featureGenerator = EntityTokenFeatureGenerator.getWikitablesGenerator()
 
     // Read in serialized semantic parser
     val loader = new ModelLoader(options.valueOf(modelOpt))
     val model = PnpModel.load(loader)
     val parser = SemanticParser.load(loader, model)
+    val featureGenerator = parser.config.featureGenerator.get
     loader.done()
 
     // Read test data.
@@ -161,6 +159,8 @@ object TestWikiTablesCli {
       if (beam.nonEmpty) {
         printAttentions(beam(0).value, e.sentence.getWords.asScala.toArray, print)
       }
+      
+      // printEntityTokenFeatures(entityLinking, e.sentence.getWords.asScala.toArray, print)
     }
 
     val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)
@@ -189,6 +189,20 @@ object TestWikiTablesCli {
       }
 
       print("  " + tokenStrings.mkString(" ") + " " + templates(i))
+    }
+  }
+  
+  def printEntityTokenFeatures(entityLinking: EntityLinking, tokens: Array[String],
+      print: Any => Unit): Unit = {
+    for ((entity, features) <- entityLinking.entities.zip(entityLinking.entityTokenFeatures)) {
+      val dim = features._1
+      val featureMatrix = features._2
+      val values = Expression.input(dim, featureMatrix)
+      
+      for ((token, i) <- tokens.zipWithIndex) {
+        val features = ComputationGraph.incrementalForward(Expression.pick(values, i)).toSeq
+        print(entity.expr + " " + token + " " + features)
+      }
     }
   }
 }

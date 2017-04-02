@@ -1,22 +1,26 @@
 package org.allenai.wikitables
 
-import edu.stanford.nlp.sempre.Formula
-import org.allenai.pnp.semparse.Span
-import org.allenai.pnp.semparse.EntityLinking
-import org.allenai.pnp.semparse.ConstantTemplate
-import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
-import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
-import org.allenai.pnp.semparse.Entity
-import org.allenai.pnp.semparse.SemanticParserUtils
-import com.google.common.base.Preconditions
-import scala.collection.mutable.ListBuffer
-import spray.json._
-import scala.io.Source
-import java.nio.file.Paths
-import java.nio.file.Files
 import java.nio.charset.StandardCharsets
-import edu.cmu.dynet.FloatVector
-import edu.cmu.dynet.Dim
+import java.nio.file.Files
+import java.nio.file.Paths
+
+import scala.collection.mutable.ListBuffer
+import scala.io.Source
+
+import org.allenai.pnp.semparse.ConstantTemplate
+import org.allenai.pnp.semparse.Entity
+import org.allenai.pnp.semparse.EntityLinking
+import org.allenai.pnp.semparse.SemanticParserUtils
+import org.allenai.pnp.semparse.Span
+
+import com.google.common.base.Preconditions
+import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
+import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
+
+import edu.cmu.dynet._
+import edu.stanford.nlp.sempre.Formula
+import spray.json.pimpAny
+import spray.json.pimpString
 
 /**
  * A raw entity linking. These linkings are mostly generated 
@@ -25,8 +29,8 @@ import edu.cmu.dynet.Dim
  */
 case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
 
-  def toEntityLinking(tokens: Seq[Int], tokenToId: String => Int,
-    featureGenerator: EntityTokenFeatureGenerator,
+  def toEntityLinking(tokens: Seq[String], tokenToId: String => Int,
+    featureGenerator: SemanticParserFeatureGenerator, table: Table,
     typeDeclaration: WikiTablesTypeDeclaration): EntityLinking = {
 
     val builder = ListBuffer[(Entity, Dim, FloatVector)]()
@@ -54,7 +58,7 @@ case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
         val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
         
         // Generate entity/token features.
-        val (dim, featureMatrix) = featureGenerator.apply(tokens, entity, span)
+        val (dim, featureMatrix) = featureGenerator.apply(tokens, entity, span, tokenToId, table)
         
         builder += ((entity, dim, featureMatrix))
       }
