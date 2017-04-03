@@ -18,6 +18,7 @@ import org.allenai.pnp.PnpExample
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
+import org.allenai.pnp.BsoTrainer
 
 class SemanticParserSpec extends FlatSpec with Matchers {
   
@@ -108,6 +109,27 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   }
   
   /**
+   * Train {@code parser} on a collection of examples.
+   */
+  def trainLaso(examples: Seq[SemanticParserExample], parser: SemanticParser): Unit = {
+    val pnpExamples = for {
+      ex <- examples
+      unconditional = parser.generateExpression(ex.tokenIds, ex.entityLinking)
+      oracle <- parser.getMultiMarginScore(Seq(ex.lf), ex.entityLinking, typeDeclaration)
+    } yield {
+      PnpExample(unconditional, unconditional, Env.init, oracle)
+    }
+    Preconditions.checkState(pnpExamples.size == examples.size)
+
+    // Train model
+    val model = parser.model
+    model.locallyNormalized = false
+    val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
+    val trainer = new BsoTrainer(50, 5, 20, model, sgd, new NullLogFunction())
+    trainer.train(pnpExamples.toList)
+  }
+  
+  /**
    * Assert that parser's highest-scoring predicted logical form
    * is correct for {@code example}.
    */
@@ -164,8 +186,15 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     results.map(_.value).toSet should equal(labels)
   }
   
-  it should "achieve zero training error" in {
+  it should "achieve zero training error with loglikelihood" in {
     train(data, parser)
+    for (x <- data) {
+      assertPredictionCorrect(x, parser)
+    }
+  }
+  
+  it should "achieve zero training error with LaSO" in {
+    trainLaso(data, parser)
     for (x <- data) {
       assertPredictionCorrect(x, parser)
     }

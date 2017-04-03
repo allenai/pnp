@@ -56,22 +56,16 @@ class TestWikiTablesCli extends AbstractCli() {
     val loader = new ModelLoader(options.valueOf(modelOpt))
     val model = PnpModel.load(loader)
     val parser = SemanticParser.load(loader, model)
+    val featureGenerator = parser.config.featureGenerator.get
     loader.done()
 
     // Read test data.
-    val buffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
-    for (filename <- options.valuesOf(testDataOpt).asScala) {
-      val examples = WikiTablesUtil.loadDataset(
-          filename, false, null, options.valueOf(maxDerivationsOpt))
-      val linkings = entityLinker.loadDataset(filename, examples)
-      val linkingsMap = linkings.map(x => (x.id, x)).toMap
-      buffer ++= examples.map(x => (x, linkingsMap(x.id)))
-    }
-    val testData = buffer.toVector
+    val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
+        false, null, options.valueOf(maxDerivationsOpt))
     println("Read " + testData.size + " test examples")
 
-    testData.foreach(x => WikiTablesUtil.preprocessExample(
-        x._1, parser.vocab, x._2, typeDeclaration)) 
+    testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab,
+        featureGenerator, typeDeclaration)) 
 
     /*
     println("*** Validating test set action space ***")
@@ -79,7 +73,7 @@ class TestWikiTablesCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
     */
 
-    val testResults = TestWikiTablesCli.test(testData.map(_._1),
+    val testResults = TestWikiTablesCli.test(testData.map(_.ex),
         parser, options.valueOf(beamSizeOpt), options.has(evaluateDpdOpt),
         true, typeDeclaration, comparator, println)
     println("*** Evaluation results ***")
@@ -105,7 +99,7 @@ object TestWikiTablesCli {
     var numCorrectAt10 = 0
     for (e <- examples) {
       val sent = e.sentence
-      print("example id: " + e.id)
+      print("example id: " + e.id +  " " + e.tableString)
       print(sent.getWords.asScala.mkString(" "))
       print(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
 
@@ -165,6 +159,8 @@ object TestWikiTablesCli {
       if (beam.nonEmpty) {
         printAttentions(beam(0).value, e.sentence.getWords.asScala.toArray, print)
       }
+      
+      // printEntityTokenFeatures(entityLinking, e.sentence.getWords.asScala.toArray, print)
     }
 
     val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)
@@ -193,6 +189,20 @@ object TestWikiTablesCli {
       }
 
       print("  " + tokenStrings.mkString(" ") + " " + templates(i))
+    }
+  }
+  
+  def printEntityTokenFeatures(entityLinking: EntityLinking, tokens: Array[String],
+      print: Any => Unit): Unit = {
+    for ((entity, features) <- entityLinking.entities.zip(entityLinking.entityTokenFeatures)) {
+      val dim = features._1
+      val featureMatrix = features._2
+      val values = Expression.input(dim, featureMatrix)
+      
+      for ((token, i) <- tokens.zipWithIndex) {
+        val features = ComputationGraph.incrementalForward(Expression.pick(values, i)).toSeq
+        print(entity.expr + " " + token + " " + features)
+      }
     }
   }
 }

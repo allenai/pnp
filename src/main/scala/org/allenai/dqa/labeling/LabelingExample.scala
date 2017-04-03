@@ -19,7 +19,7 @@ case class LabelingExample(val tokens: Array[String],
     val tokenIds = unkedTokens.map(x => vocab.getIndex(x))
 
     // TODO: match ABCD labels.
-    val entityLinking: EntityLinking = EntityLinking(List())
+    val entityLinking: EntityLinking = EntityLinking(Array(), null)
 
     PreprocessedLabelingExample(tokenIds, unkedTokens, entityLinking, this)
   }

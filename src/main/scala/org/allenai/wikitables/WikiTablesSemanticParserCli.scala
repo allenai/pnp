@@ -29,6 +29,9 @@ import joptsimple.OptionSpec
 import com.jayantkrish.jklol.util.IndexedList
 import scala.util.Random
 import scala.collection.mutable.ListBuffer
+import org.allenai.pnp.LoglikelihoodTrainer
+import org.allenai.pnp.BsoTrainer
+import org.allenai.wikitables.SemanticParserFeatureGenerator.EntityTokenFeatureFunction
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -53,6 +56,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var maxDerivationsOpt: OptionSpec[Integer] = null
   var epochsOpt: OptionSpec[Integer] = null
   var beamSizeOpt: OptionSpec[Integer] = null
+  var lasoOpt: OptionSpec[Void] = null
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
@@ -73,73 +77,57 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
+    lasoOpt = parser.accepts("laso")
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
   }
 
-  def initializeTrainingData(options: OptionSet, entityLinker: WikiTablesEntityLinker) = {
+  def initializeTrainingData(options: OptionSet,
+      featureGen: SemanticParserFeatureGenerator) = {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
-    val trainingDataBuffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
-    for (filename <- options.valuesOf(trainingDataOpt).asScala) {
-      val examples = loadDataset(filename, includeDerivationsForTrain,
-          options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt))
-      val linkings = entityLinker.loadDataset(filename, examples)
-      val linkingsMap = linkings.map(x => (x.id, x)).toMap
-      trainingDataBuffer ++= examples.map(x => (x, linkingsMap(x.id)))
-    }
-    val trainingData = trainingDataBuffer.toVector
+    val trainingData = loadDatasets(options.valuesOf(trainingDataOpt).asScala,
+        includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
+        options.valueOf(maxDerivationsOpt))
     
     println("Read " + trainingData.size + " training examples")
     val vocab = computeVocabulary(trainingData)
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
-    val filteredTrainingData = trainingData.filter(!_._1.logicalForms.isEmpty)
+    val filteredTrainingData = trainingData.filter(!_.ex.logicalForms.isEmpty)
     // preprocessExample modifies the `annotations` data structure in example.sentence, adding
     // some things to it.  We don't need a `map`, just a `foreach`.
-    filteredTrainingData.foreach(x => preprocessExample(x._1, vocab, x._2, typeDeclaration))
+    filteredTrainingData.foreach(x => preprocessExample(x, vocab, featureGen, typeDeclaration))
     println("Found correct logical forms for " + filteredTrainingData.size + " training examples")
 
     println("Preprocessed:")
     for (example <- filteredTrainingData) {
-      println(example._1.sentence.getWords)
-      println(example._1.logicalForms)
+      println(example.ex.sentence.getWords)
+      println(example.ex.logicalForms)
     }
-    (filteredTrainingData.map(_._1), vocab)
+    (filteredTrainingData.map(_.ex), vocab)
   }
 
-  def initializeDevelopmentData(options: OptionSet, entityLinker: WikiTablesEntityLinker,
+  def initializeDevelopmentData(options: OptionSet, featureGen: SemanticParserFeatureGenerator,
       vocab: IndexedList[String]): Seq[WikiTablesExample] = {
-    val devData = if (options.has(devDataOpt)) {
-      val buffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
-      for (filename <- options.valuesOf(devDataOpt).asScala) {
-        val examples = loadDataset(filename, false, null, 0)
-        val linkings = entityLinker.loadDataset(filename, examples)
-        val linkingsMap = linkings.map(x => (x.id, x)).toMap
-        buffer ++= examples.map(x => (x, linkingsMap(x.id)))
-      }
-      buffer.toVector
-    } else {
-      Vector()
-    }
-
+    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala,  false, null, 0)
     println("Read " + devData.size + " development examples")
 
-    devData.foreach(x => WikiTablesUtil.preprocessExample(x._1, vocab, x._2, typeDeclaration))
-    devData.map(_._1)
+    devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, featureGen, typeDeclaration))
+    devData.map(_.ex)
   }
 
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
-    val entityLinker = new WikiTablesEntityLinker()
-    
+    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator()
+
     // Read training data
-    val (trainingData, vocab) = initializeTrainingData(options, entityLinker)
+    val (trainingData, vocab) = initializeTrainingData(options, featureGenerator)
 
     // Read development data (if provided)
-    val devData = initializeDevelopmentData(options, entityLinker, vocab)
+    val devData = initializeDevelopmentData(options, featureGenerator, vocab)
 
     // Generate the action space of the semantic parser from the logical
     // forms that are well-typed.
@@ -180,7 +168,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
-    config.attentionCopyEntities = true
+    config.featureGenerator = Some(featureGenerator)
     config.entityLinkingLearnedSimilarity = true
     config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
@@ -201,7 +189,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     train(trainingData, devData, parser, typeDeclaration, simplifier,
-        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), modelOutputDir)
+        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), options.has(lasoOpt),
+        modelOutputDir)
 
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
     model.save(saver)
@@ -214,7 +203,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     */
   def train(trainingExamples: Seq[WikiTablesExample], devExamples: Seq[WikiTablesExample],
       parser: SemanticParser, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
-      epochs: Int, beamSize: Int, modelDir: Option[String]): Unit = {
+      epochs: Int, beamSize: Int, laso: Boolean, modelDir: Option[String]): Unit = {
 
     parser.dropoutProb = 0.5
     val pnpExamples = for {
@@ -223,7 +212,11 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       tokenIds = sentence.getAnnotation("tokenIds").asInstanceOf[Array[Int]]
       entityLinking = sentence.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       unconditional = parser.generateExpression(tokenIds, entityLinking)
-      oracle <- parser.getMultiLabelScore(x.logicalForms, entityLinking, typeDeclaration)
+      oracle <- if (laso) {
+        parser.getMultiMarginScore(x.logicalForms, entityLinking, typeDeclaration)
+      } else {
+        parser.getMultiLabelScore(x.logicalForms, entityLinking, typeDeclaration)
+      }
     } yield {
       PnpExample(unconditional, unconditional, Env.init, oracle)
     }
@@ -248,15 +241,23 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     devExamples.foreach(x => x.getContext)
     
     // Train model
-    println("Training...")
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,
         devExamples, beamSize, typeDeclaration, new SimplificationComparator(simplifier))
-    val trainer = new LoglikelihoodTrainer(epochs, beamSize, true, model, sgd,
-        logFunction)
-    trainer.train(pnpExamples.toList)
-
+    
+    if (laso) {
+      println("Running LaSO training...")
+      model.locallyNormalized = false
+      val trainer = new BsoTrainer(epochs, beamSize, 50, model, sgd, logFunction)
+      trainer.train(pnpExamples.toList)
+    } else {
+      println("Running loglikelihood training...")
+      model.locallyNormalized = true
+      val trainer = new LoglikelihoodTrainer(epochs, beamSize, true, model, sgd,
+          logFunction)
+      trainer.train(pnpExamples.toList)
+    }
     parser.dropoutProb = -1
   }
 }

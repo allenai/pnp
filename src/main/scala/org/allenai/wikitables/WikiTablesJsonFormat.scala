@@ -20,4 +20,8 @@ object WikiTablesJsonFormat extends DefaultJsonProtocol {
   }
 
   implicit val entityLinkingFormat = jsonFormat2(RawEntityLinking.apply)
+  
+  implicit val cellFormat = jsonFormat2(Cell.apply)
+  implicit val columnFormat = jsonFormat2(Column.apply)
+  implicit val tableFormat = jsonFormat3(Table.apply)
 }
