@@ -249,8 +249,7 @@ object WikiTablesUtil {
     // The entity linker can become a parameter in the future
     // if it starts accepting parameters.
     val entityLinker = new WikiTablesEntityLinker()
-    val trainingDataBuffer = ListBuffer[RawExample]()
-    for (filename <- filenames) {
+    val trainingData = filenames.flatMap { filename => 
       val examples = loadDataset(filename, includeDerivationsForTrain,
           derivationsPath, derivationsLimit)
       val linkings = entityLinker.loadDataset(filename, examples)
@@ -258,10 +257,10 @@ object WikiTablesUtil {
       
       val linkingsMap = linkings.map(x => (x.id, x)).toMap
       val tablesMap = tables.map(x => (x.id, x)).toMap
-      trainingDataBuffer ++= examples.map(x => RawExample(x, linkingsMap(x.id),
-          tablesMap(x.tableString)))
+      examples.map(x => RawExample(x, linkingsMap(x.id), tablesMap(x.tableString)))
     }
-    trainingDataBuffer.toVector
+
+    trainingData.toVector
   }
     
   /**
