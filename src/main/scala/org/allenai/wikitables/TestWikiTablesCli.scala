@@ -21,6 +21,7 @@ import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import scala.collection.mutable.ListBuffer
 
 class TestWikiTablesCli extends AbstractCli() {
 
@@ -49,6 +50,7 @@ class TestWikiTablesCli extends AbstractCli() {
     val comparator = new SimplificationComparator(simplifier)
     val logicalFormParser = ExpressionParser.expression2();
     val typeDeclaration = new WikiTablesTypeDeclaration()
+    val entityLinker = new WikiTablesEntityLinker()
 
     // Read in serialized semantic parser
     val loader = new ModelLoader(options.valueOf(modelOpt))
@@ -57,13 +59,19 @@ class TestWikiTablesCli extends AbstractCli() {
     loader.done()
 
     // Read test data.
-    val testData = options.valuesOf(testDataOpt).asScala.flatMap(filename => {
-      WikiTablesUtil.loadDataset(filename, false, null, options.valueOf(maxDerivationsOpt))
-    })
+    val buffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
+    for (filename <- options.valuesOf(testDataOpt).asScala) {
+      val examples = WikiTablesUtil.loadDataset(
+          filename, false, null, options.valueOf(maxDerivationsOpt))
+      val linkings = entityLinker.loadDataset(filename, examples)
+      val linkingsMap = linkings.map(x => (x.id, x)).toMap
+      buffer ++= examples.map(x => (x, linkingsMap(x.id)))
+    }
+    val testData = buffer.toVector
     println("Read " + testData.size + " test examples")
 
-    val entityMap = testData.map(example => (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
-    testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab, entityMap(x), typeDeclaration))
+    testData.foreach(x => WikiTablesUtil.preprocessExample(
+        x._1, parser.vocab, x._2, typeDeclaration)) 
 
     /*
     println("*** Validating test set action space ***")
@@ -71,8 +79,9 @@ class TestWikiTablesCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
     */
 
-    val testResults = TestWikiTablesCli.test(testData, parser, options.valueOf(beamSizeOpt),
-        options.has(evaluateDpdOpt), true, typeDeclaration, comparator, println)
+    val testResults = TestWikiTablesCli.test(testData.map(_._1),
+        parser, options.valueOf(beamSizeOpt), options.has(evaluateDpdOpt),
+        true, typeDeclaration, comparator, println)
     println("*** Evaluation results ***")
     println(testResults)
   }

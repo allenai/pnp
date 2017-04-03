@@ -63,6 +63,9 @@ object WikiTablesUtil {
   val ENTITY = "<ENTITY>"
   val preprocessingSuffix = ".preprocessed.json"
   val simplifier = ExpressionSimplifier.lambdaCalculus()
+  
+  // Names of annotations
+  val NER_ANNOTATION = "NER"
 
   CustomExample.opts.allowNoAnnotation = true
   TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions"
@@ -89,7 +92,7 @@ object WikiTablesUtil {
       ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
       ("tokens" -> example.sentence.getWords.asScala) ~
       ("posTags" -> example.sentence.getPosTags.asScala) ~
-      ("NER" -> example.sentence.getAnnotation("NER").asInstanceOf[Seq[Seq[String]]]) ~
+      ("NER" -> example.sentence.getAnnotation(NER_ANNOTATION).asInstanceOf[Seq[Seq[String]]]) ~
       ("table" -> example.tableString) ~
       ("answer" -> example.targetValue.toLispTree.toString) ~
       ("possible logical forms" -> example.possibleLogicalForms.map(WikiTablesUtil.toSempreLogicalForm).map(_.toString).toList)
@@ -116,7 +119,7 @@ object WikiTablesUtil {
     val possibleLogicalForms = possibleLogicalFormStrings
       .map(Formula.fromString).map(WikiTablesUtil.toPnpLogicalForm).map(simplifier.apply).toSet
     val sentence = new AnnotatedSentence(tokens.asJava, posTags.asJava, new java.util.HashMap())
-    sentence.getAnnotations().put("NER", ner)
+    sentence.getAnnotations().put(NER_ANNOTATION, ner)
     new WikiTablesExample(
       id,
       sentence,
@@ -138,7 +141,7 @@ object WikiTablesUtil {
     val filteredNer = ner.map { case (tag, label) => {
       if (tag == "O" && label == null) Seq() else Seq(tag, label)
     }}
-    sentence.getAnnotations().put("NER", filteredNer)
+    sentence.getAnnotations().put(NER_ANNOTATION, filteredNer)
 
     // Then we worry about the logical forms.
     val goldLogicalForm = if (example.targetFormula == null) {
@@ -170,7 +173,7 @@ object WikiTablesUtil {
     acc
   }
 
-  def getEntityTokenCounts(entityNames: List[String]): CountAccumulator[String] = {
+  def getEntityTokenCounts(entityNames: Iterable[String]): CountAccumulator[String] = {
     val acc = CountAccumulator.create[String]
     for (entityString <- entityNames) {
       tokenizeEntity(entityString).map(x => acc.increment(x, 1.0))
@@ -178,9 +181,9 @@ object WikiTablesUtil {
     acc
   }
 
-  def computeVocabulary(trainingDataWithEntities: Map[WikiTablesExample, Seq[Pair[Pair[Integer, Integer], Formula]]]) = {
-    val wordCounts = getTokenCounts(trainingDataWithEntities.keys)
-    val allEntities = trainingDataWithEntities.values.flatten.map(p => p.getSecond().toString).toList
+  def computeVocabulary(trainingDataWithEntities: Seq[(WikiTablesExample, RawEntityLinking)]) = {
+    val wordCounts = getTokenCounts(trainingDataWithEntities.map(_._1))
+    val allEntities = trainingDataWithEntities.map(_._2.links).flatten.map(_._2.toString)
     val entityCounts = getEntityTokenCounts(allEntities)
     // Vocab consists of all words that appear more than once in
     // the training data.
@@ -235,7 +238,7 @@ object WikiTablesUtil {
       pnpDataset
     }
   }
-
+  
   /**
    * Converts the id of an entity to a sequence of
    * tokens in its "name." The tokens will have the form
@@ -260,50 +263,10 @@ object WikiTablesUtil {
     entityTokens
   }
 
-  def sempreEntityLinkingToPnpEntityLinking(
-    sempreEntityLinking: Seq[Pair[Pair[Integer, Integer], Formula]],
-    tokenToId: String => Int,
-    typeDeclaration: WikiTablesTypeDeclaration
-    ): EntityLinking = {
-    val builder = mutable.ListBuffer[(Option[Span], Entity, List[Int], Double)]()
-    for (linking <- sempreEntityLinking) {
-      val entityString = linking.getSecond.toString
-      val entityExpr = ExpressionParser.expression2().parse(entityString)
-
-      // The entity linking may contain whole logical forms, which at
-      // the moment are restricted to the form (or entity1 entity2).
-      // These are problematic because the parser can generate that expression
-      // multiple ways. Filter them out for now.
-      if (entityExpr.isConstant()) {
-        val entityType = StaticAnalysis.inferType(entityExpr, typeDeclaration)
-        Preconditions.checkState(!SemanticParserUtils.isBadType(entityType),
-            "Found bad type %s for expression %s", entityType, entityExpr)
-
-        val template = ConstantTemplate(entityType, entityExpr)
-
-        val span = if (linking.getFirst() != null) {
-          val start = linking.getFirst().getFirst()
-          val end = linking.getFirst().getSecond()
-          Some(Span(start, end))
-        } else {
-          None
-        }
-
-        // Tokens in the names of entities are also encoded with the
-        // example-specific vocabulary.
-        val entityTokens = tokenizeEntity(entityString)
-        val entityTokenIds = entityTokens.map(tokenToId(_)).toList
-        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-        builder += ((span, entity, entityTokenIds, 0.1))
-      }
-    }
-    new EntityLinking(builder.toList)
-  }
-
   def preprocessExample(
     example: WikiTablesExample,
     vocab: IndexedList[String],
-    sempreEntityLinking: Seq[Pair[Pair[Integer, Integer], Formula]],
+    sempreEntityLinking: RawEntityLinking,
     typeDeclaration: WikiTablesTypeDeclaration
   ) {
     // All we do here is add some annotations to the example.  Those annotations are:
@@ -330,8 +293,7 @@ object WikiTablesUtil {
     val tokenIds = words.map(tokenToId(_)).toArray
 
     // Compute an entity linking.
-    val entityLinking = sempreEntityLinkingToPnpEntityLinking(sempreEntityLinking,
-        tokenToId, typeDeclaration)
+    val entityLinking = sempreEntityLinking.toEntityLinking(tokenToId, typeDeclaration)
 
     val annotations = example.sentence.getAnnotations()
     annotations.put("originalTokens", example.sentence.getWords().asScala.toList)

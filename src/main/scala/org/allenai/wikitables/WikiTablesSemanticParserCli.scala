@@ -28,6 +28,7 @@ import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import com.jayantkrish.jklol.util.IndexedList
 import scala.util.Random
+import scala.collection.mutable.ListBuffer
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -77,59 +78,68 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
   }
 
-  def initializeTrainingData(options: OptionSet) = {
+  def initializeTrainingData(options: OptionSet, entityLinker: WikiTablesEntityLinker) = {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
-    val trainingData = options.valuesOf(trainingDataOpt).asScala.flatMap(filename => {
-      loadDataset(filename, includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
-          options.valueOf(maxDerivationsOpt))
-    })
-
+    val trainingDataBuffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
+    for (filename <- options.valuesOf(trainingDataOpt).asScala) {
+      val examples = loadDataset(filename, includeDerivationsForTrain,
+          options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt))
+      val linkings = entityLinker.loadDataset(filename, examples)
+      val linkingsMap = linkings.map(x => (x.id, x)).toMap
+      trainingDataBuffer ++= examples.map(x => (x, linkingsMap(x.id)))
+    }
+    val trainingData = trainingDataBuffer.toVector
+    
     println("Read " + trainingData.size + " training examples")
-    val entityMap = trainingData.map(example =>
-      (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
-    val vocab = computeVocabulary(entityMap)
+    val vocab = computeVocabulary(trainingData)
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
-    val filteredTrainingData = trainingData.filter(!_.logicalForms.isEmpty)
+    val filteredTrainingData = trainingData.filter(!_._1.logicalForms.isEmpty)
     // preprocessExample modifies the `annotations` data structure in example.sentence, adding
     // some things to it.  We don't need a `map`, just a `foreach`.
-    filteredTrainingData.foreach(x => preprocessExample(x, vocab, entityMap(x), typeDeclaration))
+    filteredTrainingData.foreach(x => preprocessExample(x._1, vocab, x._2, typeDeclaration))
     println("Found correct logical forms for " + filteredTrainingData.size + " training examples")
 
     println("Preprocessed:")
     for (example <- filteredTrainingData) {
-      println(example.sentence.getWords)
-      println(example.logicalForms)
+      println(example._1.sentence.getWords)
+      println(example._1.logicalForms)
     }
-    (filteredTrainingData, vocab)
+    (filteredTrainingData.map(_._1), vocab)
   }
-  
-  def initializeDevelopmentData(options: OptionSet, vocab: IndexedList[String]): Seq[WikiTablesExample] = {
+
+  def initializeDevelopmentData(options: OptionSet, entityLinker: WikiTablesEntityLinker,
+      vocab: IndexedList[String]): Seq[WikiTablesExample] = {
     val devData = if (options.has(devDataOpt)) {
-      options.valuesOf(devDataOpt).asScala.flatMap(filename => {
-        WikiTablesUtil.loadDataset(filename, false, null, 0)
-      })
+      val buffer = ListBuffer[(WikiTablesExample, RawEntityLinking)]()
+      for (filename <- options.valuesOf(devDataOpt).asScala) {
+        val examples = loadDataset(filename, false, null, 0)
+        val linkings = entityLinker.loadDataset(filename, examples)
+        val linkingsMap = linkings.map(x => (x.id, x)).toMap
+        buffer ++= examples.map(x => (x, linkingsMap(x.id)))
+      }
+      buffer.toVector
     } else {
-      List()
+      Vector()
     }
 
     println("Read " + devData.size + " development examples")
 
-    val entityMap = devData.map(example => (example, WikiTablesDataProcessor.getEntityLinking(example).asScala)).toMap
-    devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, entityMap(x), typeDeclaration))
-    
-    devData
+    devData.foreach(x => WikiTablesUtil.preprocessExample(x._1, vocab, x._2, typeDeclaration))
+    devData.map(_._1)
   }
 
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
+    val entityLinker = new WikiTablesEntityLinker()
+    
     // Read training data
-    val (trainingData, vocab) = initializeTrainingData(options)
+    val (trainingData, vocab) = initializeTrainingData(options, entityLinker)
 
     // Read development data (if provided)
-    val devData = initializeDevelopmentData(options, vocab)
+    val devData = initializeDevelopmentData(options, entityLinker, vocab)
 
     // Generate the action space of the semantic parser from the logical
     // forms that are well-typed.
@@ -228,7 +238,17 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       List()
     }
     
+    // Call .getContext on every example that we'll use during error
+    // evaluation. This preprocesses the corresponding table using
+    // corenlp and (I think) caches the result somewhere in Sempre.
+    // This will happen during the error evaluation of training anyway,
+    // but doing it up-front makes the training timers more useful. 
+    println("Preprocessing context for train/dev evaluation examples.")
+    trainErrorExamples.foreach(x => x.getContext)
+    devExamples.foreach(x => x.getContext)
+    
     // Train model
+    println("Training...")
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,

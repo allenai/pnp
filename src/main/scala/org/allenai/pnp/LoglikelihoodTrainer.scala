@@ -20,6 +20,7 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
       var searchErrors = 0
       log.notifyIterationStart(i)
 
+      log.startTimer("pp_loglikelihood")
       for (example <- Random.shuffle(examples)) {
         ComputationGraph.renew()
 
@@ -69,7 +70,8 @@ class LoglikelihoodTrainer(val epochs: Int, val beamSize: Int, val sumMultipleEx
           searchErrors += 1
         }
       }
-
+      log.stopTimer("pp_loglikelihood")
+      
       trainer.updateEpoch()
 
       log.logStatistic(i, "loss", loss)
