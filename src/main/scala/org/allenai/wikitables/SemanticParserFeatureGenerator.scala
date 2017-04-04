@@ -6,6 +6,7 @@ import org.allenai.pnp.semparse.Span
 import SemanticParserFeatureGenerator._
 import edu.cmu.dynet.FloatVector
 import edu.cmu.dynet.Dim
+import org.apache.commons.lang3.StringUtils
 import org.allenai.pnp.semparse.EntityLinking
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.util.IndexedList
@@ -41,6 +42,7 @@ object SemanticParserFeatureGenerator {
     new SemanticParserFeatureGenerator(Array(
         SemanticParserFeatureGenerator.spanFeatures,
         SemanticParserFeatureGenerator.tokenExactMatchFeature,
+        SemanticParserFeatureGenerator.editDistanceFeature,
         SemanticParserFeatureGenerator.relatedColumnFeature))
   }
   
@@ -60,6 +62,15 @@ object SemanticParserFeatureGenerator {
     } else {
       0.0f
     }
+  }
+
+  def editDistanceFeature(token: String, tokenIndex: Int, entity: Entity, span: Option[Span],
+                          tokenToId: String => Int, table: Table): Float = {
+    // Note that the returned value is <= 1.0 and can be negative if the edit distance is greater
+    // than the length of the token.
+    // Assuming entity string is a constant.
+    val entityString = entity.expr.toString.split("\\.").last
+    1.0f - (StringUtils.getLevenshteinDistance(token, entityString).toFloat / token.length)
   }
 
   def relatedColumnFeature(token: String, tokenIndex: Int, entity: Entity,

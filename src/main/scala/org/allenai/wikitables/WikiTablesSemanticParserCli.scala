@@ -170,6 +170,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val config = new SemanticParserConfig()
     config.featureGenerator = Some(featureGenerator)
     config.entityLinkingLearnedSimilarity = true
+    config.encodeWithSoftEntityLinking = true
     config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
 
