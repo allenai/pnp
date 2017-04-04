@@ -29,7 +29,7 @@ import spray.json.pimpString
  */
 case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
 
-  def toEntityLinking(tokens: Seq[String], tokenToId: String => Int,
+  def toEntityLinking(ex: WikiTablesExample, tokenToId: String => Int,
     featureGenerator: SemanticParserFeatureGenerator, table: Table,
     typeDeclaration: WikiTablesTypeDeclaration): EntityLinking = {
 
@@ -53,12 +53,14 @@ case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
 
         // Tokens in the names of entities are also encoded with the
         // example-specific vocabulary.
-        val entityTokens = WikiTablesUtil.tokenizeEntity(entityString)
+        val entityTokens = table.tokenizeEntity(entityString)
         val entityTokenIds = entityTokens.map(tokenToId(_)).toList
-        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds))
-        
+        val entityLemmas = table.lemmatizeEntity(entityString)
+        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds),
+            List(entityLemmas))
+
         // Generate entity/token features.
-        val (dim, featureMatrix) = featureGenerator.apply(tokens, entity, span, tokenToId, table)
+        val (dim, featureMatrix) = featureGenerator.apply(ex, entity, span, tokenToId, table)
         
         builder += ((entity, dim, featureMatrix))
       }

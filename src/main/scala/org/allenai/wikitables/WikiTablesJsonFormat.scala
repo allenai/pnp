@@ -21,7 +21,14 @@ object WikiTablesJsonFormat extends DefaultJsonProtocol {
 
   implicit val entityLinkingFormat = jsonFormat2(RawEntityLinking.apply)
   
-  implicit val cellFormat = jsonFormat2(Cell.apply)
-  implicit val columnFormat = jsonFormat2(Column.apply)
-  implicit val tableFormat = jsonFormat3(Table.apply)
+  implicit val nerTagFormat = jsonFormat2(NerTag)
+  implicit val cellFormat = jsonFormat6(Cell.apply)
+  implicit val columnFormat = jsonFormat6(Column.apply)
+  
+  implicit val tableJsonFormat = jsonFormat3(TableJson.apply)
+
+  implicit object TableFormat extends RootJsonFormat[Table] {
+    def write(t: Table) = t.toTableJson.toJson
+    def read(value: JsValue) = Table.fromTableJson(value.convertTo[TableJson]) 
+  }
 }

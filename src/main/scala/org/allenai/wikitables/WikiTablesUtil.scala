@@ -67,6 +67,7 @@ object WikiTablesUtil {
   
   // Names of annotations
   val NER_ANNOTATION = "NER"
+  val LEMMA_ANNOTATION = "lemma"
 
   CustomExample.opts.allowNoAnnotation = true
   TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions"
@@ -93,7 +94,8 @@ object WikiTablesUtil {
       ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
       ("tokens" -> example.sentence.getWords.asScala) ~
       ("posTags" -> example.sentence.getPosTags.asScala) ~
-      ("NER" -> example.sentence.getAnnotation(NER_ANNOTATION).asInstanceOf[Seq[Seq[String]]]) ~
+      (NER_ANNOTATION -> example.sentence.getAnnotation(NER_ANNOTATION).asInstanceOf[Seq[Seq[String]]]) ~
+      (LEMMA_ANNOTATION -> example.sentence.getAnnotation(LEMMA_ANNOTATION).asInstanceOf[Seq[String]]) ~
       ("table" -> example.tableString) ~
       ("answer" -> example.targetValue.toLispTree.toString) ~
       ("possible logical forms" -> example.possibleLogicalForms.map(WikiTablesUtil.toSempreLogicalForm).map(_.toString).toList)
@@ -105,7 +107,8 @@ object WikiTablesUtil {
     val question = (json \ "question").extract[String]
     val tokens = (json \ "tokens").extract[List[String]]
     val posTags = (json \ "posTags").extract[List[String]]
-    val ner = (json \ "NER").extract[List[List[String]]]
+    val ner = (json \ NER_ANNOTATION).extract[List[List[String]]]
+    val lemmas = (json \ LEMMA_ANNOTATION).extract[List[String]]
     val tableString = (json \ "table").extract[String]
     val answerString = (json \ "answer").extract[String]
     val goldLogicalFormString = (json \ "gold logical form") match {
@@ -121,6 +124,7 @@ object WikiTablesUtil {
       .map(Formula.fromString).map(WikiTablesUtil.toPnpLogicalForm).map(simplifier.apply).toSet
     val sentence = new AnnotatedSentence(tokens.asJava, posTags.asJava, new java.util.HashMap())
     sentence.getAnnotations().put(NER_ANNOTATION, ner)
+    sentence.getAnnotations().put(LEMMA_ANNOTATION, lemmas)
     new WikiTablesExample(
       id,
       sentence,
@@ -140,9 +144,12 @@ object WikiTablesUtil {
     )
     val ner = example.languageInfo.nerTags.asScala.zip(example.languageInfo.nerValues.asScala)
     val filteredNer = ner.map { case (tag, label) => {
-      if (tag == "O" && label == null) Seq() else Seq(tag, label)
+      if (tag == "O" && label == null) List() else List(tag, label)
     }}
-    sentence.getAnnotations().put(NER_ANNOTATION, filteredNer)
+    sentence.getAnnotations().put(NER_ANNOTATION, filteredNer.toList)
+    
+    val lemmas = example.languageInfo.lemmaTokens.asScala
+    sentence.getAnnotations().put(LEMMA_ANNOTATION, lemmas.toList)
 
     // Then we worry about the logical forms.
     val goldLogicalForm = if (example.targetFormula == null) {
@@ -174,21 +181,29 @@ object WikiTablesUtil {
     acc
   }
 
-  def getEntityTokenCounts(entityNames: Iterable[String]): CountAccumulator[String] = {
+  def getEntityTokenCounts(data: Iterable[RawExample]): CountAccumulator[String] = {
     val acc = CountAccumulator.create[String]
-    for (entityString <- entityNames) {
-      tokenizeEntity(entityString).map(x => acc.increment(x, 1.0))
+    for (d <- data) {
+      for (cellId <- d.table.cellIdMap.keys) {
+        for (token <- d.table.tokenizeEntity(cellId)) {
+          acc.increment(token, 1.0)
+        }
+      }
+      for (colId <- d.table.colIdMap.keys) {
+        for (token <- d.table.tokenizeEntity(colId)) {
+          acc.increment(token, 1.0)
+        }
+      }
     }
     acc
   }
 
-  def computeVocabulary(trainingDataWithEntities: Seq[RawExample]) = {
+  def computeVocabulary(trainingDataWithEntities: Seq[RawExample], threshold: Int) = {
     val wordCounts = getTokenCounts(trainingDataWithEntities.map(_.ex))
-    val allEntities = trainingDataWithEntities.map(_.linking.links).flatten.map(_._2.toString)
-    val entityCounts = getEntityTokenCounts(allEntities)
+    val entityCounts = getEntityTokenCounts(trainingDataWithEntities)
     // Vocab consists of all words that appear more than once in
     // the training data.
-    val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(1.9))
+    val vocab = IndexedList.create(wordCounts.getKeysAboveCountThreshold(threshold + 0.1))
     // This line adds in words that appear in the names of entities.
     // Adding these to the vocabulary seems to cause massive overfitting.
     // vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
@@ -262,30 +277,6 @@ object WikiTablesUtil {
 
     trainingData.toVector
   }
-    
-  /**
-   * Converts the id of an entity to a sequence of
-   * tokens in its "name." The tokens will have the form
-   * [type, token1, token2, ..]. For example:
-   * "fb:row.row.player_name" -> ["fb:row.row", "player", "name"]
-   */
-  def tokenizeEntity(entityString: String): List[String] = {
-    val lastDotInd = entityString.lastIndexOf(".")
-    val entityTokens = if (lastDotInd == -1) {
-      entityString.split('_').toList
-    } else {
-      val (typeName, entityName) = entityString.splitAt(lastDotInd)
-      val tokens = entityName.substring(1).split('_').toList
-      // Return the type prefixed to the tokens
-      // List(typeName) ++ tokens
-
-      // Return only the tokens
-      tokens
-    }
-
-    // println("tokens: " + entityString + " " + entityTokens)
-    entityTokens
-  }
 
   def preprocessExample(
     example: RawExample,
@@ -317,11 +308,12 @@ object WikiTablesUtil {
     val tokenIds = words.map(tokenToId(_)).toArray
 
     // Compute an entity linking.
-    val entityLinking = example.linking.toEntityLinking(words, tokenToId,
+    val entityLinking = example.linking.toEntityLinking(example.ex, tokenToId,
         featureGenerator, example.table, typeDeclaration)
 
     val annotations = example.ex.sentence.getAnnotations()
     annotations.put("originalTokens", example.ex.sentence.getWords().asScala.toList)
+    annotations.put("unkedTokens", unkedWords.toList)
     annotations.put("tokenIds", tokenIds)
     annotations.put("entityLinking", entityLinking)
   }

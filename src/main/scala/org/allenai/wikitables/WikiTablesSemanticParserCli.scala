@@ -52,8 +52,15 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var modelOutputOpt: OptionSpec[String] = null
   // Directory for intermediate models produced during training.
   var modelOutputDirOpt: OptionSpec[String] = null
+  
+  // Semantic parser configuration
+  var inputDimOpt: OptionSpec[Integer] = null
+  var hiddenDimOpt: OptionSpec[Integer] = null
+  var actionDimOpt: OptionSpec[Integer] = null
+  var actionHiddenDimOpt: OptionSpec[Integer] = null
 
   var maxDerivationsOpt: OptionSpec[Integer] = null
+  var vocabThreshold: OptionSpec[Integer] = null  
   var epochsOpt: OptionSpec[Integer] = null
   var beamSizeOpt: OptionSpec[Integer] = null
   var lasoOpt: OptionSpec[Void] = null
@@ -74,7 +81,15 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
     modelOutputDirOpt = parser.accepts("modelDir").withRequiredArg().ofType(classOf[String])
     
+    inputDimOpt = parser.accepts("inputDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(200)
+    hiddenDimOpt = parser.accepts("hiddenDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
+    actionDimOpt = parser.accepts("actionDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
+    actionHiddenDimOpt = parser.accepts("actionHiddenDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
+    
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
+    // A word must appear *strictly more* times than this threshold to be included
+    // in the vocabulary.
+    vocabThreshold = parser.accepts("vocabThreshold").withRequiredArg().ofType(classOf[Integer]).defaultsTo(1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     lasoOpt = parser.accepts("laso")
@@ -92,7 +107,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
         options.valueOf(maxDerivationsOpt))
     
     println("Read " + trainingData.size + " training examples")
-    val vocab = computeVocabulary(trainingData)
+    val vocab = computeVocabulary(trainingData, options.valueOf(vocabThreshold))
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
     val filteredTrainingData = trainingData.filter(!_.ex.logicalForms.isEmpty)
@@ -168,6 +183,10 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
+    config.inputDim = options.valueOf(inputDimOpt)
+    config.hiddenDim = options.valueOf(hiddenDimOpt)
+    config.actionDim = options.valueOf(actionDimOpt)
+    config.actionHiddenDim = options.valueOf(actionHiddenDimOpt)
     config.featureGenerator = Some(featureGenerator)
     config.entityLinkingLearnedSimilarity = true
     config.distinctUnkVectors = true
