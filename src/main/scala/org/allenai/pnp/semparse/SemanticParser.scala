@@ -74,17 +74,30 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
 
     val entityEncoding = encodeEntities(compGraph, entityLinking, tokens, tokenIdToEmbedding)
-    val inputEncoding = rnnEncode(compGraph, tokens, tokenIdToEmbedding)
+    val inputEncoding = rnnEncode(compGraph, tokens, tokenIdToEmbedding, entityLinking)
     InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
         inputEncoding._4, entityEncoding)
   }
 
   private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int],
-      tokenIdToEmbedding: Int => Expression
+      tokenIdToEmbedding: Int => Expression, entityLinking: EntityLinking
       ): (ExpressionVector, Expression, Expression, Expression) = {
     import Expression.{ dropout, reshape }
 
-    val inputEmbeddings = tokens.map(tokenIdToEmbedding(_)).toArray
+    var inputEmbeddings = tokens.map(tokenIdToEmbedding(_)).toArray
+    if (config.encodeWithSoftEntityLinking) {
+      // Augment input embeddings with entity embeddings. We do this by adding
+      // to each token embedding, a weighted average of the entity embeddings, weighed
+      // by their similarity to that token. This is a soft entity linking.
+      val entityEmbeddings = entityLinking.entities.map(e => encodeBow(e, tokenIdToEmbedding))
+      val softEntityLinking = inputEmbeddings.map(rep => {
+        val similarityValues = entityEmbeddings.map(entityVec => Expression.dotProduct(rep, entityVec))
+        val invSimilaritySum = Expression.inverse(similarityValues.sum)
+        similarityValues.zip(entityEmbeddings).map(sv => sv._1 * sv._2 * invSimilaritySum).sum
+      })
+      // TODO: Try concatenation instead of sum?
+      inputEmbeddings = inputEmbeddings.zip(softEntityLinking).map(vs => vs._1 + vs._2)
+    }
 
     // TODO: should we add dropout to the builders using the .set_dropout methods?
     forwardBuilder.startNewSequence()
@@ -146,7 +159,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       t <- entityLinking.entityTypes
     } yield {
       val entities = entityLinking.getEntitiesWithType(t)
-          
+      // TODO: Try using rnnEncode to encode entities.
       val entityEmbeddings = entities.map(e => encodeBow(e, tokenIdToEmbedding))
       val entityEmbeddingMatrix = Expression.concatenateCols(new ExpressionVector(entityEmbeddings))
       
@@ -621,6 +634,7 @@ class SemanticParserConfig extends Serializable {
   var featureGenerator: Option[SemanticParserFeatureGenerator] = None
   
   var entityLinkingLearnedSimilarity = false
+  var encodeWithSoftEntityLinking = false
   var distinctUnkVectors = false
 }
 

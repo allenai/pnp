@@ -18,6 +18,7 @@ libraryDependencies ++= Seq(
   "edu.stanford.nlp" % "stanford-corenlp" % "3.6.0",
   "edu.stanford.nlp" % "stanford-corenlp" % "3.6.0" classifier "models",
   "net.sf.jopt-simple" % "jopt-simple" % "4.9",
+  "org.apache.commons" % "commons-lang3" % "3.5",
   "org.scalatest" %% "scalatest" % "3.0.0" % "test",
   "org.json4s" %% "json4s-native" % "3.2.11",
   "io.spray" %%  "spray-json" % "1.3.3"
