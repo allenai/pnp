@@ -256,6 +256,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // This will happen during the error evaluation of training anyway,
     // but doing it up-front makes the training timers more useful. 
     println("Preprocessing context for train/dev evaluation examples.")
+    // TODO: how much does the choice of training examples affect these results??
+    // seems to affect stanford's processing time significantly.
     trainErrorExamples.foreach(x => x.getContext)
     devExamples.foreach(x => x.getContext)
     
@@ -263,7 +265,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,
-        devExamples, beamSize, typeDeclaration, new SimplificationComparator(simplifier))
+        devExamples, beamSize, 2, typeDeclaration, new SimplificationComparator(simplifier))
     
     if (laso) {
       println("Running LaSO training...")

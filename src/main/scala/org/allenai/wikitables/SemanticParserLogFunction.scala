@@ -11,7 +11,7 @@ import org.allenai.pnp.semparse.SemanticParserLoss
 
 class SemanticParserLogFunction(modelDir: Option[String], parser: SemanticParser,
     trainExamples: Seq[WikiTablesExample], devExamples: Seq[WikiTablesExample],
-    devBeam: Int, typeDeclaration: TypeDeclaration,
+    devBeam: Int, firstDevEpoch: Int, typeDeclaration: TypeDeclaration,
     comparator: ExpressionComparator) extends DefaultLogFunction {
 
   /**
@@ -49,7 +49,7 @@ class SemanticParserLogFunction(modelDir: Option[String], parser: SemanticParser
       stopTimer("save_model")
     }
     
-    if (trainExamples.size > 0) {
+    if (trainExamples.size > 0 && iteration >= firstDevEpoch) {
       startTimer("evaluate_train")
       val loss = evaluateAccuracy(trainExamples)
       logStatistic(iteration, "train accuracy", loss.accuracy)
@@ -57,7 +57,7 @@ class SemanticParserLogFunction(modelDir: Option[String], parser: SemanticParser
       stopTimer("evaluate_train")
     }
 
-    if (devExamples.size > 0) {
+    if (devExamples.size > 0 && iteration >= firstDevEpoch) {
       startTimer("evaluate_dev")
       val loss = evaluateAccuracy(devExamples)
       logStatistic(iteration, "dev accuracy", loss.accuracy)
