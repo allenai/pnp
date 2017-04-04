@@ -14,6 +14,7 @@ import org.allenai.pnp.ExecutionScore.ExecutionScore
 import org.allenai.pnp.Pnp
 import org.allenai.pnp.PnpModel
 import org.allenai.pnp.util.Trie
+import org.allenai.wikitables.SemanticParserFeatureGenerator
 
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -23,7 +24,7 @@ import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
-import org.allenai.wikitables.SemanticParserFeatureGenerator
+import edu.cmu.dynet.Expression._
 
 // Jayant notes:
 // 1. partial entity name matches are a problem. E.g., one entity is "temagami lorraine mine",
@@ -74,11 +75,11 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
 
     val entityEncoding = encodeEntities(compGraph, entityLinking, tokens, tokenIdToEmbedding)
-    val inputEncoding = rnnEncode(compGraph, tokens, tokenIdToEmbedding, entityEncoding)
+    val inputEncoding = rnnEncode(compGraph, tokens, tokenIdToEmbedding, entityEncoding, entityLinking)
     InputEncoding(tokens, inputEncoding._1, inputEncoding._2, inputEncoding._3,
         inputEncoding._4, entityEncoding)
   }
-  
+
   private def getTokenEmbeddings(tokens: Seq[Int], tokenIdToEmbedding: Int => Expression, 
       entityEncoding: EntityEncoding): Array[Expression] = {
     val lookups = tokens.map(tokenIdToEmbedding(_)).toArray
@@ -114,11 +115,26 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   }
 
   private def rnnEncode(computationGraph: CompGraph, tokens: Seq[Int],
-      tokenIdToEmbedding: Int => Expression, entityEncoding: EntityEncoding
+      tokenIdToEmbedding: Int => Expression, entityEncoding: EntityEncoding,
+      entityLinking: EntityLinking
       ): (ExpressionVector, Expression, Expression, Expression) = {
     import Expression.{ dropout, reshape }
 
-    val inputEmbeddings = getTokenEmbeddings(tokens, tokenIdToEmbedding, entityEncoding)
+    var inputEmbeddings = getTokenEmbeddings(tokens, tokenIdToEmbedding, entityEncoding).toArray
+
+    if (config.encodeWithSoftEntityLinking) {
+      // Augment input embeddings with entity embeddings. We do this by adding
+      // to each token embedding, a weighted average of the entity embeddings, weighed
+      // by their similarity to that token. This is a soft entity linking.
+      val entityEmbeddings = entityLinking.entities.map(e => encodeBow(e, tokenIdToEmbedding))
+      val softEntityLinking = inputEmbeddings.map(rep => {
+        val similarityValues = entityEmbeddings.map(entityVec => Expression.dotProduct(rep, entityVec))
+        val invSimilaritySum = Expression.inverse(similarityValues.reduce(_ + _))
+        similarityValues.zip(entityEmbeddings).map(sv => sv._1 * sv._2 * invSimilaritySum).reduce(_ + _)
+      })
+      // TODO: Try concatenation instead of sum?
+      inputEmbeddings = inputEmbeddings.zip(softEntityLinking).map(vs => vs._1 + vs._2)
+    }
 
     // TODO: should we add dropout to the builders using the .set_dropout methods?
     forwardBuilder.startNewSequence()
@@ -183,9 +199,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       t <- entityLinking.entityTypes
     } yield {
       val entities = entityLinking.getEntitiesWithType(t)
-
       // val entityEmbeddings = entities.map(e => encodeBow(e, tokenIdToEmbedding))
-      val entityEmbeddings = entities.map(e => encodeRandom(e))
+      val entityEmbeddings = entities.map(e => encodeType(e))
       val entityEmbeddingMatrix = Expression.concatenateCols(new ExpressionVector(entityEmbeddings))
 
       (t, entityEmbeddingMatrix)
@@ -245,7 +260,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     entity.nameTokens.map(tokenIdToEmbedding).reduce(_ + _) / entity.nameTokens.length
   }
   
-  private def encodeRandom(entity: Entity): Expression = {
+  private def encodeType(entity: Entity): Expression = {
     // Expression.randomNormal(Dim(config.entityDim))
     // Expression.input(Dim(config.entityDim), new FloatVector(List.fill(config.entityDim)(0.0f)))
     val v = new FloatVector(List.fill(config.entityDim)(0.0f))
@@ -671,6 +686,7 @@ class SemanticParserConfig extends Serializable {
   var featureGenerator: Option[SemanticParserFeatureGenerator] = None
   
   var entityLinkingLearnedSimilarity = false
+  var encodeWithSoftEntityLinking = false
   var distinctUnkVectors = false
 }
 

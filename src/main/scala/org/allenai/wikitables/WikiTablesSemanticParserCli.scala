@@ -189,6 +189,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.actionHiddenDim = options.valueOf(actionHiddenDimOpt)
     config.featureGenerator = Some(featureGenerator)
     config.entityLinkingLearnedSimilarity = true
+    // TODO: turn back on.
+    config.encodeWithSoftEntityLinking = false
     config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
 
@@ -244,12 +246,15 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     // If we have dev examples, subsample the same number of training examples
     // for evaluating parser accuracy as training progresses.
+    /*
     val trainErrorExamples = if (devExamples.size > 0) {
       Random.shuffle(trainingExamples).slice(0, Math.min(devExamples.size, trainingExamples.size))
     } else {
       List()
     }
-    
+    */
+    val trainErrorExamples: List[WikiTablesExample] = List()
+
     // Call .getContext on every example that we'll use during error
     // evaluation. This preprocesses the corresponding table using
     // corenlp and (I think) caches the result somewhere in Sempre.
