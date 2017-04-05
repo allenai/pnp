@@ -35,6 +35,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
+    derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
 
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
@@ -61,7 +62,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
     // Read test data.
     val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
-        false, null, options.valueOf(maxDerivationsOpt))
+        true, options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt))
     println("Read " + testData.size + " test examples")
 
     testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab,
@@ -101,7 +102,7 @@ object TestWikiTablesCli {
       val sent = e.sentence
       print("example id: " + e.id +  " " + e.tableString)
       print(sent.getWords.asScala.mkString(" "))
-      print(sent.getAnnotation("originalTokens").asInstanceOf[List[String]].mkString(" "))
+      print(sent.getAnnotation("unkedTokens").asInstanceOf[List[String]].mkString(" "))
 
       val entityLinking = sent.getAnnotation("entityLinking").asInstanceOf[EntityLinking]
       val dist = parser.parse(sent.getAnnotation("tokenIds").asInstanceOf[Array[Int]],
@@ -160,7 +161,7 @@ object TestWikiTablesCli {
         printAttentions(beam(0).value, e.sentence.getWords.asScala.toArray, print)
       }
       
-      // printEntityTokenFeatures(entityLinking, e.sentence.getWords.asScala.toArray, print)
+      printEntityTokenFeatures(entityLinking, e.sentence.getWords.asScala.toArray, print)
     }
 
     val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)
@@ -201,7 +202,9 @@ object TestWikiTablesCli {
       
       for ((token, i) <- tokens.zipWithIndex) {
         val features = ComputationGraph.incrementalForward(Expression.pick(values, i)).toSeq
-        print(entity.expr + " " + token + " " + features)
+        if (features.filter(_ != 0.0f).size > 0) {
+          print(entity.expr + " " + token + " " + features)
+        }
       }
     }
   }

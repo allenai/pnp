@@ -10,6 +10,7 @@ import edu.cmu.dynet._
 import com.jayantkrish.jklol.util.IndexedList
 import com.jayantkrish.jklol.training.NullLogFunction
 import scala.collection.mutable.ListBuffer
+import com.jayantkrish.jklol.training.DefaultLogFunction
 
 class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
   
@@ -118,7 +119,7 @@ class LoglikelihoodTrainerSpec extends FlatSpec with Matchers {
 
     // Train model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val trainer = new LoglikelihoodTrainer(1000, 100, true, model, sgd, new NullLogFunction())
+    val trainer = new LoglikelihoodTrainer(1000, 100, true, model, sgd, new DefaultLogFunction())
     trainer.train(examples)
 
     // Check that training error is zero.

@@ -13,18 +13,77 @@ import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import fig.basic.LispTree
 import spray.json._
 import java.nio.charset.StandardCharsets
+import edu.stanford.nlp.sempre.LanguageAnalyzer
 
-case class Table(id: String, columns: List[Column], cells: List[List[Cell]]) {
+case class Table(id: String, columns: Array[Column], cells: Array[Array[Cell]]) {
+
+  val colIdMap = columns.zipWithIndex.map(x => (x._1.id, (x._1, x._2))).toMap
+  val cellIdMap = cells.flatMap(cs => cs.map(c => (c.id, c))).toMap
+
   def getColumn(colId: String): Option[(Column, Int)] = {
-    columns.zipWithIndex.find(x => x._1.id == colId)
+    colIdMap.get(colId)
   }
+
+  def getCell(cellId: String): Option[Cell] = {
+    cellIdMap.get(cellId)
+  }
+
+  /**
+   * Converts the id of an entity to a sequence of
+   * tokens in its name. There are two cases: (1) if the entity
+   * corresponds to a column or cell of this table, the
+   * tokens are taken from the language analyzer's tokenization;
+   * (2) otherwise, the id is split into tokens using 
+   * a heuristic segmentation.
+   */
+  def tokenizeEntity(entityId: String): List[String] = {
+    val col = getColumn(entityId)
+    val cell = getCell(entityId)    
+    if (col.isDefined) {
+      col.get._1.tokens.toList
+    } else if (cell.isDefined) {
+      cell.get.tokens.toList
+    } else {
+      val lastDotInd = entityId.lastIndexOf(".")
+      val entityTokens = if (lastDotInd == -1) {
+        entityId.split('_').toList
+      } else {
+        val (typeName, entityName) = entityId.splitAt(lastDotInd)
+        val tokens = entityName.substring(1).split('_').toList
+        // Return the type prefixed to the tokens
+        // List(typeName) ++ tokens
+
+        // Return only the tokens
+        tokens
+      }
+
+      // println("tokens: " + entityId + " " + entityTokens)
+      entityTokens
+    }
+  }
+
+  def lemmatizeEntity(entityId: String): List[String] = {
+    val col = getColumn(entityId)
+    val cell = getCell(entityId)    
+    if (col.isDefined) {
+      col.get._1.lemmas.toList
+    } else if (cell.isDefined) {
+      cell.get.lemmas.toList
+    } else {
+      List()
+    }
+  }
+
+  def toTableJson = TableJson(id, columns, cells)
 }
-case class Column(id: String, originalString: String) {
-  def idTokens = WikiTablesUtil.tokenizeEntity(id)
-}
-case class Cell(id: String, originalString: String) {
-  def idTokens = WikiTablesUtil.tokenizeEntity(id)
-}
+
+case class TableJson(id: String, columns: Array[Column], cells: Array[Array[Cell]])
+case class Column(id: String, originalString: String, tokens: Array[String],
+    pos: Array[String], ner: Array[NerTag], lemmas: Array[String])
+case class Cell(id: String, originalString: String, tokens: Array[String],
+    pos: Array[String], ner: Array[NerTag], lemmas: Array[String])
+
+case class NerTag(tag: String, value: Option[String])
 
 object Table {
   
@@ -33,13 +92,39 @@ object Table {
   import WikiTablesJsonFormat._
   
   def knowledgeGraphToTable(id: String, graph: TableKnowledgeGraph): Table = {
-    val columns = graph.columns.asScala.map(c =>
-      Column(c.relationNameValue.id, c.originalString)).toList
-    val cells = graph.columns.asScala.map(c => 
-      c.children.asScala.map(x => Cell(x.properties.id, x.properties.originalString)).toList
-    ).toList
+    val analyzer = LanguageAnalyzer.getSingleton()
     
-    Table(id, columns, cells)
+    val columns = graph.columns.asScala.map { c =>
+      val info = analyzer.analyze(c.originalString)
+      val tokens = info.tokens.asScala.toArray
+      val pos = info.posTags.asScala.toArray
+      val nerValues = info.nerValues.asScala.map{ x =>  
+        if (x == null) { None } else { Some(x) }
+      }
+      val ner = info.nerTags.asScala.zip(nerValues).map(x => 
+        NerTag(x._1, x._2)).toArray
+      val lemmas = info.lemmaTokens.asScala.toArray
+
+      Column(c.relationNameValue.id, c.originalString, tokens, pos, ner, lemmas)
+    }
+
+    val cells = graph.columns.asScala.map{ c => 
+      c.children.asScala.map{ x =>
+        val info = analyzer.analyze(x.properties.originalString)
+        val tokens = info.tokens.asScala.toArray
+        val pos = info.posTags.asScala.toArray
+        val nerValues = info.nerValues.asScala.map{ y =>  
+          if (y == null) { None } else { Some(y) }
+        }
+        val ner = info.nerTags.asScala.zip(nerValues).map(y => 
+          NerTag(y._1, y._2)).toArray
+        val lemmas = info.lemmaTokens.asScala.map(x => x.toLowerCase()).toArray
+
+        Cell(x.properties.id, x.properties.originalString, tokens, pos, ner, lemmas)
+      }.toArray
+    }
+    
+    Table(id, columns.toArray, cells.toArray)
   }
 
   def fromJsonFile(filename: String): Seq[Table] = {
@@ -50,6 +135,10 @@ object Table {
   def toJsonFile(filename: String, tables: Iterable[Table]): Unit = {
     val json = tables.toArray.toJson
     Files.write(Paths.get(filename), json.prettyPrint.getBytes(StandardCharsets.UTF_8))
+  }
+
+  def fromTableJson(tj: TableJson) = {
+    Table(tj.id, tj.columns, tj.cells)
   }
   
   def loadDataset(filename: String, examples: Seq[WikiTablesExample]): Vector[Table] = {

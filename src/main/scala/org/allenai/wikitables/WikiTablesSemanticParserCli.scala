@@ -52,11 +52,19 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var modelOutputOpt: OptionSpec[String] = null
   // Directory for intermediate models produced during training.
   var modelOutputDirOpt: OptionSpec[String] = null
+  
+  // Semantic parser configuration
+  var inputDimOpt: OptionSpec[Integer] = null
+  var hiddenDimOpt: OptionSpec[Integer] = null
+  var actionDimOpt: OptionSpec[Integer] = null
+  var actionHiddenDimOpt: OptionSpec[Integer] = null
 
   var maxDerivationsOpt: OptionSpec[Integer] = null
+  var vocabThreshold: OptionSpec[Integer] = null  
   var epochsOpt: OptionSpec[Integer] = null
   var beamSizeOpt: OptionSpec[Integer] = null
   var lasoOpt: OptionSpec[Void] = null
+  var editDistanceOpt: OptionSpec[Void] = null
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
@@ -74,10 +82,19 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
     modelOutputDirOpt = parser.accepts("modelDir").withRequiredArg().ofType(classOf[String])
     
+    inputDimOpt = parser.accepts("inputDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(200)
+    hiddenDimOpt = parser.accepts("hiddenDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
+    actionDimOpt = parser.accepts("actionDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
+    actionHiddenDimOpt = parser.accepts("actionHiddenDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
+    
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
+    // A word must appear *strictly more* times than this threshold to be included
+    // in the vocabulary.
+    vocabThreshold = parser.accepts("vocabThreshold").withRequiredArg().ofType(classOf[Integer]).defaultsTo(1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     lasoOpt = parser.accepts("laso")
+    editDistanceOpt = parser.accepts("editDistance")
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
@@ -92,7 +109,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
         options.valueOf(maxDerivationsOpt))
     
     println("Read " + trainingData.size + " training examples")
-    val vocab = computeVocabulary(trainingData)
+    val vocab = computeVocabulary(trainingData, options.valueOf(vocabThreshold))
 
     // Eliminate those examples that Sempre did not find correct logical forms for.
     val filteredTrainingData = trainingData.filter(!_.ex.logicalForms.isEmpty)
@@ -121,7 +138,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
-    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator()
+    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator(
+        options.has(editDistanceOpt))
 
     // Read training data
     val (trainingData, vocab) = initializeTrainingData(options, featureGenerator)
@@ -168,9 +186,14 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
+    config.inputDim = options.valueOf(inputDimOpt)
+    config.hiddenDim = options.valueOf(hiddenDimOpt)
+    config.actionDim = options.valueOf(actionDimOpt)
+    config.actionHiddenDim = options.valueOf(actionHiddenDimOpt)
     config.featureGenerator = Some(featureGenerator)
     config.entityLinkingLearnedSimilarity = true
-    config.encodeWithSoftEntityLinking = true
+    // TODO: turn back on.
+    config.encodeWithSoftEntityLinking = false
     config.distinctUnkVectors = true
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
 
@@ -226,18 +249,23 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     // If we have dev examples, subsample the same number of training examples
     // for evaluating parser accuracy as training progresses.
+    /*
     val trainErrorExamples = if (devExamples.size > 0) {
       Random.shuffle(trainingExamples).slice(0, Math.min(devExamples.size, trainingExamples.size))
     } else {
       List()
     }
-    
+    */
+    val trainErrorExamples: List[WikiTablesExample] = List()
+
     // Call .getContext on every example that we'll use during error
     // evaluation. This preprocesses the corresponding table using
     // corenlp and (I think) caches the result somewhere in Sempre.
     // This will happen during the error evaluation of training anyway,
     // but doing it up-front makes the training timers more useful. 
     println("Preprocessing context for train/dev evaluation examples.")
+    // TODO: how much does the choice of training examples affect these results??
+    // seems to affect stanford's processing time significantly.
     trainErrorExamples.foreach(x => x.getContext)
     devExamples.foreach(x => x.getContext)
     
@@ -245,7 +273,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,
-        devExamples, beamSize, typeDeclaration, new SimplificationComparator(simplifier))
+        devExamples, beamSize, 2, typeDeclaration, new SimplificationComparator(simplifier))
     
     if (laso) {
       println("Running LaSO training...")

@@ -90,14 +90,10 @@ class Env(val labels: List[Int], val labelNodeIds: List[Expression],
     * the score is computed by summing the negative log-softmax
     * scores of each choice.
     */
-  def getScore(normalize: Boolean): Expression = {
+  def getScore: Expression = {
     var exScore = Expression.input(0)
     for ((expr, labelInd) <- labelNodeIds.zip(labels)) {
-      val decisionScore = if (normalize) {
-        Expression.pickNegLogSoftmax(expr, labelInd)
-      } else {
-        Expression.pick(expr, labelInd)
-      }
+      val decisionScore = Expression.pick(expr, labelInd)
       exScore = exScore + decisionScore
     }
     exScore

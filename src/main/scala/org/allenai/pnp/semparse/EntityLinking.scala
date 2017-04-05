@@ -30,10 +30,12 @@ case class EntityLinking(entities: Array[Entity],
 }
 
 case class Entity(val expr: Expression2, val t: Type,
-    val template: Template, val names: List[List[Int]]) {
+    val template: Template, val names: List[List[Int]],
+    val nameLemmas: List[List[String]]) {
 
   val nameTokens = names.flatten.toArray
   val nameTokensSet = names.flatten.toSet
+  val nameLemmaSet = nameLemmas.flatten.toSet
 }
 
 class EntityDict(val map: MultiMap[List[Int], Entity]) {

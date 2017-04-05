@@ -149,7 +149,7 @@ class WikiTablesEntityLinker {
     val formulasWithSpans = allFormulas.map{ x =>
       val indexes = formulaIndexMap.filter(_._1 == x).map(_._2)
       val start = indexes.min
-      val end = indexes.max
+      val end = indexes.max + 1
       (Some(Span(start, end)), x)
     }
 

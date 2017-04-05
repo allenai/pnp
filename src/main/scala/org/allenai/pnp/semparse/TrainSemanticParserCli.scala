@@ -189,7 +189,8 @@ object TrainSemanticParserCli {
       val names = entityNameMap(e).toList
       val t = StaticAnalysis.inferType(e, typeDeclaration)
       val template = ConstantTemplate(t, e)
-      val entity = Entity(e, t, template, names)
+      // XXX: fix this.
+      val entity = Entity(e, t, template, names, null)
       for (name <- names) {
         entityDict += ((name, entity))
       }
