@@ -168,12 +168,13 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val inputMatrix = concatenateArray(inputEmbeddings.map(x => reshape(x, Dim(1, config.lstmInputDim))).toArray)
     val outputMatrix = concatenateArray(outputEmbeddings.map(reshape(_, Dim(1, 2 * config.hiddenDim))).toArray)
     
-    // 
+    // Initialize output lstm with the sum of the forward and backward
+    // states.
     val forwardS = forwardBuilder.finalS
     val backwardS = backwardBuilder.finalS
     val s = new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(x => x._1 + x._2))
-    
-    (forwardS, sentEmbedding, inputMatrix, outputMatrix)
+
+    (s, sentEmbedding, inputMatrix, outputMatrix)
   }
 
   private def encodeEntities(computationGraph: CompGraph, entityLinking: EntityLinking,
