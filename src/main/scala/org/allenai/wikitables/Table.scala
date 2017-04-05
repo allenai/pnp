@@ -118,7 +118,7 @@ object Table {
         }
         val ner = info.nerTags.asScala.zip(nerValues).map(y => 
           NerTag(y._1, y._2)).toArray
-        val lemmas = info.lemmaTokens.asScala.toArray
+        val lemmas = info.lemmaTokens.asScala.map(x => x.toLowerCase()).toArray
 
         Cell(x.properties.id, x.properties.originalString, tokens, pos, ner, lemmas)
       }.toArray

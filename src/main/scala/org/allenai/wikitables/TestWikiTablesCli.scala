@@ -202,7 +202,9 @@ object TestWikiTablesCli {
       
       for ((token, i) <- tokens.zipWithIndex) {
         val features = ComputationGraph.incrementalForward(Expression.pick(values, i)).toSeq
-        print(entity.expr + " " + token + " " + features)
+        if (features.filter(_ != 0.0f).size > 0) {
+          print(entity.expr + " " + token + " " + features)
+        }
       }
     }
   }

@@ -168,9 +168,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val inputMatrix = concatenateArray(inputEmbeddings.map(x => reshape(x, Dim(1, config.lstmInputDim))).toArray)
     val outputMatrix = concatenateArray(outputEmbeddings.map(reshape(_, Dim(1, 2 * config.hiddenDim))).toArray)
     
-    // TODO: figure out how to initialize the decoder from both the
-    // forward and backward LSTMs
-    (forwardBuilder.finalS, sentEmbedding, inputMatrix, outputMatrix)
+    // 
+    val forwardS = forwardBuilder.finalS
+    val backwardS = backwardBuilder.finalS
+    val s = new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(x => x._1 + x._2))
+    
+    (forwardS, sentEmbedding, inputMatrix, outputMatrix)
   }
 
   private def encodeEntities(computationGraph: CompGraph, entityLinking: EntityLinking,
@@ -280,7 +283,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     * tokens.
     */
   def parse(tokens: Array[Int], entityLinking: EntityLinking): Pnp[SemanticParserState] = {
-        for {
+    for {
       // Encode input tokens using an LSTM.
       input <- encode(tokens, entityLinking)
 
@@ -424,7 +427,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           Expression.lookup(actionLookup, templateTuple._2)
         } else {
           // TODO: using a single parameter vector for all entities of a given type
-          // seems suboptimal. 
+          // seems suboptimal.
           Expression.lookup(entityLookup, 0)
         }
 
