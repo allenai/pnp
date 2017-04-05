@@ -62,9 +62,13 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var maxDerivationsOpt: OptionSpec[Integer] = null
   var vocabThreshold: OptionSpec[Integer] = null  
   var epochsOpt: OptionSpec[Integer] = null
+  var dropoutOpt: OptionSpec[Double] = null
   var beamSizeOpt: OptionSpec[Integer] = null
   var lasoOpt: OptionSpec[Void] = null
   var editDistanceOpt: OptionSpec[Void] = null
+  var actionBiasOpt: OptionSpec[Void] = null
+  var reluOpt: OptionSpec[Void] = null
+  var actionLstmHiddenLayerOpt: OptionSpec[Void] = null 
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
@@ -93,8 +97,12 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     vocabThreshold = parser.accepts("vocabThreshold").withRequiredArg().ofType(classOf[Integer]).defaultsTo(1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
+    dropoutOpt = parser.accepts("dropout").withRequiredArg().ofType(classOf[Double]).defaultsTo(0.5)
     lasoOpt = parser.accepts("laso")
     editDistanceOpt = parser.accepts("editDistance")
+    actionBiasOpt = parser.accepts("actionBias")
+    reluOpt = parser.accepts("relu")
+    actionLstmHiddenLayerOpt = parser.accepts("actionLstmHiddenLayer")
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
@@ -195,6 +203,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // TODO: turn back on.
     config.encodeWithSoftEntityLinking = false
     config.distinctUnkVectors = true
+    config.actionBias = options.has(actionBiasOpt)
+    config.relu = options.has(reluOpt)
+    config.actionLstmHiddenLayer = options.has(actionLstmHiddenLayerOpt)
     val parser = SemanticParser.create(actionSpace, vocab, config, model)
 
     if (!options.has(skipActionSpaceValidationOpt)) {
@@ -213,8 +224,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     train(trainingData, devData, parser, typeDeclaration, simplifier,
-        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), options.has(lasoOpt),
-        modelOutputDir)
+        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), options.valueOf(dropoutOpt),
+        options.has(lasoOpt), modelOutputDir)
 
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
     model.save(saver)
@@ -227,9 +238,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     */
   def train(trainingExamples: Seq[WikiTablesExample], devExamples: Seq[WikiTablesExample],
       parser: SemanticParser, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
-      epochs: Int, beamSize: Int, laso: Boolean, modelDir: Option[String]): Unit = {
+      epochs: Int, beamSize: Int, dropout: Double, laso: Boolean, modelDir: Option[String]): Unit = {
 
-    parser.dropoutProb = 0.5
+    parser.dropoutProb = dropout
     val pnpExamples = for {
       x <- trainingExamples
       sentence = x.sentence

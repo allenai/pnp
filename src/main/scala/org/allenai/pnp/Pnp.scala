@@ -205,7 +205,6 @@ case class CategoricalPnp[A](dist: Array[(A, Double)], tag: Any) extends Pnp[A] 
 
 case class ParameterizedCategoricalPnp[A](items: Array[A], parameter: Expression, tag: Any) extends Pnp[A] {
 
-  // XXX: Fix the log softmax thing!
   def getTensor(graph: CompGraph): (Expression, Tensor, Int) = {
     val expr = if (graph.locallyNormalized) {
       Expression.logSoftmax(parameter)

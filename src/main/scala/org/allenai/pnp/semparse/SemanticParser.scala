@@ -26,12 +26,6 @@ import com.jayantkrish.jklol.util.IndexedList
 import edu.cmu.dynet._
 import edu.cmu.dynet.Expression._
 
-// Jayant notes:
-// 1. partial entity name matches are a problem. E.g., one entity is "temagami lorraine mine",
-// and the other is "temagami". Both have equivalent scores for matching the string "temagami",
-// but the second score should be greater.
-// 2. getting the column applicable to a cell is a problem
-// 3.
 /** A parser mapping token sequences to a distribution over
   * logical forms.
   */
@@ -381,15 +375,33 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         
         // _ = println("action hidden weights")
         actionHiddenWeights <- Pnp.param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
+        actionHiddenBias <- Pnp.param(SemanticParser.ACTION_HIDDEN_BIAS)
         actionHiddenWeights2 <- Pnp.param(SemanticParser.ACTION_HIDDEN_ACTION + hole.t)
+        actionHiddenBias2 <- Pnp.param(SemanticParser.ACTION_HIDDEN_ACTION_BIAS + hole.t)
         attentionAndRnn = concatenateArray(Array(attentionVector, rnnOutputDropout))
-        actionHidden = Expression.tanh(actionHiddenWeights * attentionAndRnn)
+        hidden = if (config.actionBias) {
+          (actionHiddenWeights * attentionAndRnn) + actionHiddenBias
+        } else {
+          (actionHiddenWeights * attentionAndRnn)
+        }
+        
+        actionHidden = if (config.relu) {
+          Expression.rectify(hidden)
+        } else {
+          Expression.tanh(hidden)
+        }
+
         actionHiddenDropout = if (dropoutProb > 0.0) {
           Expression.dropout(actionHidden, dropoutProb.asInstanceOf[Float])
         } else {
           actionHidden
         }
-        actionHiddenScores = actionHiddenWeights2 * actionHidden
+        
+        actionHiddenScores = if (config.actionBias) {
+          (actionHiddenWeights2 * actionHidden) + actionHiddenBias2
+        } else {
+          actionHiddenWeights2 * actionHidden
+        }
  
         // Score the templates.
         actionScores = Expression.pickrange(actionHiddenScores, 0, baseTemplates.length)
@@ -431,10 +443,23 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           Expression.lookup(entityLookup, 0)
         }
 
+        actionLstmInputWeights <- Pnp.param(SemanticParser.ACTION_LSTM_INPUT_WEIGHTS)
+        actionLstmInputBias <- Pnp.param(SemanticParser.ACTION_LSTM_INPUT_BIAS)
+        lstmInput1 = concatenateArray(Array(actionInput, attentionVector))
+        lstmInput2 = if (config.actionLstmHiddenLayer) {
+          val hidden = (actionLstmInputWeights * lstmInput1) + actionLstmInputBias
+          if (config.relu) {
+            Expression.rectify(hidden)
+          } else {
+            Expression.tanh(hidden)
+          }
+        } else {
+          lstmInput1
+        }
+        
         // _ = println("recursing")
         // Recursively fill in any remaining holes.
-        returnState <- parse(input, builder, concatenateArray(Array(actionInput, attentionVector)),
-            nextRnnState, nextState)
+        returnState <- parse(input, builder, lstmInput2, nextRnnState, nextState)
       } yield {
         returnState
       }
@@ -685,6 +710,10 @@ class SemanticParserConfig extends Serializable {
   
   var entityDim = -1
   def lstmInputDim = inputDim + entityDim
+  
+  var relu = false
+  var actionBias = false
+  var actionLstmHiddenLayer = false
 
   var featureGenerator: Option[SemanticParserFeatureGenerator] = None
   
@@ -706,8 +735,13 @@ object SemanticParser {
   val ATTENTION_WEIGHTS_PARAM = "attentionWeights:"
 
   val ACTION_HIDDEN_WEIGHTS = "actionHidden"
+  val ACTION_HIDDEN_BIAS = "actionHiddenBias"
   val ACTION_HIDDEN_ACTION = "actionHiddenOutput:"
+  val ACTION_HIDDEN_ACTION_BIAS = "actionHiddenOutputBias:"
   
+  val ACTION_LSTM_INPUT_WEIGHTS = "actionLstmInputWeights"
+  val ACTION_LSTM_INPUT_BIAS = "actionLstmInputBias"
+
   val ENTITY_BIAS_PARAM = "entityBias:"
   val ENTITY_WEIGHTS_PARAM = "entityWeights:"
   val ENTITY_LOOKUP_PARAM = "entityLookup:"
@@ -722,6 +756,7 @@ object SemanticParser {
     // XXX: fix this
     config.entityDim = actionSpace.typeIndex.size()
     val actionLstmHiddenDim = config.hiddenDim * 2
+    val actionLstmInputDim = config.actionDim + 2 * config.hiddenDim
 
     // Initialize model 
     // TODO: document these parameters.
@@ -731,6 +766,10 @@ object SemanticParser {
 
     model.addParameter(ACTION_HIDDEN_WEIGHTS, Dim(config.actionHiddenDim,
         2 * config.hiddenDim + actionLstmHiddenDim))
+    model.addParameter(ACTION_HIDDEN_BIAS, Dim(config.actionHiddenDim))
+
+    model.addParameter(ACTION_LSTM_INPUT_WEIGHTS, Dim(actionLstmInputDim, actionLstmInputDim))
+    model.addParameter(ACTION_LSTM_INPUT_BIAS, Dim(actionLstmInputDim))
 
     // The last entry will be the unknown word.
     model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size + 1, Dim(config.inputDim))
@@ -742,6 +781,7 @@ object SemanticParser {
       model.addParameter(BEGIN_ACTIONS + t, Dim(config.actionDim + 2 * config.hiddenDim))
       model.addLookupParameter(ACTION_LOOKUP_PARAM + t, dim, Dim(config.actionDim))
       model.addParameter(ACTION_HIDDEN_ACTION + t, Dim(dim, config.actionHiddenDim))
+      model.addParameter(ACTION_HIDDEN_ACTION_BIAS + t, Dim(dim))
 
       model.addLookupParameter(ENTITY_LOOKUP_PARAM + t, 1, Dim(config.actionDim))
 
@@ -762,7 +802,7 @@ object SemanticParser {
     val forwardBuilder = new LstmBuilder(1, config.lstmInputDim, config.hiddenDim, model.model)
     val backwardBuilder = new LstmBuilder(1, config.lstmInputDim, config.hiddenDim, model.model)
     // RNN for generating actions given previous actions (and the input)
-    val actionBuilder = new LstmBuilder(1, config.actionDim + 2 * config.hiddenDim,
+    val actionBuilder = new LstmBuilder(1, actionLstmInputDim,
         actionLstmHiddenDim, model.model)
 
     new SemanticParser(actionSpace, vocab, config, forwardBuilder,
