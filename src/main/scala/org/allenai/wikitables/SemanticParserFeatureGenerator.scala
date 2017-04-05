@@ -40,14 +40,20 @@ class SemanticParserFeatureGenerator(featureFunctions: Array[EntityTokenFeatureF
 object SemanticParserFeatureGenerator {
   type EntityTokenFeatureFunction = (WikiTablesExample, Int, Entity, Option[Span], String => Int, Table) => Float
 
-  def getWikitablesGenerator(): SemanticParserFeatureGenerator = {
-    new SemanticParserFeatureGenerator(Array(
+  def getWikitablesGenerator(editDistance: Boolean): SemanticParserFeatureGenerator = {
+    var features: List[EntityTokenFeatureFunction] = List(
         SemanticParserFeatureGenerator.spanFeatures,
         SemanticParserFeatureGenerator.tokenExactMatchFeature,
         SemanticParserFeatureGenerator.tokenLemmaMatchFeature,
         // SemanticParserFeatureGenerator.editDistanceFeature,
         SemanticParserFeatureGenerator.relatedColumnFeature,
-        SemanticParserFeatureGenerator.relatedColumnLemmaFeature))
+        SemanticParserFeatureGenerator.relatedColumnLemmaFeature)
+        
+     if (editDistance) {
+       features = features ++ List(SemanticParserFeatureGenerator.editDistanceFeature _)
+     }
+
+    new SemanticParserFeatureGenerator(features.toArray)
   }
   
   def spanFeatures(ex: WikiTablesExample, tokenIndex: Int, entity: Entity,

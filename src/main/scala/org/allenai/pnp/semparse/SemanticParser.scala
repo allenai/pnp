@@ -172,10 +172,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     // states.
     val forwardS = forwardBuilder.finalS
     val backwardS = backwardBuilder.finalS
-    val s = new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(x => x._1 + x._2))
+    // val s = new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(x => x._1 + x._2))
+    val s = new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(
+        x => Expression.concatenate(x._1, x._2)))
 
     (s, sentEmbedding, inputMatrix, outputMatrix)
-  }
+  } 
 
   private def encodeEntities(computationGraph: CompGraph, entityLinking: EntityLinking,
       tokens: Array[Int], tokenIdToEmbedding: Int => Expression): EntityEncoding = {
@@ -393,9 +395,6 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         actionScores = Expression.pickrange(actionHiddenScores, 0, baseTemplates.length)
 
         // Score the entity templates
-        entityBias <- Pnp.param(SemanticParser.ENTITY_BIAS_PARAM + hole.t)
-        entityWeights <- Pnp.param(SemanticParser.ENTITY_WEIGHTS_PARAM + hole.t)
-
         // _ = println("scoring entities")
         allScores = if (entities.size > 0) {
           val entityScores = wordAttentions * entityTokenMatrix
@@ -722,15 +721,16 @@ object SemanticParser {
       config: SemanticParserConfig, model: PnpModel): SemanticParser = {
     // XXX: fix this
     config.entityDim = actionSpace.typeIndex.size()
+    val actionLstmHiddenDim = config.hiddenDim * 2
 
     // Initialize model 
     // TODO: document these parameters.
     model.addParameter(ROOT_WEIGHTS_PARAM, Dim(actionSpace.rootTypes.length, 2 * config.hiddenDim))
     model.addParameter(ROOT_BIAS_PARAM, Dim(actionSpace.rootTypes.length))
-    model.addParameter(ATTENTION_WEIGHTS_PARAM, Dim(2 * config.hiddenDim, config.actionDim))
+    model.addParameter(ATTENTION_WEIGHTS_PARAM, Dim(2 * config.hiddenDim, actionLstmHiddenDim))
 
     model.addParameter(ACTION_HIDDEN_WEIGHTS, Dim(config.actionHiddenDim,
-        2 * config.hiddenDim + config.actionHiddenDim))
+        2 * config.hiddenDim + actionLstmHiddenDim))
 
     // The last entry will be the unknown word.
     model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size + 1, Dim(config.inputDim))
@@ -741,11 +741,8 @@ object SemanticParser {
 
       model.addParameter(BEGIN_ACTIONS + t, Dim(config.actionDim + 2 * config.hiddenDim))
       model.addLookupParameter(ACTION_LOOKUP_PARAM + t, dim, Dim(config.actionDim))
-
       model.addParameter(ACTION_HIDDEN_ACTION + t, Dim(dim, config.actionHiddenDim))
-            
-      model.addParameter(ENTITY_BIAS_PARAM + t, Dim(1))
-      model.addParameter(ENTITY_WEIGHTS_PARAM + t, Dim(config.hiddenDim))
+
       model.addLookupParameter(ENTITY_LOOKUP_PARAM + t, 1, Dim(config.actionDim))
 
       if (config.featureGenerator.isDefined) {
@@ -766,7 +763,7 @@ object SemanticParser {
     val backwardBuilder = new LstmBuilder(1, config.lstmInputDim, config.hiddenDim, model.model)
     // RNN for generating actions given previous actions (and the input)
     val actionBuilder = new LstmBuilder(1, config.actionDim + 2 * config.hiddenDim,
-        config.hiddenDim, model.model)
+        actionLstmHiddenDim, model.model)
 
     new SemanticParser(actionSpace, vocab, config, forwardBuilder,
         backwardBuilder, actionBuilder, model)

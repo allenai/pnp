@@ -12,11 +12,11 @@ TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.exampl
 DEV="data/WikiTableQuestions/data/random-split-1-dev.examples"
 DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
 
-EXPERIMENT_NAME="lstm_01"
+EXPERIMENT_NAME="lstm_02_ll_100_beam_5"
 EXPERIMENT_DIR="experiments/wikitables/output/$EXPERIMENT_NAME/"
 
 EPOCHS=20
-MAX_TRAINING_DERIVATIONS=1
+MAX_TRAINING_DERIVATIONS=100
 MAX_TEST_DERIVATIONS=10
 BEAM_SIZE=5
 VOCAB=2

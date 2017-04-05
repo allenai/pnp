@@ -76,15 +76,16 @@ class SemanticParserSpec extends FlatSpec with Matchers {
       val entityLf = exprParser.parse(entityLfString)
       val entityType = StaticAnalysis.inferType(entityLf, typeDeclaration)
       val template = ConstantTemplate(entityType, entityLf)
-      val entity = Entity(entityLf, entityType, template, List(entityTokenIds))
+      val entity = Entity(entityLf, entityType, template, List(entityTokenIds), null)
       
       val span: Option[Span] = None
      
-      (span, entity, entityTokenIds, 0.1)
+      // (span, entity, entityTokenIds, 0.1)
+      entity
     }
 
     val lf = simplifier.apply(exprParser.parse(lfString)) 
-    SemanticParserExample(tokenIds, EntityLinking(entityLinkingList), lf)  
+    SemanticParserExample(tokenIds, EntityLinking(entityLinkingList.toArray, null), lf)
   }
   
   /**
@@ -150,12 +151,12 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val e = exprParser.parse(
         "(argmax:<<e,t>,e> (lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0))))")
     // This method will throw an error if it can't decode the expression properly. 
-    val templates = parser.generateActionSequence(e, EntityLinking(List()), typeDeclaration)
+    val templates = parser.generateActionSequence(e, EntityLinking(Array(), null), typeDeclaration)
   }
   
   it should "condition on expressions" in {
     val label = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
-    val entityLinking = EntityLinking(List())
+    val entityLinking = EntityLinking(Array(), null)
     val oracle = parser.getLabelScore(label, entityLinking, typeDeclaration).get
     val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)),
         entityLinking)
@@ -172,7 +173,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val label1 = exprParser.parse("(lambda ($0) (and:<t*,t> (city:<e,t> $0) (major:<e,t> $0)))")
     val label2 = exprParser.parse("(lambda ($0) (state:<e,t> $0))")
     val labels = Set(label1, label2)
-    val entityLinking = EntityLinking(List())
+    val entityLinking = EntityLinking(Array(), null)
     val oracle = parser.getMultiLabelScore(labels, entityLinking, typeDeclaration).get
     
     val exprs = parser.generateExpression(Array("major", "city").map(vocab.getIndex(_)),
@@ -203,7 +204,6 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   it should "distinguish unked entities" in {
     val model2 = PnpModel.init(true)
     val config2 = new SemanticParserConfig()
-    config2.attentionCopyEntities = true
     config2.entityLinkingLearnedSimilarity = true
     config2.distinctUnkVectors = true
     val parser2 = SemanticParser.create(lexicon, vocab, config2, model2)

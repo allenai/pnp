@@ -64,6 +64,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var epochsOpt: OptionSpec[Integer] = null
   var beamSizeOpt: OptionSpec[Integer] = null
   var lasoOpt: OptionSpec[Void] = null
+  var editDistanceOpt: OptionSpec[Void] = null
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
@@ -93,6 +94,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     lasoOpt = parser.accepts("laso")
+    editDistanceOpt = parser.accepts("editDistance")
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
@@ -136,7 +138,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
 
-    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator()
+    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator(
+        options.has(editDistanceOpt))
 
     // Read training data
     val (trainingData, vocab) = initializeTrainingData(options, featureGenerator)
