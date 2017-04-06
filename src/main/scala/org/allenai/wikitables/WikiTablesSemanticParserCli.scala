@@ -70,7 +70,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var editDistanceOpt: OptionSpec[Void] = null
   var actionBiasOpt: OptionSpec[Void] = null
   var reluOpt: OptionSpec[Void] = null
-  var actionLstmHiddenLayerOpt: OptionSpec[Void] = null 
+  var actionLstmHiddenLayerOpt: OptionSpec[Void] = null
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
@@ -206,7 +206,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.actionHiddenDim = options.valueOf(actionHiddenDimOpt)
     config.featureGenerator = Some(featureGenerator)
     config.entityLinkingLearnedSimilarity = true
-    // TODO: turn back on.
+    // TODO: turn back on (?)
     config.encodeWithSoftEntityLinking = false
     config.distinctUnkVectors = true
     config.actionBias = options.has(actionBiasOpt)

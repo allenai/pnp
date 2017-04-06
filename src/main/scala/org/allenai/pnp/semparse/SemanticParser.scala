@@ -166,9 +166,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     // states.
     val forwardS = forwardBuilder.finalS
     val backwardS = backwardBuilder.finalS
-    // val s = new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(x => x._1 + x._2))
-    val s = new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(
+    val s = if (config.concatLstmForDecoder) {
+      new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(
         x => Expression.concatenate(x._1, x._2)))
+    } else {
+      new ExpressionVector(forwardS.toSeq.zip(backwardS.toSeq).map(x => x._1 + x._2))
+    }
 
     (s, sentEmbedding, inputMatrix, outputMatrix)
   } 
@@ -714,6 +717,7 @@ class SemanticParserConfig extends Serializable {
   var relu = false
   var actionBias = false
   var actionLstmHiddenLayer = false
+  var concatLstmForDecoder = false
 
   var featureGenerator: Option[SemanticParserFeatureGenerator] = None
   
@@ -755,7 +759,11 @@ object SemanticParser {
       config: SemanticParserConfig, model: PnpModel): SemanticParser = {
     // XXX: fix this
     config.entityDim = actionSpace.typeIndex.size()
-    val actionLstmHiddenDim = config.hiddenDim * 2
+    val actionLstmHiddenDim = if (config.concatLstmForDecoder) {
+      config.hiddenDim * 2
+    } else {
+      config.hiddenDim 
+    }
     val actionLstmInputDim = config.actionDim + 2 * config.hiddenDim
 
     // Initialize model 
