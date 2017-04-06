@@ -105,21 +105,21 @@ object ActionSpace {
       combineApplications: Boolean): ActionSpace = {
 
     // Generate each type of action template.
-    val applicationTemplates = for {
+    val applicationTemplates = (for {
       x <- data
       template <- generateApplicationTemplates(x, typeDeclaration)
     } yield {
       template
-    }
+    }).toSet
 
-    val lambdaTemplates = for {
+    val lambdaTemplates = (for {
       x <- data
       template <- generateLambdaTemplates(x, typeDeclaration) 
     } yield {
       template
-    }
+    }).toSet
   
-    val constantTemplates = for {
+    val constantTemplates = (for {
       x <- data
       typeMap = StaticAnalysis.inferTypeMap(x, TypeDeclaration.TOP, typeDeclaration).asScala
       constant <- StaticAnalysis.getFreeVariables(x).asScala
@@ -128,15 +128,15 @@ object ActionSpace {
       if !t.hasTypeVariables()
     } yield {
       ConstantTemplate(t, Expression2.constant(constant))
-    }
+    }).toSet
     
     // Get the root type of every logical form
-    val rootTypes = for {
+    val rootTypes = (for {
       x <- data
       typeMap = StaticAnalysis.inferTypeMap(x, TypeDeclaration.TOP, typeDeclaration).asScala
     } yield {
       typeMap(0)
-    }
+    }).toSet
 
     val allTemplates = if (combineApplications) {
       // combineApplications merges application templates with their first

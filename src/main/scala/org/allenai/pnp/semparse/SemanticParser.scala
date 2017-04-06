@@ -822,7 +822,7 @@ object SemanticParser {
   }
   
   // TODO: move this method somewhere else.
-  def seqToMultimap[A, B](s: Seq[(A, B)]) = { 
+  def seqToMultimap[A, B](s: Iterable[(A, B)]) = {
     s.foldLeft(new HashMap[A, MutableSet[B]] with MultiMap[A, B]){ 
       (acc, pair) => acc.addBinding(pair._1, pair._2)
     }

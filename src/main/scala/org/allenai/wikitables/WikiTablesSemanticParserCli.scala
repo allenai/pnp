@@ -2,13 +2,17 @@ package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
 
+import org.allenai.pnp.BsoTrainer
 import org.allenai.pnp.Env
+import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.PnpExample
 import org.allenai.pnp.PnpModel
 import org.allenai.pnp.semparse.ActionSpace
+import org.allenai.pnp.semparse.ApplicationTemplate
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.EntityLinking
+import org.allenai.pnp.semparse.LambdaTemplate
 import org.allenai.pnp.semparse.SemanticParser
 import org.allenai.pnp.semparse.SemanticParserConfig
 import org.allenai.pnp.semparse.SemanticParserUtils
@@ -20,18 +24,15 @@ import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
-import com.jayantkrish.jklol.training.DefaultLogFunction
+import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
-import com.jayantkrish.jklol.util.IndexedList
-import scala.util.Random
-import scala.collection.mutable.ListBuffer
-import org.allenai.pnp.LoglikelihoodTrainer
-import org.allenai.pnp.BsoTrainer
-import org.allenai.wikitables.SemanticParserFeatureGenerator.EntityTokenFeatureFunction
+import org.allenai.pnp.semparse.Template
+import org.allenai.pnp.semparse.DropTemplate
+import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -64,6 +65,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var epochsOpt: OptionSpec[Integer] = null
   var dropoutOpt: OptionSpec[Double] = null
   var beamSizeOpt: OptionSpec[Integer] = null
+  var devBeamSizeOpt: OptionSpec[Integer] = null
   var lasoOpt: OptionSpec[Void] = null
   var editDistanceOpt: OptionSpec[Void] = null
   var actionBiasOpt: OptionSpec[Void] = null
@@ -72,12 +74,13 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
+  var seq2TreeOpt: OptionSpec[Void] = null
+  var seq2SeqOpt: OptionSpec[Void] = null
 
   // Initialize expression processing for Wikitables logical forms.
   val simplifier = ExpressionSimplifier.lambdaCalculus()
   val comparator = new SimplificationComparator(simplifier)
   val logicalFormParser = ExpressionParser.expression2()
-  val typeDeclaration = new WikiTablesTypeDeclaration()
 
   override def initializeOptions(parser: OptionParser): Unit = {
     trainingDataOpt = parser.accepts("trainingData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -97,6 +100,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     vocabThreshold = parser.accepts("vocabThreshold").withRequiredArg().ofType(classOf[Integer]).defaultsTo(1)
     epochsOpt = parser.accepts("epochs").withRequiredArg().ofType(classOf[Integer]).defaultsTo(50)
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
+    devBeamSizeOpt = parser.accepts("devBeamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     dropoutOpt = parser.accepts("dropout").withRequiredArg().ofType(classOf[Double]).defaultsTo(0.5)
     lasoOpt = parser.accepts("laso")
     editDistanceOpt = parser.accepts("editDistance")
@@ -106,24 +110,29 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
+    seq2TreeOpt = parser.accepts("seq2Tree")
+    seq2SeqOpt = parser.accepts("seq2Seq")
   }
 
-  def initializeTrainingData(options: OptionSet,
-      featureGen: SemanticParserFeatureGenerator) = {
+  def initializeTrainingData(options: OptionSet, typeDeclaration: TypeDeclaration,
+      preprocessor: LfPreprocessor, featureGen: SemanticParserFeatureGenerator) = {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     val trainingData = loadDatasets(options.valuesOf(trainingDataOpt).asScala,
         includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
-        options.valueOf(maxDerivationsOpt))
-    
+        options.valueOf(maxDerivationsOpt), preprocessor)
+
     println("Read " + trainingData.size + " training examples")
     val vocab = computeVocabulary(trainingData, options.valueOf(vocabThreshold))
 
-    // Eliminate those examples that Sempre did not find correct logical forms for.
+    // Eliminate those examples that Sempre did not find correct logical forms for,
+    // and preprocess the remaining
     val filteredTrainingData = trainingData.filter(!_.ex.logicalForms.isEmpty)
+        
     // preprocessExample modifies the `annotations` data structure in example.sentence, adding
     // some things to it.  We don't need a `map`, just a `foreach`.
-    filteredTrainingData.foreach(x => preprocessExample(x, vocab, featureGen, typeDeclaration))
+    filteredTrainingData.foreach(x => preprocessExample(x, vocab, featureGen,
+        typeDeclaration))
     println("Found correct logical forms for " + filteredTrainingData.size + " training examples")
 
     println("Preprocessed:")
@@ -134,12 +143,15 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     (filteredTrainingData.map(_.ex), vocab)
   }
 
-  def initializeDevelopmentData(options: OptionSet, featureGen: SemanticParserFeatureGenerator,
+  def initializeDevelopmentData(options: OptionSet, typeDeclaration: TypeDeclaration,
+      preprocessor: LfPreprocessor, featureGen: SemanticParserFeatureGenerator,
       vocab: IndexedList[String]): Seq[WikiTablesExample] = {
-    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala,  false, null, 0)
+    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala, false,
+        null, 0, preprocessor)
     println("Read " + devData.size + " development examples")
 
-    devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, featureGen, typeDeclaration))
+    devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, featureGen,
+        typeDeclaration))
     devData.map(_.ex)
   }
 
@@ -148,12 +160,30 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator(
         options.has(editDistanceOpt))
+ 
+    val typeDeclaration = if (options.has(seq2TreeOpt)) {
+      new Seq2TreeTypeDeclaration()
+    } else if (options.has(seq2SeqOpt)) {
+      new Seq2SeqTypeDeclaration()
+    } else {
+      new WikiTablesTypeDeclaration()
+    }
+
+    val lfPreprocessor = if (options.has(seq2TreeOpt)) {
+      new Seq2TreePreprocessor()
+    } else if (options.has(seq2SeqOpt)) {
+      new Seq2SeqPreprocessor()
+    } else {
+      new NullLfPreprocessor()
+    }
 
     // Read training data
-    val (trainingData, vocab) = initializeTrainingData(options, featureGenerator)
+    val (trainingData, vocab) = initializeTrainingData(options, typeDeclaration,
+        lfPreprocessor, featureGenerator)
 
     // Read development data (if provided)
-    val devData = initializeDevelopmentData(options, featureGenerator, vocab)
+    val devData = initializeDevelopmentData(options, typeDeclaration,
+        lfPreprocessor, featureGenerator, vocab)
 
     // Generate the action space of the semantic parser from the logical
     // forms that are well-typed.
@@ -162,35 +192,11 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val wellTypedTrainingLfs = trainingLfs.filter(lf =>
       SemanticParserUtils.validateTypes(lf, typeDeclaration))
 
-    println("*** Generating action space ***")
-    val actionSpace = ActionSpace.fromExpressions(wellTypedTrainingLfs, typeDeclaration, false)
-
-    // Remove specific numbers/rows/cells from the action space.
-    // These need to be added back in on a per-table basis.
-    val filterTypes = Seq(Type.parseFrom("i"), Type.parseFrom("c"), Type.parseFrom("p"), Type.parseFrom("<c,r>"))
-    for (t <- filterTypes) {
-      val templates = actionSpace.typeTemplateMap.getOrElse(t, List()).toSet
-      for (template <- templates) {
-        if (template.isInstanceOf[ConstantTemplate]) {
-          actionSpace.typeTemplateMap.removeBinding(t, template)
-        }
-      }
-
-      // Create a dummy action for the type to ensure that at least
-      // one valid action is always possible.
-      if (actionSpace.typeTemplateMap.getOrElse(t, Set()).size == 0) {
-        actionSpace.typeTemplateMap.addBinding(t,
-            ConstantTemplate(t, Expression2.constant("DUMMY:" + t)))
-      }
-    }
-
-    // Print out the action space
-    for (t <- actionSpace.typeTemplateMap.keys) {
-      println(t)
-      for (template <- actionSpace.typeTemplateMap(t)) {
-        println("  " + template)
-      }
-    }
+    // Combine applications makes templates like <t> -> (f <x> <y>)
+    // where f is a constant and <.> is a type. This is necessary 
+    // to replicate a seq2tree / seq2seq model given the lf preprocessing
+    val combineApplications = options.has(seq2TreeOpt) || options.has(seq2SeqOpt)
+    val actionSpace = getActionSpace(wellTypedTrainingLfs, typeDeclaration, combineApplications)
 
     val model = PnpModel.init(true)
     val config = new SemanticParserConfig()
@@ -223,9 +229,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       None
     }
 
-    train(trainingData, devData, parser, typeDeclaration, simplifier,
-        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), options.valueOf(dropoutOpt),
-        options.has(lasoOpt), modelOutputDir)
+    train(trainingData, devData, parser, typeDeclaration, simplifier, lfPreprocessor,
+        options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), options.valueOf(devBeamSizeOpt),
+        options.valueOf(dropoutOpt), options.has(lasoOpt), modelOutputDir)
 
     val saver = new ModelSaver(options.valueOf(modelOutputOpt))
     model.save(saver)
@@ -237,8 +243,10 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     * Returns a model with the trained parameters.
     */
   def train(trainingExamples: Seq[WikiTablesExample], devExamples: Seq[WikiTablesExample],
-      parser: SemanticParser, typeDeclaration: TypeDeclaration, simplifier: ExpressionSimplifier,
-      epochs: Int, beamSize: Int, dropout: Double, laso: Boolean, modelDir: Option[String]): Unit = {
+      parser: SemanticParser, typeDeclaration: TypeDeclaration,
+      simplifier: ExpressionSimplifier, preprocessor: LfPreprocessor,
+      epochs: Int, beamSize: Int, devBeamSize: Int,
+      dropout: Double, laso: Boolean, modelDir: Option[String]): Unit = {
 
     parser.dropoutProb = dropout
     val pnpExamples = for {
@@ -260,6 +268,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     // If we have dev examples, subsample the same number of training examples
     // for evaluating parser accuracy as training progresses.
+    // XXX: disabled because the preprocessing here can be very slow.
     /*
     val trainErrorExamples = if (devExamples.size > 0) {
       Random.shuffle(trainingExamples).slice(0, Math.min(devExamples.size, trainingExamples.size))
@@ -275,7 +284,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // This will happen during the error evaluation of training anyway,
     // but doing it up-front makes the training timers more useful. 
     println("Preprocessing context for train/dev evaluation examples.")
-    // TODO: how much does the choice of training examples affect these results??
+    // TODO: how much does the choice of training examples affect the train error results??
     // seems to affect stanford's processing time significantly.
     trainErrorExamples.foreach(x => x.getContext)
     devExamples.foreach(x => x.getContext)
@@ -284,7 +293,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
     val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,
-        devExamples, beamSize, 2, typeDeclaration, new SimplificationComparator(simplifier))
+        devExamples, devBeamSize, 2, typeDeclaration, new SimplificationComparator(simplifier),
+        preprocessor)
     
     if (laso) {
       println("Running LaSO training...")
@@ -299,6 +309,67 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       trainer.train(pnpExamples.toList)
     }
     parser.dropoutProb = -1
+  }
+  
+  def getActionSpace(wellTypedTrainingLfs: Seq[Expression2], typeDeclaration: TypeDeclaration,
+      combineApplications: Boolean): ActionSpace = {
+    println("*** Generating action space ***")
+    var actionSpace = ActionSpace.fromExpressions(wellTypedTrainingLfs, typeDeclaration, combineApplications)
+
+    // Remove specific numbers/rows/cells from the action space.
+    // These need to be added back in on a per-table basis.
+    val filterTypes = Seq(Type.parseFrom("i"), Type.parseFrom("c"), Type.parseFrom("p"), Type.parseFrom("<c,r>"))
+    for (t <- filterTypes) {
+      val templates = actionSpace.typeTemplateMap.getOrElse(t, List()).toSet
+      for (template <- templates) {
+        if (template.isInstanceOf[ConstantTemplate]) {
+          actionSpace.typeTemplateMap.removeBinding(t, template)
+        }
+      }
+
+      // Create a dummy action for the type to ensure that at least
+      // one valid action is always possible.
+      if (actionSpace.typeTemplateMap.getOrElse(t, Set()).size == 0) {
+        actionSpace.typeTemplateMap.addBinding(t,
+            ConstantTemplate(t, Expression2.constant("DUMMY:" + t)))
+      }
+    }
+    
+    // Remove specific numbers/rows columns for the seq2tree and seq2seq
+    // action spaces.
+    val wikitablesTypes = new WikiTablesTypeDeclaration()
+    val anyTemplates = actionSpace.typeTemplateMap.getOrElse(Seq2TreeTypeDeclaration.anyType, List()).toSet
+    for (template <- anyTemplates) {
+      if (template.isInstanceOf[ConstantTemplate]) {
+        val c = template.asInstanceOf[ConstantTemplate]
+        val t = StaticAnalysis.inferType(c.expr, wikitablesTypes)
+        if (filterTypes.contains(t)) {
+          actionSpace.typeTemplateMap.removeBinding(Seq2TreeTypeDeclaration.anyType, template)
+        }
+      }
+    }
+     
+    val s2sTemplates = actionSpace.typeTemplateMap.getOrElse(Seq2SeqTypeDeclaration.endType, List()).toSet
+    for (template <- s2sTemplates) {
+      if (template.isInstanceOf[ApplicationTemplate]) {
+        val a = template.asInstanceOf[ApplicationTemplate]
+        val funcExpr = a.expr.getSubexpressions.get(0)
+        val t = StaticAnalysis.inferType(funcExpr, wikitablesTypes)
+        if (filterTypes.contains(t)) {
+          actionSpace.typeTemplateMap.removeBinding(Seq2SeqTypeDeclaration.endType, template)
+        }
+      }
+    }
+
+    // Print out the action space
+    for (t <- actionSpace.typeTemplateMap.keys) {
+      println(t)
+      for (template <- actionSpace.typeTemplateMap(t)) {
+        println("  " + template)
+      }
+    }
+
+    actionSpace
   }
 }
 

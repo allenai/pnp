@@ -32,6 +32,7 @@ class TestWikiTablesCli extends AbstractCli() {
   var beamSizeOpt: OptionSpec[Integer] = null
   var evaluateDpdOpt: OptionSpec[Void] = null
   var maxDerivationsOpt: OptionSpec[Integer] = null
+  var seq2TreeOpt: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -41,6 +42,7 @@ class TestWikiTablesCli extends AbstractCli() {
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     evaluateDpdOpt = parser.accepts("evaluateDpd")
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
+    seq2TreeOpt = parser.accepts("seq2Tree")    
   }
 
   override def run(options: OptionSet): Unit = {
@@ -50,7 +52,6 @@ class TestWikiTablesCli extends AbstractCli() {
     val simplifier = ExpressionSimplifier.lambdaCalculus()
     val comparator = new SimplificationComparator(simplifier)
     val logicalFormParser = ExpressionParser.expression2();
-    val typeDeclaration = new WikiTablesTypeDeclaration()
     val entityLinker = new WikiTablesEntityLinker()
 
     // Read in serialized semantic parser
@@ -60,13 +61,26 @@ class TestWikiTablesCli extends AbstractCli() {
     val featureGenerator = parser.config.featureGenerator.get
     loader.done()
 
+    val typeDeclaration = if (options.has(seq2TreeOpt)) {
+      new Seq2TreeTypeDeclaration()
+    } else {
+      new WikiTablesTypeDeclaration()
+    }
+    
+    val lfPreprocessor = if (options.has(seq2TreeOpt)) {
+      new Seq2TreePreprocessor()
+    } else {
+      new NullLfPreprocessor()
+    }
+
     // Read test data.
     val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
-        true, options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt))
+        true, options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt),
+        lfPreprocessor)
     println("Read " + testData.size + " test examples")
 
     testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab,
-        featureGenerator, typeDeclaration)) 
+        featureGenerator, typeDeclaration))
 
     /*
     println("*** Validating test set action space ***")
@@ -76,7 +90,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
     val testResults = TestWikiTablesCli.test(testData.map(_.ex),
         parser, options.valueOf(beamSizeOpt), options.has(evaluateDpdOpt),
-        true, typeDeclaration, comparator, println)
+        true, typeDeclaration, comparator, lfPreprocessor, println)
     println("*** Evaluation results ***")
     println(testResults)
   }
@@ -93,7 +107,8 @@ object TestWikiTablesCli {
    */
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser, beamSize: Int,
       evaluateDpd: Boolean, evaluateOracle: Boolean, typeDeclaration: TypeDeclaration,
-      comparator: ExpressionComparator, print: Any => Unit): SemanticParserLoss = {
+      comparator: ExpressionComparator, preprocessor: LfPreprocessor,
+      print: Any => Unit): SemanticParserLoss = {
 
     print("")
     var numCorrect = 0
@@ -121,7 +136,7 @@ object TestWikiTablesCli {
           e.logicalForms.size > 0 && e.logicalForms.map(x => comparator.equals(x, expression)).reduce(_ || _)
         } else {
           // Evaluate the logical form by executing it.
-          e.isFormulaCorrect(expression)
+          e.isFormulaCorrect(preprocessor.postprocess(expression))
         }
         
         if (isCorrect) {

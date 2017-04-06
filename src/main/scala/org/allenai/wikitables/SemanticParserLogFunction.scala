@@ -12,7 +12,7 @@ import org.allenai.pnp.semparse.SemanticParserLoss
 class SemanticParserLogFunction(modelDir: Option[String], parser: SemanticParser,
     trainExamples: Seq[WikiTablesExample], devExamples: Seq[WikiTablesExample],
     devBeam: Int, firstDevEpoch: Int, typeDeclaration: TypeDeclaration,
-    comparator: ExpressionComparator) extends DefaultLogFunction {
+    comparator: ExpressionComparator, preprocessor: LfPreprocessor) extends DefaultLogFunction {
 
   /**
    * Save the current parser to disk.
@@ -35,7 +35,7 @@ class SemanticParserLogFunction(modelDir: Option[String], parser: SemanticParser
     parser.dropoutProb = -1
 
     val loss = TestWikiTablesCli.test(examples, parser, devBeam, false, false,
-        typeDeclaration, comparator, (x:Any) => ())
+        typeDeclaration, comparator, preprocessor, (x:Any) => ())
 
     parser.dropoutProb = curDropout
     

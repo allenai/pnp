@@ -52,6 +52,8 @@ import edu.stanford.nlp.sempre.tables.test.CustomExample
 import fig.basic.LispTree
 import fig.basic.Pair
 import scala.collection.mutable.ListBuffer
+import com.jayantkrish.jklol.ccg.lambda.Type
+import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 
 /**
  * This object has two main functions: (1) loading and preprocessing data (including functionality
@@ -259,7 +261,8 @@ object WikiTablesUtil {
       filenames: Seq[String],
       includeDerivationsForTrain: Boolean,
       derivationsPath: String,
-      derivationsLimit: Int
+      derivationsLimit: Int,
+      preprocessor: LfPreprocessor
     ): Vector[RawExample] = {
     // The entity linker can become a parameter in the future
     // if it starts accepting parameters.
@@ -272,7 +275,8 @@ object WikiTablesUtil {
       
       val linkingsMap = linkings.map(x => (x.id, x)).toMap
       val tablesMap = tables.map(x => (x.id, x)).toMap
-      examples.map(x => RawExample(x, linkingsMap(x.id), tablesMap(x.tableString)))
+      val preprocessedExamples = examples.map(preprocessor.preprocess(_))
+      preprocessedExamples.map(x => RawExample(x, linkingsMap(x.id), tablesMap(x.tableString)))
     }
 
     trainingData.toVector
@@ -282,7 +286,7 @@ object WikiTablesUtil {
     example: RawExample,
     vocab: IndexedList[String],
     featureGenerator: SemanticParserFeatureGenerator,
-    typeDeclaration: WikiTablesTypeDeclaration
+    typeDeclaration: TypeDeclaration
   ) {
     // All we do here is add some annotations to the example.  Those annotations are:
     // 1. Token ids, computed using the vocab
