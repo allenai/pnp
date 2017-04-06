@@ -363,7 +363,19 @@ object WikiTablesUtil {
     return ExpressionParser.expression2().parse(expressionString)
   }
 
-  def toSempreLogicalForm(expression: Expression2): String = {
+  /**
+   * Convert a pnp logical form to a sempre logical form (in string format). 
+   * The conversion may fail if {@code expression} is not well-formed.
+   */
+  def toSempreLogicalForm(expression: Expression2): Option[String] = {
+    if (StaticAnalysis.isWellFormed(expression)) {
+      Some(toSempreLogicalFormHelper(expression))
+    } else {
+      None
+    }
+  }
+    
+  private def toSempreLogicalFormHelper(expression: Expression2): String = {
     val simplifier = new ExpressionSimplifier(Lists.newArrayList(new VariableCanonicalizationReplacementRule()))
     val simplifiedExpression = simplifier.apply(expression)
 
@@ -407,4 +419,5 @@ object WikiTablesUtil {
     }
     expressionString
   }
+
 }
