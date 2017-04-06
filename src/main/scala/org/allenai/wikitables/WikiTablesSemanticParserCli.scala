@@ -105,7 +105,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     val trainingData = loadDatasets(options.valuesOf(trainingDataOpt).asScala,
-        includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
+        options.valueOf(derivationsPathOpt),
         options.valueOf(maxDerivationsOpt))
     
     println("Read " + trainingData.size + " training examples")
@@ -128,7 +128,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
   def initializeDevelopmentData(options: OptionSet, featureGen: SemanticParserFeatureGenerator,
       vocab: IndexedList[String]): Seq[WikiTablesExample] = {
-    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala,  false, null, 0)
+    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala, null, -1)
     println("Read " + devData.size + " development examples")
 
     devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, featureGen, typeDeclaration))

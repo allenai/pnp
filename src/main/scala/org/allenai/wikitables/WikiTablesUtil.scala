@@ -69,6 +69,9 @@ object WikiTablesUtil {
   val NER_ANNOTATION = "NER"
   val LEMMA_ANNOTATION = "lemma"
 
+  // Maximum number of derivations stored
+  val MAX_DERIVATIONS = 200
+
   CustomExample.opts.allowNoAnnotation = true
   TableKnowledgeGraph.opts.baseCSVDir = "data/WikiTableQuestions"
   LanguageAnalyzer.opts.languageAnalyzer = "corenlp.CoreNLPAnalyzer"
@@ -233,31 +236,45 @@ object WikiTablesUtil {
 
   def loadDataset(
     filename: String,
-    includeDerivationsForTrain: Boolean,
     derivationsPath: String,
     derivationsLimit: Int
   ): Seq[WikiTablesExample] = {
     val preprocessedFile = filename + preprocessingSuffix
-    if (Files.exists(Paths.get(preprocessedFile))) {
+    val dataset = if (Files.exists(Paths.get(preprocessedFile))) {
       readDatasetFromJson(preprocessedFile)
     } else {
       val sempreDataset = WikiTablesDataProcessor.getDataset(
         filename,
         true,
-        includeDerivationsForTrain,
+        true,
         derivationsPath,
         100,
-        derivationsLimit
+        MAX_DERIVATIONS
       ).asScala
       val pnpDataset = sempreDataset.map(convertCustomExampleToWikiTablesExample)
       saveDatasetToJson(pnpDataset, preprocessedFile)
       pnpDataset
     }
+
+    // Limit number of derivations if need be
+    if (derivationsLimit >= 0 && derivationsLimit < MAX_DERIVATIONS) {
+      for {
+        ex <- dataset
+        lfs = ex.possibleLogicalForms
+      } yield {
+        if (lfs.size > derivationsLimit) {
+          ex.copy(possibleLogicalForms = lfs.toSeq.sortBy(_.size).take(derivationsLimit).toSet)
+        } else {
+          ex
+        }
+      }
+    } else {
+      dataset
+    }
   }
   
   def loadDatasets(
       filenames: Seq[String],
-      includeDerivationsForTrain: Boolean,
       derivationsPath: String,
       derivationsLimit: Int
     ): Vector[RawExample] = {
@@ -265,8 +282,7 @@ object WikiTablesUtil {
     // if it starts accepting parameters.
     val entityLinker = new WikiTablesEntityLinker()
     val trainingData = filenames.flatMap { filename => 
-      val examples = loadDataset(filename, includeDerivationsForTrain,
-          derivationsPath, derivationsLimit)
+      val examples = loadDataset(filename, derivationsPath, derivationsLimit)
       val linkings = entityLinker.loadDataset(filename, examples)
       val tables = Table.loadDataset(filename, examples)
       
