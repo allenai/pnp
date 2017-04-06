@@ -211,6 +211,9 @@ object WikiTablesUtil {
     // vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
     vocab.add(UNK)
     vocab.add(ENTITY)
+    vocab.add("-1")
+    vocab.add("0")
+    vocab.add("1")
     println(vocab.size + " words")
 
     for (w <- vocab.items().asScala.sorted) {
