@@ -198,7 +198,8 @@ object WikiTablesUtil {
     acc
   }
 
-  def computeVocabulary(trainingDataWithEntities: Seq[RawExample], threshold: Int) = {
+  def computeVocabulary(trainingDataWithEntities: Seq[RawExample],
+      threshold: Int): (IndexedList[String], Array[Double]) = {
     val wordCounts = getTokenCounts(trainingDataWithEntities.map(_.ex))
     val entityCounts = getEntityTokenCounts(trainingDataWithEntities)
     // Vocab consists of all words that appear more than once in
@@ -214,7 +215,7 @@ object WikiTablesUtil {
     for (w <- vocab.items().asScala.sorted) {
       println("  " + w + " " + wordCounts.getCount(w) + " " + entityCounts.getCount(w))
     }
-    vocab
+    (vocab, vocab.items.asScala.map(w => wordCounts.getCount(w) + entityCounts.getCount(w)).toArray)
   }
 
   /** Returns a modified dataset that has CcgExamples, with one logical form per example.
