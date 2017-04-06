@@ -168,12 +168,34 @@ object SemanticParserFeatureGenerator {
   // maxOverlapFractions(Seq(1,2,3,2,5,2,4), Set(1,2,3,4)) =
   //   Seq(0.75, 0.75, 0.75, 0.5, 0.0, 0.5, 0.5)
   def maxOverlapFractions[A](sequence: Seq[A], set: Set[A]): Seq[Float] = {
-    val setSize = set.size
+    val setSize = set.size.max(1)
     var stopIndex = 0
     val res = mutable.Seq.fill(sequence.size)(0f)
     for (startIndex <- sequence.indices) {
       if (stopIndex < startIndex) stopIndex = startIndex
       while (stopIndex < sequence.size && set.contains(sequence(stopIndex)) &&
+        !sequence.slice(startIndex, stopIndex).contains(sequence(stopIndex))) {
+        stopIndex += 1
+      }
+      val score = 1.0f * (stopIndex - startIndex) / setSize
+      for (i <- startIndex until stopIndex) {
+        res(i) = score.max(res(i))
+      }
+    }
+    res
+  }
+
+  def maxOverlapFractionsTwoSets[A, B](
+    sequence: Seq[(A, B)],
+    set1: Set[A], set2: Set[B]
+  ): Seq[Float] = {
+    val setSize = set1.size.max(set2.size).max(1)
+    var stopIndex = 0
+    val res = mutable.Seq.fill(sequence.size)(0f)
+    for (startIndex <- sequence.indices) {
+      if (stopIndex < startIndex) stopIndex = startIndex
+      while (stopIndex < sequence.size &&
+        (set1.contains(sequence(stopIndex)._1) || set2.contains(sequence(stopIndex)._2)) &&
         !sequence.slice(startIndex, stopIndex).contains(sequence(stopIndex))) {
         stopIndex += 1
       }
@@ -193,9 +215,10 @@ object SemanticParserFeatureGenerator {
 
   def entityTokenSpanOverlapLemmaFeatures(ex: WikiTablesExample, entity: Entity,
     span: Option[Span], tokenToId: String => Int, table: Table): Seq[Float] = {
+    val tokenIds = ex.sentence.getWords.asScala.map(tokenToId)
     val tokenLemmas =
       ex.sentence.getAnnotation(WikiTablesUtil.LEMMA_ANNOTATION).asInstanceOf[Seq[String]]
-    maxOverlapFractions(tokenLemmas, entity.nameLemmaSet)
+    maxOverlapFractionsTwoSets(tokenLemmas.zip(tokenIds), entity.nameLemmaSet, entity.nameTokensSet)
   }
 
 }
