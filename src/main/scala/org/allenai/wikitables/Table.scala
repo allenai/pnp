@@ -5,15 +5,15 @@ import java.nio.file.Paths
 
 import scala.collection.JavaConverters._
 import scala.io.Source
-
 import com.google.common.base.Preconditions
-
 import edu.stanford.nlp.sempre.ContextValue
 import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import fig.basic.LispTree
 import spray.json._
 import java.nio.charset.StandardCharsets
+
 import edu.stanford.nlp.sempre.LanguageAnalyzer
+import org.allenai.pnp.semparse.KnowledgeGraph
 
 case class Table(id: String, columns: Array[Column], cells: Array[Array[Cell]]) {
 
@@ -26,6 +26,10 @@ case class Table(id: String, columns: Array[Column], cells: Array[Array[Cell]]) 
 
   def getCell(cellId: String): Option[Cell] = {
     cellIdMap.get(cellId)
+  }
+
+  def toKnowledgeGraph(): KnowledgeGraph = {
+    KnowledgeGraph(cells.flatten.map(cell => (cell.id, cell.columnId)).toList)
   }
 
   /**
@@ -79,9 +83,9 @@ case class Table(id: String, columns: Array[Column], cells: Array[Array[Cell]]) 
 
 case class TableJson(id: String, columns: Array[Column], cells: Array[Array[Cell]])
 case class Column(id: String, originalString: String, tokens: Array[String],
-    pos: Array[String], ner: Array[NerTag], lemmas: Array[String])
+                  pos: Array[String], ner: Array[NerTag], lemmas: Array[String])
 case class Cell(id: String, originalString: String, tokens: Array[String],
-    pos: Array[String], ner: Array[NerTag], lemmas: Array[String])
+    pos: Array[String], ner: Array[NerTag], lemmas: Array[String], columnId: String)
 
 case class NerTag(tag: String, value: Option[String])
 
@@ -104,7 +108,6 @@ object Table {
       val ner = info.nerTags.asScala.zip(nerValues).map(x => 
         NerTag(x._1, x._2)).toArray
       val lemmas = info.lemmaTokens.asScala.toArray
-
       Column(c.relationNameValue.id, c.originalString, tokens, pos, ner, lemmas)
     }
 
@@ -119,8 +122,9 @@ object Table {
         val ner = info.nerTags.asScala.zip(nerValues).map(y => 
           NerTag(y._1, y._2)).toArray
         val lemmas = info.lemmaTokens.asScala.map(x => x.toLowerCase()).toArray
-
-        Cell(x.properties.id, x.properties.originalString, tokens, pos, ner, lemmas)
+        val columnId = c.relationNameValue.id
+        Cell(x.properties.id, x.properties.originalString, tokens, pos, ner, lemmas, columnId)
+        //Cell(x.properties.id, x.properties.originalString, tokens, pos, ner, lemmas)
       }.toArray
     }
     
