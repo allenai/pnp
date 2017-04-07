@@ -58,6 +58,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var hiddenDimOpt: OptionSpec[Integer] = null
   var actionDimOpt: OptionSpec[Integer] = null
   var actionHiddenDimOpt: OptionSpec[Integer] = null
+  var encodeEntitiesWithGraphOpt: OptionSpec[Void] = null
 
   var maxDerivationsOpt: OptionSpec[Integer] = null
   var vocabThreshold: OptionSpec[Integer] = null  
@@ -86,7 +87,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     hiddenDimOpt = parser.accepts("hiddenDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
     actionDimOpt = parser.accepts("actionDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
     actionHiddenDimOpt = parser.accepts("actionHiddenDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
-    
+    encodeEntitiesWithGraphOpt = parser.accepts("encodeEntitiesWithGraph")
+
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
     // A word must appear *strictly more* times than this threshold to be included
     // in the vocabulary.
@@ -192,6 +194,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.actionHiddenDim = options.valueOf(actionHiddenDimOpt)
     config.featureGenerator = Some(featureGenerator)
     config.entityLinkingLearnedSimilarity = true
+    config.encodeEntitiesWithGraph = options.has(encodeEntitiesWithGraphOpt)
     // TODO: turn back on.
     config.encodeWithSoftEntityLinking = false
     config.distinctUnkVectors = true

@@ -6,19 +6,16 @@ import java.nio.file.Paths
 
 import scala.collection.mutable.ListBuffer
 import scala.io.Source
-
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
 import org.allenai.pnp.semparse.SemanticParserUtils
 import org.allenai.pnp.semparse.Span
-
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
-
 import edu.cmu.dynet._
-import edu.stanford.nlp.sempre.Formula
+import edu.stanford.nlp.sempre.{ContextValue, Formula}
 import spray.json.pimpAny
 import spray.json.pimpString
 
@@ -30,8 +27,8 @@ import spray.json.pimpString
 case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
 
   def toEntityLinking(ex: WikiTablesExample, tokenToId: String => Int,
-    featureGenerator: SemanticParserFeatureGenerator, table: Table,
-    typeDeclaration: WikiTablesTypeDeclaration): EntityLinking = {
+                      featureGenerator: SemanticParserFeatureGenerator, table: Table,
+                      typeDeclaration: WikiTablesTypeDeclaration): EntityLinking = {
 
     val builder = ListBuffer[(Entity, Dim, FloatVector)]()
     for (link <- links) {
@@ -65,11 +62,11 @@ case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
         builder += ((entity, dim, featureMatrix))
       }
     }
-    
+
     val entities = builder.map(_._1).toArray
     val features = builder.map(x => (x._2, x._3)).toArray
 
-    new EntityLinking(entities, features)
+    new EntityLinking(entities, features, table.toKnowledgeGraph())
   }
 }
 
