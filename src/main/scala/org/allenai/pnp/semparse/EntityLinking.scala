@@ -2,22 +2,25 @@ package org.allenai.pnp.semparse
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.MultiMap
-
 import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
+
 import scala.collection.mutable.ListBuffer
 import edu.cmu.dynet.FloatVector
 import edu.cmu.dynet.Dim
 import com.google.common.base.Preconditions
 import com.jayantkrish.jklol.util.IndexedList
 
+import scala.collection.mutable
+
 case class EntityLinking(entities: Array[Entity],
-    entityTokenFeatures: Array[(Dim, FloatVector)]) {
+    entityTokenFeatures: Array[(Dim, FloatVector)], graph: KnowledgeGraph = KnowledgeGraph(List())) {
   Preconditions.checkArgument(entities.length == entityTokenFeatures.length)
   
   val entityIndex = IndexedList.create(entities.toList.asJava)
   val entityTypes = entities.map(_.t).toSet
   val entitiesWithType = entityTypes.map(t => (t, entities.filter(_.t.equals(t)).toArray)).toMap
+
   
   def getEntitiesWithType(t: Type): Array[Entity] = {
     entitiesWithType.getOrElse(t, Array())
@@ -32,7 +35,6 @@ case class EntityLinking(entities: Array[Entity],
 case class Entity(val expr: Expression2, val t: Type,
     val template: Template, val names: List[List[Int]],
     val nameLemmas: List[List[String]]) {
-
   val nameTokens = names.flatten.toArray
   val nameTokensSet = names.flatten.toSet
   val nameLemmaSet = nameLemmas.flatten.toSet
@@ -74,5 +76,14 @@ case class Span(val start: Int, val end: Int) {
    */
   def contains(index: Int): Boolean = {
     index >= start && index < end
+  }
+}
+
+case class KnowledgeGraph(val nodePairs: List[(String, String)]) {
+  val nodeSet = nodePairs.flatMap(p => List(p._1, p._2)).toSet
+  val neighbors: Map[String, List[String]] = (nodeSet.map(node => node -> nodePairs.filter(p => p._1 == node).map(_._2)) ++
+                                          nodeSet.map(node => node -> nodePairs.filter(p => p._2 == node).map(_._1))).toMap
+  def getNeighbors(node: String): List[String] = {
+    neighbors.getOrElse(node, List())
   }
 }
