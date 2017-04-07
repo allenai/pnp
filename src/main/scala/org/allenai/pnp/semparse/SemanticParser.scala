@@ -272,7 +272,11 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   }
 
   private def encodeBow(entity: Entity, tokenIdToEmbedding: Int => Expression): Expression = {
-    entity.nameTokens.map(tokenIdToEmbedding).reduce(_ + _) / entity.nameTokens.length
+    if (entity.nameTokens.nonEmpty) {
+      entity.nameTokens.map(tokenIdToEmbedding).reduce(_ + _) / entity.nameTokens.length
+    } else {
+      Expression.zeroes(Dim(config.entityDim))
+    }
   }
   
   private def encodeType(entity: Entity): Expression = {
@@ -313,8 +317,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val typeBias = Expression.parameter(computationGraph.getParameter(ENTITY_TYPE_INPUT_BIAS + entity.t))
     val neighborWeight = Expression.parameter(computationGraph.getParameter(ENTITY_NEIGHBOR_INPUT_PARAM))
     val neighborBias = Expression.parameter(computationGraph.getParameter(ENTITY_NEIGHBOR_INPUT_BIAS))
-    // TODO: Use a non-linearity
-    ((neighborRep * neighborWeight) + neighborBias) + ((typeRep * typeWeight) + typeBias)
+    val neighborProj = Expression.tanh(Expression.affineTransform(neighborBias, neighborWeight, neighborRep))
+    val typeProj = Expression.tanh(Expression.affineTransform(typeBias, typeWeight, typeRep))
+    neighborProj + typeProj
   }
 
   def generateExpression(tokens: Array[Int], entityLinking: EntityLinking): Pnp[Expression2] = {
@@ -798,7 +803,6 @@ object SemanticParser {
         model.addParameter(ENTITY_LINKING_BIAS_PARAM + t,
             Dim(1))
       }
-      
       model.addLookupParameter(ENTITY_TYPE_INPUT_PARAM + t, actionSpace.typeIndex.size,
         Dim(config.entityDim, config.entityDim))
       model.addLookupParameter(ENTITY_TYPE_INPUT_BIAS + t, actionSpace.typeIndex.size,
