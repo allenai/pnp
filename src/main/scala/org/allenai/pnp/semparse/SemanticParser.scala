@@ -177,10 +177,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         x => Expression.concatenate(x._1, x._2)))
 
     (s, sentEmbedding, inputMatrix, outputMatrix)
-  } 
+  }
 
   private def encodeEntities(computationGraph: CompGraph, entityLinking: EntityLinking,
-      tokens: Array[Int], tokenIdToEmbedding: Int => Expression): EntityEncoding = {
+                             tokens: Array[Int], tokenIdToEmbedding: Int => Expression): EntityEncoding = {
 
     val tokenEmbeddings = tokens.map(tokenIdToEmbedding(_))
     
@@ -200,13 +200,18 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       
       (t, entityScoreMatrix)
     }
-    
+    val knowledgeGraphEmbedding = embedKnowledgeGraph(entityLinking.graph, entityLinking.entities,
+                                                      tokenIdToEmbedding)
     val entityEmbeddingMatrices = for {
       t <- entityLinking.entityTypes
     } yield {
       val entities = entityLinking.getEntitiesWithType(t)
       // val entityEmbeddings = entities.map(e => encodeBow(e, tokenIdToEmbedding))
-      val entityEmbeddings = entities.map(e => encodeType(e))
+      val entityEmbeddings = if (config.encodeEntitiesWithGraph) {
+        entities.map(e => encodeEntityWithGraph(e, knowledgeGraphEmbedding, computationGraph))
+      } else {
+        entities.map(e => encodeType(e))
+      }
       val entityEmbeddingMatrix = Expression.concatenateCols(new ExpressionVector(entityEmbeddings))
 
       (t, entityEmbeddingMatrix)
@@ -272,6 +277,37 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val v = new FloatVector(List.fill(config.entityDim)(0.0f))
     v.update(actionSpace.typeIndex.getIndex(entity.t), 1.0f)
     Expression.input(Dim(config.entityDim), v)
+  }
+
+  def embedKnowledgeGraph(graph: KnowledgeGraph, entities: Array[Entity],
+                          tokenIdToEmbeddings: Int => Expression): Map[Entity, Expression] = {
+    val stringEntityMapping: Map[String, Entity] = graph.nodeSet.map(
+      nodeName => nodeName -> entities.filter(e => e.expr.toString.equals(nodeName))(0)).toMap
+    val graphEmbedding = for {
+      nodeString <- graph.nodeSet
+      node <- stringEntityMapping.get(nodeString)
+      nodeNeighborEntities = graph.getNeighbors(nodeString).flatMap(n => stringEntityMapping.get(n))
+      allNeighborReps = nodeNeighborEntities.map(e => encodeBow(e, tokenIdToEmbeddings))
+      // TODO: Do something better for nodeRep
+      neighborRep = allNeighborReps.reduce(_ + _) / allNeighborReps.length
+    } yield {
+      node -> neighborRep
+    }
+    graphEmbedding.toMap
+  }
+
+  private def encodeEntityWithGraph(entity: Entity,
+                                    graphEmbedding: Map[Entity, Expression],
+                                    computationGraph: CompGraph): Expression = {
+    val zeroVector = Expression.zeroes(Dim(config.entityDim))
+    val neighborRep = graphEmbedding.getOrElse(entity, zeroVector)
+    val typeRep = encodeType(entity)
+    val typeWeight = Expression.parameter(computationGraph.getParameter(ENTITY_TYPE_INPUT_PARAM + entity.t))
+    val typeBias = Expression.parameter(computationGraph.getParameter(ENTITY_TYPE_INPUT_BIAS + entity.t))
+    val neighborWeight = Expression.parameter(computationGraph.getParameter(ENTITY_NEIGHBOR_INPUT_PARAM))
+    val neighborBias = Expression.parameter(computationGraph.getParameter(ENTITY_NEIGHBOR_INPUT_BIAS))
+    // TODO: Use a non-linearity
+    ((neighborRep * neighborWeight) + neighborBias) + ((typeRep * typeWeight) + typeBias)
   }
 
   def generateExpression(tokens: Array[Int], entityLinking: EntityLinking): Pnp[Expression2] = {
@@ -677,6 +713,7 @@ class SemanticParserMultiExecutionScore(val scores: Iterable[SemanticParserExecu
 }
 
 class SemanticParserConfig extends Serializable {
+
   var inputDim = 200
   var hiddenDim = 100
   var actionDim = 100
@@ -690,6 +727,7 @@ class SemanticParserConfig extends Serializable {
   
   var entityLinkingLearnedSimilarity = false
   var encodeWithSoftEntityLinking = false
+  var encodeEntitiesWithGraph = false
   var distinctUnkVectors = false
 }
 
@@ -716,7 +754,9 @@ object SemanticParser {
   val ENTITY_LINKING_BIAS_PARAM = "entityLinkingBias:"
   val ENTITY_TYPE_INPUT_PARAM = "entityTypeInput:"
   val ENTITY_TYPE_INPUT_BIAS = "entityTypeBias:"
-  
+  val ENTITY_NEIGHBOR_INPUT_PARAM = "entityTypeInput:"
+  val ENTITY_NEIGHBOR_INPUT_BIAS = "entityTypeBias:"
+
   def create(actionSpace: ActionSpace, vocab: IndexedList[String],
       config: SemanticParserConfig, model: PnpModel): SemanticParser = {
     // XXX: fix this
@@ -734,7 +774,7 @@ object SemanticParser {
 
     // The last entry will be the unknown word.
     model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size + 1, Dim(config.inputDim))
-    
+
     for (t <- actionSpace.getTypes) {
       val actions = actionSpace.getTemplates(t)
       val dim = actions.length + config.maxVars
@@ -755,6 +795,13 @@ object SemanticParser {
       model.addLookupParameter(ENTITY_TYPE_INPUT_PARAM + t, actionSpace.typeIndex.size,
         Dim(config.entityDim, config.entityDim))
       model.addLookupParameter(ENTITY_TYPE_INPUT_BIAS + t, actionSpace.typeIndex.size,
+        Dim(config.entityDim))
+    }
+
+    if (config.encodeEntitiesWithGraph) {
+      model.addLookupParameter(ENTITY_NEIGHBOR_INPUT_PARAM, actionSpace.typeIndex.size,
+        Dim(config.entityDim, config.entityDim))
+      model.addLookupParameter(ENTITY_NEIGHBOR_INPUT_BIAS, actionSpace.typeIndex.size,
         Dim(config.entityDim))
     }
 
