@@ -202,6 +202,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
     val knowledgeGraphEmbedding = embedKnowledgeGraph(entityLinking.graph, entityLinking.entities,
                                                       tokenIdToEmbedding)
+    println("Embedded " + knowledgeGraphEmbedding.size + " entities in knowledge graph")
+    if (knowledgeGraphEmbedding.isEmpty) {
+      println("WARNING: Knowledge graph embedding is empty!")
+    }
     val entityEmbeddingMatrices = for {
       t <- entityLinking.entityTypes
     } yield {
@@ -288,12 +292,15 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       node <- stringEntityMapping.get(nodeString)
       nodeNeighborEntities = graph.getNeighbors(nodeString).flatMap(n => stringEntityMapping.get(n))
       allNeighborReps = nodeNeighborEntities.map(e => encodeBow(e, tokenIdToEmbeddings))
-      // TODO: Do something better for nodeRep
-      neighborRep = allNeighborReps.reduce(_ + _) / allNeighborReps.length
     } yield {
-      node -> neighborRep
+      if (allNeighborReps.nonEmpty) {
+        // TODO: Do something better than simple averaging.
+        Some(node -> allNeighborReps.reduce(_ + _) / allNeighborReps.length)
+      } else {
+        None
+      }
     }
-    graphEmbedding.toMap
+    graphEmbedding.flatten.toMap
   }
 
   private def encodeEntityWithGraph(entity: Entity,
@@ -791,7 +798,7 @@ object SemanticParser {
         model.addParameter(ENTITY_LINKING_BIAS_PARAM + t,
             Dim(1))
       }
-
+      
       model.addLookupParameter(ENTITY_TYPE_INPUT_PARAM + t, actionSpace.typeIndex.size,
         Dim(config.entityDim, config.entityDim))
       model.addLookupParameter(ENTITY_TYPE_INPUT_BIAS + t, actionSpace.typeIndex.size,
