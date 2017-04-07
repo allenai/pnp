@@ -14,7 +14,7 @@ import com.google.common.base.Preconditions
 import scala.util.Try
 
 
-trait LfPreprocessor {
+trait LfPreprocessor extends Serializable {
   def preprocess(lf: Expression2): Expression2
   
   def postprocess(lf: Expression2): Expression2

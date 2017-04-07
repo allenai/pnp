@@ -79,6 +79,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var actionLstmHiddenLayerOpt: OptionSpec[Void] = null
   var concatLstmForDecoderOpt: OptionSpec[Void] = null
   var maxPoolEntityTokenSimilaritiesOpt: OptionSpec[Void] = null
+  var entityLinkingMlpOpt: OptionSpec[Void] = null
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
@@ -118,6 +119,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     actionLstmHiddenLayerOpt = parser.accepts("actionLstmHiddenLayer")
     concatLstmForDecoderOpt = parser.accepts("concatLstmForDecoder")
     maxPoolEntityTokenSimilaritiesOpt = parser.accepts("maxPoolEntityTokenSimilarities")
+    entityLinkingMlpOpt = parser.accepts("entityLinkingMlp")
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
@@ -238,6 +240,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.actionLstmHiddenLayer = options.has(actionLstmHiddenLayerOpt)
     config.concatLstmForDecoder = options.has(concatLstmForDecoderOpt)
     config.maxPoolEntityTokenSimiliarities = options.has(maxPoolEntityTokenSimilaritiesOpt)
+    config.featureMlp = options.has(entityLinkingMlpOpt)
+    config.preprocessor = lfPreprocessor
+    config.typeDeclaration = typeDeclaration
     val parser = SemanticParser.create(actionSpace, vocab, wordEmbeddings, config, model)
 
     if (!options.has(skipActionSpaceValidationOpt)) {

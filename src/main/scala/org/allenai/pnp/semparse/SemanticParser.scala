@@ -25,6 +25,7 @@ import com.jayantkrish.jklol.util.IndexedList
 
 import edu.cmu.dynet._
 import edu.cmu.dynet.Expression._
+import org.allenai.wikitables.LfPreprocessor
 
 /** A parser mapping token sequences to a distribution over
   * logical forms.
@@ -189,10 +190,17 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           ENTITY_LINKING_FEATURIZED_PARAM + t))
       val entityLinkingBiasParam = Expression.parameter(computationGraph.getParameter(
           ENTITY_LINKING_BIAS_PARAM + t))
+      val mlpW1 = Expression.parameter(computationGraph.getParameter(
+          ENTITY_LINKING_FEATURIZED_MLP_W1 + t))
+      val mlpB1 = Expression.parameter(computationGraph.getParameter(
+          ENTITY_LINKING_FEATURIZED_MLP_B1 + t))
+      val mlpW2 = Expression.parameter(computationGraph.getParameter(
+          ENTITY_LINKING_FEATURIZED_MLP_W2 + t))
+          
       val entityScores = entities.map(e => scoreEntityTokensMatch(e,
           tokens, tokenEmbeddings, tokenIdToEmbedding, entityLinking,
-          entityLinkingFeaturizedParam, entityLinkingBiasParam))
-      
+          entityLinkingFeaturizedParam, entityLinkingBiasParam, mlpW1, mlpB1, mlpW2))
+
       val entityScoreMatrix = Expression.concatenateCols(new ExpressionVector(entityScores))
       
       (t, entityScoreMatrix)
@@ -215,7 +223,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   private def scoreEntityTokensMatch(entity: Entity, tokens: Array[Int],
       tokenEmbeddings: Array[Expression], tokenIdToEmbedding: Int => Expression,
       entityLinking: EntityLinking, entityLinkingFeaturizedParam: Expression,
-      entityLinkingFeaturizedBias: Expression): Expression = {
+      entityLinkingFeaturizedBias: Expression, entityLinkingFeaturizedMlpW1: Expression,
+      entityLinkingFeaturizedMlpB1: Expression, entityLinkingFeaturizedMlpW2: Expression): Expression = {
     
     val inVocabNameTokens = entity.nameTokensSet.filter(_ < vocab.size)
     val entityNameEmbeddings = inVocabNameTokens.map(tokenIdToEmbedding(_)).toArray
@@ -241,7 +250,15 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val biasRepeated = Expression.concatenate(new ExpressionVector(
           List.fill(tokenEmbeddings.size)(entityLinkingFeaturizedBias)))
 
-      tokenScoresExpr += (featureMatrix * entityLinkingFeaturizedParam) + biasRepeated
+      if (config.featureMlp) {
+        val layer1Bias = Expression.concatenate(new ExpressionVector(
+          List.fill(tokenEmbeddings.size)(entityLinkingFeaturizedMlpB1)))
+        val hidden = Expression.rectify((featureMatrix * entityLinkingFeaturizedMlpW1) + layer1Bias)
+
+        tokenScoresExpr += (hidden * entityLinkingFeaturizedMlpW2) + biasRepeated
+      } else {
+        tokenScoresExpr += (featureMatrix * entityLinkingFeaturizedParam) + biasRepeated
+      }
     }
 
     tokenScoresExpr
@@ -730,11 +747,18 @@ class SemanticParserConfig extends Serializable {
   var concatLstmForDecoder = false
 
   var featureGenerator: Option[SemanticParserFeatureGenerator] = None
+  var featureMlp = false
+  var featureMlpDim = 50
   
   var entityLinkingLearnedSimilarity = false
   var maxPoolEntityTokenSimiliarities = false  
   var encodeWithSoftEntityLinking = false
   var distinctUnkVectors = false
+  
+  // XXX: I'm not sure if these really belong here, but we want to serialize
+  // them with the parser.
+  var preprocessor: LfPreprocessor = null
+  var typeDeclaration: TypeDeclaration = null
 }
 
 object SemanticParser {
@@ -763,6 +787,10 @@ object SemanticParser {
   
   val ENTITY_LINKING_FEATURIZED_PARAM = "entityLinkingFeaturized:"
   val ENTITY_LINKING_BIAS_PARAM = "entityLinkingBias:"
+  val ENTITY_LINKING_FEATURIZED_MLP_W1 = "entityLinkingFeaturizedMlpW1:"
+  val ENTITY_LINKING_FEATURIZED_MLP_B1 = "entityLinkingFeaturizedMlpB1:"
+  val ENTITY_LINKING_FEATURIZED_MLP_W2 = "entityLinkingFeaturizedMlpW2:"
+  
   val ENTITY_TYPE_INPUT_PARAM = "entityTypeInput:"
   val ENTITY_TYPE_INPUT_BIAS = "entityTypeBias:"
   
@@ -826,8 +854,12 @@ object SemanticParser {
       if (config.featureGenerator.isDefined) {
         model.addParameter(ENTITY_LINKING_FEATURIZED_PARAM + t,
             Dim(config.featureGenerator.get.numFeatures))
-        model.addParameter(ENTITY_LINKING_BIAS_PARAM + t,
-            Dim(1))
+        model.addParameter(ENTITY_LINKING_BIAS_PARAM + t, Dim(1))
+
+        model.addParameter(ENTITY_LINKING_FEATURIZED_MLP_W1 + t,
+            Dim(config.featureGenerator.get.numFeatures, config.featureMlpDim))
+        model.addParameter(ENTITY_LINKING_FEATURIZED_MLP_B1 + t, Dim(1, config.featureMlpDim))
+        model.addParameter(ENTITY_LINKING_FEATURIZED_MLP_W2 + t, Dim(config.featureMlpDim))
       }
 
       model.addLookupParameter(ENTITY_TYPE_INPUT_PARAM + t, actionSpace.typeIndex.size,

@@ -32,7 +32,6 @@ class TestWikiTablesCli extends AbstractCli() {
   var beamSizeOpt: OptionSpec[Integer] = null
   var evaluateDpdOpt: OptionSpec[Void] = null
   var maxDerivationsOpt: OptionSpec[Integer] = null
-  var seq2TreeOpt: OptionSpec[Void] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -42,7 +41,6 @@ class TestWikiTablesCli extends AbstractCli() {
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     evaluateDpdOpt = parser.accepts("evaluateDpd")
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
-    seq2TreeOpt = parser.accepts("seq2Tree")    
   }
 
   override def run(options: OptionSet): Unit = {
@@ -59,19 +57,9 @@ class TestWikiTablesCli extends AbstractCli() {
     val model = PnpModel.load(loader)
     val parser = SemanticParser.load(loader, model)
     val featureGenerator = parser.config.featureGenerator.get
+    val typeDeclaration = parser.config.typeDeclaration
+    val lfPreprocessor = parser.config.preprocessor
     loader.done()
-
-    val typeDeclaration = if (options.has(seq2TreeOpt)) {
-      new Seq2TreeTypeDeclaration()
-    } else {
-      new WikiTablesTypeDeclaration()
-    }
-    
-    val lfPreprocessor = if (options.has(seq2TreeOpt)) {
-      new Seq2TreePreprocessor()
-    } else {
-      new NullLfPreprocessor()
-    }
 
     // Read test data.
     val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
