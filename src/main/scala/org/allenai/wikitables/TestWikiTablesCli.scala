@@ -75,7 +75,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
     // Read test data.
     val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
-        true, options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt),
+        options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt),
         lfPreprocessor)
     println("Read " + testData.size + " test examples")
 

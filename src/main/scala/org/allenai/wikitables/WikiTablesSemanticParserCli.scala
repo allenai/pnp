@@ -32,6 +32,11 @@ import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+import com.jayantkrish.jklol.util.IndexedList
+import scala.util.Random
+import scala.collection.mutable.ListBuffer
+import org.allenai.pnp.LoglikelihoodTrainer
+import org.allenai.pnp.BsoTrainer
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -117,21 +122,24 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   }
 
   def initializeTrainingData(options: OptionSet, typeDeclaration: TypeDeclaration,
-      preprocessor: LfPreprocessor, featureGen: SemanticParserFeatureGenerator,
+      preprocessor: LfPreprocessor,
       wordEmbeddings: Option[Array[(String, FloatVector)]]) = {
     // Read and preprocess data
-    val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     val trainingData = loadDatasets(options.valuesOf(trainingDataOpt).asScala,
-        includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
-        options.valueOf(maxDerivationsOpt), preprocessor)
+        options.valueOf(derivationsPathOpt),
+        options.valueOf(maxDerivationsOpt),
+        preprocessor)
 
-    
     println("Read " + trainingData.size + " training examples")
-    val vocab = if (wordEmbeddings.isDefined) {
+    val (vocab, vocabCounts) = computeVocabulary(trainingData, options.valueOf(vocabThreshold))
+    val parserVocab = if (wordEmbeddings.isDefined) {
       IndexedList.create(wordEmbeddings.get.map(_._1).toVector.asJava)
     } else {
-      computeVocabulary(trainingData, options.valueOf(vocabThreshold))
+      vocab
     }
+
+    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator(
+        options.has(editDistanceOpt), vocab, vocabCounts)
 
     // Eliminate those examples that Sempre did not find correct logical forms for,
     // and preprocess the remaining
@@ -139,7 +147,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
         
     // preprocessExample modifies the `annotations` data structure in example.sentence, adding
     // some things to it.  We don't need a `map`, just a `foreach`.
-    filteredTrainingData.foreach(x => preprocessExample(x, vocab, featureGen,
+    filteredTrainingData.foreach(x => preprocessExample(x, parserVocab, featureGenerator,
         typeDeclaration))
     println("Found correct logical forms for " + filteredTrainingData.size + " training examples")
 
@@ -148,14 +156,14 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       println(example.ex.sentence.getWords)
       println(example.ex.logicalForms)
     }
-    (filteredTrainingData.map(_.ex), vocab)
+    (filteredTrainingData.map(_.ex), parserVocab, featureGenerator)
   }
 
   def initializeDevelopmentData(options: OptionSet, typeDeclaration: TypeDeclaration,
       preprocessor: LfPreprocessor, featureGen: SemanticParserFeatureGenerator,
       vocab: IndexedList[String]): Seq[WikiTablesExample] = {
-    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala, false,
-        null, 0, preprocessor)
+    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala, null, -1, preprocessor)
+
     println("Read " + devData.size + " development examples")
 
     devData.foreach(x => WikiTablesUtil.preprocessExample(x, vocab, featureGen,
@@ -165,9 +173,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "2048"))
-
-    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator(
-        options.has(editDistanceOpt))
  
     val typeDeclaration = if (options.has(seq2TreeOpt)) {
       new Seq2TreeTypeDeclaration()
@@ -192,8 +197,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     // Read training data
-    val (trainingData, vocab) = initializeTrainingData(options, typeDeclaration,
-        lfPreprocessor, featureGenerator, wordEmbeddings)
+    val (trainingData, vocab, featureGenerator) = initializeTrainingData(options, typeDeclaration,
+        lfPreprocessor, wordEmbeddings)
 
     // Read development data (if provided)
     val devData = initializeDevelopmentData(options, typeDeclaration,
