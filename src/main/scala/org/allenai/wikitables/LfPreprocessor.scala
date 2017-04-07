@@ -134,11 +134,9 @@ object Seq2SeqTypeDeclaration {
 
 class Seq2SeqPreprocessor extends LfPreprocessor {
   import Seq2SeqTypeDeclaration._
-  
-  val parser = ExpressionParser.expression2()
 
   override def preprocess(lf: Expression2): Expression2 = {
-    val tokens = parser.tokenize(lf.toString).asScala
+    val tokens = ExpressionParser.expression2().tokenize(lf.toString).asScala
     
     val replacedTokens = tokens.map(t => t match {
       case "(" => "LRB"
@@ -170,7 +168,7 @@ class Seq2SeqPreprocessor extends LfPreprocessor {
       case _ => t
     })
 
-    val expr = Try(parser.parse(replaced.asJava))
+    val expr = Try(ExpressionParser.expression2().parse(replaced.asJava))
     expr.getOrElse(endExpr)
   }
 }
