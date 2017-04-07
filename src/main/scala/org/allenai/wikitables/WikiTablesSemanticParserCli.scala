@@ -77,6 +77,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var actionBiasOpt: OptionSpec[Void] = null
   var reluOpt: OptionSpec[Void] = null
   var actionLstmHiddenLayerOpt: OptionSpec[Void] = null
+  var concatLstmForDecoderOpt: OptionSpec[Void] = null
+  var maxPoolEntityTokenSimilaritiesOpt: OptionSpec[Void] = null
 
   var skipActionSpaceValidationOpt: OptionSpec[Void] = null
   var trainOnAnnotatedLfsOpt: OptionSpec[Void] = null
@@ -114,6 +116,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     actionBiasOpt = parser.accepts("actionBias")
     reluOpt = parser.accepts("relu")
     actionLstmHiddenLayerOpt = parser.accepts("actionLstmHiddenLayer")
+    concatLstmForDecoderOpt = parser.accepts("concatLstmForDecoder")
+    maxPoolEntityTokenSimilaritiesOpt = parser.accepts("maxPoolEntityTokenSimilarities")
 
     skipActionSpaceValidationOpt = parser.accepts("skipActionSpaceValidation")
     trainOnAnnotatedLfsOpt = parser.accepts("trainOnAnnotatedLfs")
@@ -173,7 +177,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   }
 
   override def run(options: OptionSet): Unit = {
-    Initialize.initialize(Map("dynet-mem" -> "2048"))
+    Initialize.initialize(Map("dynet-mem" -> "3096"))
  
     val typeDeclaration = if (options.has(seq2TreeOpt)) {
       new Seq2TreeTypeDeclaration()
@@ -232,6 +236,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.actionBias = options.has(actionBiasOpt)
     config.relu = options.has(reluOpt)
     config.actionLstmHiddenLayer = options.has(actionLstmHiddenLayerOpt)
+    config.concatLstmForDecoder = options.has(concatLstmForDecoderOpt)
+    config.maxPoolEntityTokenSimiliarities = options.has(maxPoolEntityTokenSimilaritiesOpt)
     val parser = SemanticParser.create(actionSpace, vocab, wordEmbeddings, config, model)
 
     if (!options.has(skipActionSpaceValidationOpt)) {

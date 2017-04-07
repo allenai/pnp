@@ -223,9 +223,16 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     var tokenScoresExpr = Expression.zeroes(Dim(tokens.length))
 
     if (config.entityLinkingLearnedSimilarity && entityNameEmbeddings.size >= 1) {
-      val entityEmbedding = entityNameEmbeddings.reduce((x, y) => Expression.sum(x, y))
-      val scores = tokenEmbeddings.map(t => Expression.dotProduct(t, entityEmbedding))
-      tokenScoresExpr = tokenScoresExpr + Expression.concatenate(new ExpressionVector(scores))
+      if (config.maxPoolEntityTokenSimiliarities) {
+        val scores = tokenEmbeddings.map{ t =>
+          entityNameEmbeddings.map(e => Expression.dotProduct(t, e)).reduce((x, y) => Expression.max(x, y))
+        }
+        tokenScoresExpr = tokenScoresExpr + Expression.concatenate(new ExpressionVector(scores))
+      } else {
+        val entityEmbedding = entityNameEmbeddings.reduce((x, y) => Expression.sum(x, y))
+        val scores = tokenEmbeddings.map(t => Expression.dotProduct(t, entityEmbedding))
+        tokenScoresExpr = tokenScoresExpr + Expression.concatenate(new ExpressionVector(scores))
+      }
     }
 
     if (config.featureGenerator.isDefined) {
@@ -725,6 +732,7 @@ class SemanticParserConfig extends Serializable {
   var featureGenerator: Option[SemanticParserFeatureGenerator] = None
   
   var entityLinkingLearnedSimilarity = false
+  var maxPoolEntityTokenSimiliarities = false  
   var encodeWithSoftEntityLinking = false
   var distinctUnkVectors = false
 }
