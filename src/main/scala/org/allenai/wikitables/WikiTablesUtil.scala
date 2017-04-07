@@ -90,10 +90,18 @@ object WikiTablesUtil {
   }
 
   def exampleToJson(example: WikiTablesExample): JValue = {
-    val goldLogicalFormJson = example.goldLogicalForm match {
-      case None => JNothing
-      case Some(lf) => ("gold logical form" -> WikiTablesUtil.toSempreLogicalForm(lf).toString): JValue
+    val goldSempreLf = for {
+      lf <- example.goldLogicalForm
+      sempreLf <- WikiTablesUtil.toSempreLogicalForm(lf)
+    } yield {
+      sempreLf
     }
+    
+    val goldLogicalFormJson = goldSempreLf match {
+      case None => JNothing
+      case Some(lf) => ("gold logical form" -> lf): JValue
+    }
+
     goldLogicalFormJson merge
     ("id" -> example.id) ~
       ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
@@ -103,7 +111,8 @@ object WikiTablesUtil {
       (LEMMA_ANNOTATION -> example.sentence.getAnnotation(LEMMA_ANNOTATION).asInstanceOf[Seq[String]]) ~
       ("table" -> example.tableString) ~
       ("answer" -> example.targetValue.toLispTree.toString) ~
-      ("possible logical forms" -> example.possibleLogicalForms.map(WikiTablesUtil.toSempreLogicalForm).map(_.toString).toList)
+      ("possible logical forms" -> example.possibleLogicalForms.map(
+          WikiTablesUtil.toSempreLogicalForm).filter(_.isDefined).map(_.get).toList)
   }
 
   def exampleFromJson(json: JValue): WikiTablesExample = {

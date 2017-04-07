@@ -162,7 +162,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   def initializeDevelopmentData(options: OptionSet, typeDeclaration: TypeDeclaration,
       preprocessor: LfPreprocessor, featureGen: SemanticParserFeatureGenerator,
       vocab: IndexedList[String]): Seq[WikiTablesExample] = {
-    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala, null, -1, preprocessor)
+    val devData = loadDatasets(options.valuesOf(devDataOpt).asScala,
+        options.valueOf(derivationsPathOpt), -1, preprocessor)
 
     println("Read " + devData.size + " development examples")
 
@@ -232,16 +233,6 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.relu = options.has(reluOpt)
     config.actionLstmHiddenLayer = options.has(actionLstmHiddenLayerOpt)
     val parser = SemanticParser.create(actionSpace, vocab, wordEmbeddings, config, model)
-    
-    ComputationGraph.renew()
-    val wordZero = Expression.lookup(model.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM), 0)
-    val floatVectorZero = ComputationGraph.incrementalForward(wordZero).toSeq()
-    val wordOne = Expression.lookup(model.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM), 1)
-    val floatVectorOne = ComputationGraph.incrementalForward(wordOne).toSeq()
-    println(wordEmbeddings.get(0))
-    println(floatVectorZero)
-    println(wordEmbeddings.get(1))
-    println(floatVectorOne)
 
     if (!options.has(skipActionSpaceValidationOpt)) {
       val trainSeparatedLfs = getCcgDataset(trainingData)
