@@ -1,6 +1,7 @@
 package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
+import scala.io.Source
 
 import org.allenai.pnp.BsoTrainer
 import org.allenai.pnp.Env
@@ -12,10 +13,10 @@ import org.allenai.pnp.semparse.ActionSpace
 import org.allenai.pnp.semparse.ApplicationTemplate
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.EntityLinking
-import org.allenai.pnp.semparse.LambdaTemplate
 import org.allenai.pnp.semparse.SemanticParser
 import org.allenai.pnp.semparse.SemanticParserConfig
 import org.allenai.pnp.semparse.SemanticParserUtils
+import org.allenai.pnp.semparse.Template
 
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda.Type
@@ -23,6 +24,7 @@ import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
+import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 import com.jayantkrish.jklol.cli.AbstractCli
 import com.jayantkrish.jklol.util.IndexedList
 
@@ -30,9 +32,6 @@ import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
-import org.allenai.pnp.semparse.Template
-import org.allenai.pnp.semparse.DropTemplate
-import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -53,6 +52,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var modelOutputOpt: OptionSpec[String] = null
   // Directory for intermediate models produced during training.
   var modelOutputDirOpt: OptionSpec[String] = null
+  // Word embeddings to initialize the model's parameters.
+  var wordEmbeddingsOpt: OptionSpec[String] = null
   
   // Semantic parser configuration
   var inputDimOpt: OptionSpec[Integer] = null
@@ -88,6 +89,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     modelOutputOpt = parser.accepts("modelOut").withRequiredArg().ofType(classOf[String]).required()
     modelOutputDirOpt = parser.accepts("modelDir").withRequiredArg().ofType(classOf[String])
+    wordEmbeddingsOpt = parser.accepts("wordEmbeddings").withRequiredArg().ofType(classOf[String])
     
     inputDimOpt = parser.accepts("inputDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(200)
     hiddenDimOpt = parser.accepts("hiddenDim").withRequiredArg().ofType(classOf[Integer]).defaultsTo(100)
@@ -115,15 +117,21 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   }
 
   def initializeTrainingData(options: OptionSet, typeDeclaration: TypeDeclaration,
-      preprocessor: LfPreprocessor, featureGen: SemanticParserFeatureGenerator) = {
+      preprocessor: LfPreprocessor, featureGen: SemanticParserFeatureGenerator,
+      wordEmbeddings: Option[Array[(String, FloatVector)]]) = {
     // Read and preprocess data
     val includeDerivationsForTrain = !options.has(trainOnAnnotatedLfsOpt)
     val trainingData = loadDatasets(options.valuesOf(trainingDataOpt).asScala,
         includeDerivationsForTrain, options.valueOf(derivationsPathOpt),
         options.valueOf(maxDerivationsOpt), preprocessor)
 
+    
     println("Read " + trainingData.size + " training examples")
-    val vocab = computeVocabulary(trainingData, options.valueOf(vocabThreshold))
+    val vocab = if (wordEmbeddings.isDefined) {
+      IndexedList.create(wordEmbeddings.get.map(_._1).toVector.asJava)
+    } else {
+      computeVocabulary(trainingData, options.valueOf(vocabThreshold))
+    }
 
     // Eliminate those examples that Sempre did not find correct logical forms for,
     // and preprocess the remaining
@@ -176,10 +184,16 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     } else {
       new NullLfPreprocessor()
     }
+    
+    val wordEmbeddings = if (options.has(wordEmbeddingsOpt)) {
+      Some(readWordEmbeddings(options.valueOf(wordEmbeddingsOpt)))
+    } else {
+      None
+    }
 
     // Read training data
     val (trainingData, vocab) = initializeTrainingData(options, typeDeclaration,
-        lfPreprocessor, featureGenerator)
+        lfPreprocessor, featureGenerator, wordEmbeddings)
 
     // Read development data (if provided)
     val devData = initializeDevelopmentData(options, typeDeclaration,
@@ -212,7 +226,17 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.actionBias = options.has(actionBiasOpt)
     config.relu = options.has(reluOpt)
     config.actionLstmHiddenLayer = options.has(actionLstmHiddenLayerOpt)
-    val parser = SemanticParser.create(actionSpace, vocab, config, model)
+    val parser = SemanticParser.create(actionSpace, vocab, wordEmbeddings, config, model)
+    
+    ComputationGraph.renew()
+    val wordZero = Expression.lookup(model.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM), 0)
+    val floatVectorZero = ComputationGraph.incrementalForward(wordZero).toSeq()
+    val wordOne = Expression.lookup(model.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM), 1)
+    val floatVectorOne = ComputationGraph.incrementalForward(wordOne).toSeq()
+    println(wordEmbeddings.get(0))
+    println(floatVectorZero)
+    println(wordEmbeddings.get(1))
+    println(floatVectorOne)
 
     if (!options.has(skipActionSpaceValidationOpt)) {
       val trainSeparatedLfs = getCcgDataset(trainingData)
@@ -370,6 +394,17 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     actionSpace
+  }
+
+  def readWordEmbeddings(filename: String): Array[(String, FloatVector)] = {
+    val embeddingIter = Source.fromFile(filename).getLines().map { s => 
+      val parts = s.split(" ")
+      val token = parts(0)
+      val floatVector = new FloatVector(parts.drop(1).map(x => x.toFloat))
+      (token, floatVector)
+    }
+
+    embeddingIter.toArray
   }
 }
 

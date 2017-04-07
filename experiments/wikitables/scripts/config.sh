@@ -11,9 +11,11 @@ TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.exampl
 # DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_1000.examples"
 DEV="data/WikiTableQuestions/data/random-split-1-dev.examples"
 DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
+# WORD_EMBEDDINGS="data/wikitables/glove.6B.200d.txt"
 
-EXPERIMENT_NAME="speed_04"
+EXPERIMENT_NAME="speed_06"
 EXPERIMENT_DIR="experiments/wikitables/output/$EXPERIMENT_NAME/"
+
 
 EPOCHS=20
 MAX_TRAINING_DERIVATIONS=1

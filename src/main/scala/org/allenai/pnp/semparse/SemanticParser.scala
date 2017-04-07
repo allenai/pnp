@@ -220,24 +220,27 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     val inVocabNameTokens = entity.nameTokensSet.filter(_ < vocab.size)
     val entityNameEmbeddings = inVocabNameTokens.map(tokenIdToEmbedding(_)).toArray
     
-    val tokenScores = tokens.zipWithIndex.map(t =>
-      scoreEntityTokenMatch(entity, t._1,
-          tokenEmbeddings(t._2), t._2, entityNameEmbeddings,
-          entityLinkingFeaturizedParam))
+    var tokenScoresExpr = Expression.zeroes(Dim(tokens.length))
 
-    var tokenScoresExpr = Expression.concatenate(new ExpressionVector(tokenScores))
+    if (config.entityLinkingLearnedSimilarity && entityNameEmbeddings.size >= 1) {
+      val entityEmbedding = entityNameEmbeddings.reduce((x, y) => Expression.sum(x, y))
+      val scores = tokenEmbeddings.map(t => Expression.dotProduct(t, entityEmbedding))
+      tokenScoresExpr = tokenScoresExpr + Expression.concatenate(new ExpressionVector(scores))
+    }
+
     if (config.featureGenerator.isDefined) {
       val (dim, floatVector) = entityLinking.getTokenFeatures(entity)
       val featureMatrix = Expression.input(dim, floatVector)
       val biasRepeated = Expression.concatenate(new ExpressionVector(
-          List.fill(tokenScores.size)(entityLinkingFeaturizedBias)))
-      
+          List.fill(tokenEmbeddings.size)(entityLinkingFeaturizedBias)))
+
       tokenScoresExpr += (featureMatrix * entityLinkingFeaturizedParam) + biasRepeated
     }
 
     tokenScoresExpr
   }
 
+  /*
   private def scoreEntityTokenMatch(entity: Entity, tokenId: Int,
       tokenEmbedding: Expression, tokenIndex: Int, entityNameEmbeddings: Array[Expression],
       entityLinkingFeaturizedParam: Expression): Expression = {
@@ -255,9 +258,9 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         }
       }
     }
-
     score
   }
+  */
 
   private def encodeBow(entity: Entity, tokenIdToEmbedding: Int => Expression): Expression = {
     entity.nameTokens.map(tokenIdToEmbedding).reduce(_ + _) / entity.nameTokens.length
@@ -756,6 +759,7 @@ object SemanticParser {
   val ENTITY_TYPE_INPUT_BIAS = "entityTypeBias:"
   
   def create(actionSpace: ActionSpace, vocab: IndexedList[String],
+      wordEmbeddings: Option[Array[(String, FloatVector)]], 
       config: SemanticParserConfig, model: PnpModel): SemanticParser = {
     // XXX: fix this
     config.entityDim = actionSpace.typeIndex.size()
@@ -780,7 +784,25 @@ object SemanticParser {
     model.addParameter(ACTION_LSTM_INPUT_BIAS, Dim(actionLstmInputDim))
 
     // The last entry will be the unknown word.
-    model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size + 1, Dim(config.inputDim))
+    if (wordEmbeddings.isDefined) {
+      val embeddings = wordEmbeddings.get
+      val embeddingDim = embeddings(0)._2.length
+      val initializerSize = embeddings.length * embeddingDim
+
+      // values are stored in column-major format
+      val initializer = new FloatVector(initializerSize)
+      for (i <- 0 until embeddings.length) {
+        for (j <- 0 until embeddingDim) {
+          val idx = i * embeddingDim + j
+          initializer.update(idx, embeddings(i)._2(j))
+        }
+      }
+
+      val parameterInit = ParameterInit.fromVector(initializer)
+      model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size + 1, Dim(config.inputDim), parameterInit)
+    } else {
+      model.addLookupParameter(WORD_EMBEDDINGS_PARAM, vocab.size + 1, Dim(config.inputDim))
+    }
     
     for (t <- actionSpace.getTypes) {
       val actions = actionSpace.getTemplates(t)
