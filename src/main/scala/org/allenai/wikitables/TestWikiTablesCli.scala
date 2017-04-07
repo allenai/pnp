@@ -1,6 +1,7 @@
 package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.{Map => MutableMap}
 
 import org.allenai.pnp.Env
 import org.allenai.pnp.PnpInferenceContext
@@ -22,13 +23,25 @@ import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
 import scala.collection.mutable.ListBuffer
+import edu.stanford.nlp.sempre.Value
+import java.nio.file.Paths
+import java.nio.file.Files
+import java.nio.charset.StandardCharsets
+import edu.stanford.nlp.sempre.ListValue
+import edu.stanford.nlp.sempre.NameValue
+import edu.stanford.nlp.sempre.NumberValue
+import edu.stanford.nlp.sempre.DateValue
 
 class TestWikiTablesCli extends AbstractCli() {
+  
+  import TestWikiTablesCli._
 
   var testDataOpt: OptionSpec[String] = null
   var derivationsPathOpt: OptionSpec[String] = null
   var modelOpt: OptionSpec[String] = null
 
+  var tsvOutputOpt: OptionSpec[String] = null
+  
   var beamSizeOpt: OptionSpec[Integer] = null
   var evaluateDpdOpt: OptionSpec[Void] = null
   var maxDerivationsOpt: OptionSpec[Integer] = null
@@ -37,6 +50,8 @@ class TestWikiTablesCli extends AbstractCli() {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
+    
+    tsvOutputOpt = parser.accepts("tsvOutput").withRequiredArg().ofType(classOf[String])
 
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     evaluateDpdOpt = parser.accepts("evaluateDpd")
@@ -60,7 +75,7 @@ class TestWikiTablesCli extends AbstractCli() {
     val typeDeclaration = parser.config.typeDeclaration
     val lfPreprocessor = parser.config.preprocessor
     loader.done()
-
+    
     // Read test data.
     val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
         options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt),
@@ -76,13 +91,29 @@ class TestWikiTablesCli extends AbstractCli() {
     SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
     */
 
-    val testResults = TestWikiTablesCli.test(testData.map(_.ex),
+    val (testResults, denotations) = TestWikiTablesCli.test(testData.map(_.ex),
         parser, options.valueOf(beamSizeOpt), options.has(evaluateDpdOpt),
         true, typeDeclaration, comparator, lfPreprocessor, println)
     println("*** Evaluation results ***")
     println(testResults)
+    
+    if (options.has(tsvOutputOpt)) {
+      val filename = options.valueOf(tsvOutputOpt)
+      val tsvStrings = denotations.map { d =>
+        if (d._2.isDefined) {
+          d._1 + "\t" + valueToStrings(d._2.get).map(tsvEscape).mkString("\t")
+        } else {
+          // No predicted denotation for this example
+          d._1
+        }
+      }
+
+      Files.write(Paths.get(filename), tsvStrings.mkString("\n").getBytes(StandardCharsets.UTF_8))
+    }
   }
 }
+
+class ParserPredictionFunction
 
 object TestWikiTablesCli {
 
@@ -96,11 +127,12 @@ object TestWikiTablesCli {
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser, beamSize: Int,
       evaluateDpd: Boolean, evaluateOracle: Boolean, typeDeclaration: TypeDeclaration,
       comparator: ExpressionComparator, preprocessor: LfPreprocessor,
-      print: Any => Unit): SemanticParserLoss = {
+      print: Any => Unit): (SemanticParserLoss, Map[String, Option[Value]]) = {
 
     print("")
     var numCorrect = 0
     var numCorrectAt10 = 0
+    val exampleDenotations = MutableMap[String, Option[Value]]()
     for (e <- examples) {
       val sent = e.sentence
       print("example id: " + e.id +  " " + e.tableString)
@@ -116,30 +148,40 @@ object TestWikiTablesCli {
       val results = dist.beamSearch(beamSize, 75, Env.init, context)
 
       val beam = results.executions.slice(0, 10)
-      val correct = beam.map { x =>
+      val correctAndValue = beam.map { x =>
         val expression = x.value.decodeExpression
-
+        val value = e.executeFormula(preprocessor.postprocess(expression))
+        
         val isCorrect = if (evaluateDpd) {
           // Evaluate the logical forms using the output of dynamic programming on denotations.
           e.logicalForms.size > 0 && e.logicalForms.map(x => comparator.equals(x, expression)).reduce(_ || _)
         } else {
           // Evaluate the logical form by executing it.
-          e.isFormulaCorrect(preprocessor.postprocess(expression))
+          if (value.isDefined) {
+            e.isValueCorrect(value.get)
+          } else {
+            false
+          }
         }
         
         if (isCorrect) {
-          print("* " + x.logProb.formatted("%02.3f") + "  " + expression)
+          print("* " + x.logProb.formatted("%02.3f") + "  " + expression + " -> " + value)
           true
         } else {
-          print("  " + x.logProb.formatted("%02.3f") + "  " + expression)
+          print("  " + x.logProb.formatted("%02.3f") + "  " + expression + " -> " + value)
           false
         }
+        
+        (isCorrect, value)
       }
-
-      if (correct.length > 0 && correct(0)) {
-        numCorrect += 1
+      
+      if (correctAndValue.length > 0) {
+        if (correctAndValue(0)._1) {
+          numCorrect += 1
+        }
+        exampleDenotations(e.id) = correctAndValue(0)._2
       }
-      if (correct.fold(false)(_ || _)) {
+      if (correctAndValue.foldRight(false)((x, y) => x._1 || y)) {
         numCorrectAt10 += 1
       }
 
@@ -168,7 +210,7 @@ object TestWikiTablesCli {
     }
 
     val loss = SemanticParserLoss(numCorrect, numCorrectAt10, examples.length)
-    loss
+    (loss, exampleDenotations.toMap)
   }
 
   def printAttentions(state: SemanticParserState, tokens: Array[String],
@@ -210,5 +252,48 @@ object TestWikiTablesCli {
         }
       }
     }
+  }
+  
+  def valueToStrings(value: Value): List[String] = {
+    if (value.isInstanceOf[ListValue]) {
+      val values = for {
+        elt <- value.asInstanceOf[ListValue].values.asScala
+        eltValue <- valueToString(elt)
+      } yield {
+        eltValue
+      }
+      values.toList
+    } else {
+      valueToString(value).toList
+    }
+  }
+  
+  def valueToString(value: Value): Option[String] = {
+    if (value.isInstanceOf[NameValue]) {
+      Some(value.asInstanceOf[NameValue].description)
+    } else if (value.isInstanceOf[NumberValue]) {
+      Some(value.asInstanceOf[NumberValue].value.toString)
+    } else if (value.isInstanceOf[DateValue]) {
+      val d = value.asInstanceOf[DateValue]
+      
+      Some(datePartToString(d.year) + "-" + datePartToString(d.month) + "-" + datePartToString(d.day))
+    } else {
+      None
+    }
+  }
+  
+  def datePartToString(d: Int): String = {
+    if (d == -1) {
+      "xx"
+    } else {
+      d.toString
+    }
+  }
+  
+  // This is the inverse of the "unescape" function in the official
+  // evaluation script.
+  def tsvEscape(s: String): String = {
+    s.replaceAllLiterally("\\", "\\\\").replaceAllLiterally("\n", "\\n")
+      .replaceAllLiterally("|", "\\p")
   }
 }

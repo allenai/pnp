@@ -216,20 +216,33 @@ public class WikiTablesDataProcessor {
 
   public static boolean isFormulaCorrect(Formula formula, ContextValue context, Value targetValue,
                                          Builder builder) {
+    Value predictedValue = executeFormula(formula, context, builder);
+    return isValueCorrect(predictedValue, targetValue, builder);
+  }
+
+  public static Value executeFormula(Formula formula, ContextValue context, Builder builder) {
     if (builder == null) {
       builder = SEMPRE_BUILDER;
     }
-
-    Value pred = builder.executor.execute(formula, context).value;
-    if (pred instanceof ListValue)
+    
+    Value pred = SEMPRE_BUILDER.executor.execute(formula, context).value;
+    if (pred instanceof ListValue) {
       pred = ((TableKnowledgeGraph) context.graph).getListValueWithOriginalStrings((ListValue) pred);
+    }
+    return pred;
+  }
+  
+  public static boolean isValueCorrect(Value predicted, Value target, Builder builder) {
+    if (builder == null) {
+      builder = SEMPRE_BUILDER;
+    }
     
     TableValuePreprocessor targetPreprocessor = new TableValuePreprocessor();
-    targetValue = targetPreprocessor.preprocess(targetValue);
+    target = targetPreprocessor.preprocess(target);
     // Print the predicted and target values.
     // System.out.println(pred + " " + targetValue);
 
-    double result = builder.valueEvaluator.getCompatibility(targetValue, pred);
+    double result = builder.valueEvaluator.getCompatibility(target, predicted);
     return result == 1;
   }
 }

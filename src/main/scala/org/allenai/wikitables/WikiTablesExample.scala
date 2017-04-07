@@ -37,6 +37,37 @@ case class WikiTablesExample(
     val lispTree = LispTree.proto.parseFromString(tableString)
     new ContextValue(LispTree.proto.parseFromString(tableString))
   }
+  
+  def executeFormula(pnpFormula: Expression2): Option[Value] = {
+    // Sempre represents lambda expressions differently. We changed them when reading the examples. Changing
+    // them back for execution.
+    val expressionStringOpt = WikiTablesUtil.toSempreLogicalForm(pnpFormula);
+    if (!expressionStringOpt.isDefined) {
+      System.err.println("Ill-formed formula: " + pnpFormula);
+      None;
+    } else {
+      try {
+        val sempreFormula = Formula.fromString(expressionStringOpt.get);
+        Some(WikiTablesDataProcessor.executeFormula(sempreFormula, getContext(), null))
+      } catch {
+        case e: Exception => {
+          System.err.println("Bad formula: " + expressionStringOpt.get);
+          None
+        }
+      }
+    }
+  }
+  
+  def isValueCorrect(predicted: Value): Boolean = {
+    try {
+      WikiTablesDataProcessor.isValueCorrect(predicted, targetValue, null);
+    } catch {
+      case e: Exception => {
+        System.err.println("Bad value: " + predicted);
+        false;
+      }
+    }
+  }
 
   def isFormulaCorrect(pnpFormula: Expression2): Boolean = {
     // Sempre represents lambda expressions differently. We changed them when reading the examples. Changing

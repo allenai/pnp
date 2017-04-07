@@ -262,12 +262,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     train(trainingData, devData, parser, typeDeclaration, simplifier, lfPreprocessor,
         options.valueOf(epochsOpt), options.valueOf(beamSizeOpt), options.valueOf(devBeamSizeOpt),
-        options.valueOf(dropoutOpt), options.has(lasoOpt), modelOutputDir)
-
-    val saver = new ModelSaver(options.valueOf(modelOutputOpt))
-    model.save(saver)
-    parser.save(saver)
-    saver.done()
+        options.valueOf(dropoutOpt), options.has(lasoOpt), modelOutputDir,
+        Some(options.valueOf(modelOutputOpt)))
   }
 
   /** Train the parser by maximizing the likelihood of examples.
@@ -277,7 +273,8 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       parser: SemanticParser, typeDeclaration: TypeDeclaration,
       simplifier: ExpressionSimplifier, preprocessor: LfPreprocessor,
       epochs: Int, beamSize: Int, devBeamSize: Int,
-      dropout: Double, laso: Boolean, modelDir: Option[String]): Unit = {
+      dropout: Double, laso: Boolean, modelDir: Option[String],
+      bestModelOutput: Option[String]): Unit = {
 
     parser.dropoutProb = dropout
     val pnpExamples = for {
@@ -323,8 +320,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     // Train model
     val model = parser.model
     val sgd = new SimpleSGDTrainer(model.model, 0.1f, 0.01f)
-    val logFunction = new SemanticParserLogFunction(modelDir, parser, trainErrorExamples,
-        devExamples, devBeamSize, 2, typeDeclaration, new SimplificationComparator(simplifier),
+    val logFunction = new SemanticParserLogFunction(modelDir, bestModelOutput,
+        parser, trainErrorExamples, devExamples, devBeamSize, 2,
+        typeDeclaration, new SimplificationComparator(simplifier),
         preprocessor)
     
     if (laso) {
