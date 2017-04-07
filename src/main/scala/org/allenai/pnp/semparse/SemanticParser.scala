@@ -202,7 +202,6 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
     val knowledgeGraphEmbedding = embedKnowledgeGraph(entityLinking.graph, entityLinking.entities,
                                                       tokenIdToEmbedding)
-    println("Embedded " + knowledgeGraphEmbedding.size + " entities in knowledge graph")
     if (knowledgeGraphEmbedding.isEmpty) {
       println("WARNING: Knowledge graph embedding is empty!")
     }
@@ -275,7 +274,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     if (entity.nameTokens.nonEmpty) {
       entity.nameTokens.map(tokenIdToEmbedding).reduce(_ + _) / entity.nameTokens.length
     } else {
-      Expression.zeroes(Dim(config.entityDim))
+      Expression.zeroes(Dim(config.inputDim))
     }
   }
   
@@ -310,7 +309,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   private def encodeEntityWithGraph(entity: Entity,
                                     graphEmbedding: Map[Entity, Expression],
                                     computationGraph: CompGraph): Expression = {
-    val zeroVector = Expression.zeroes(Dim(config.entityDim))
+    val zeroVector = Expression.zeroes(Dim(config.inputDim))
     val neighborRep = graphEmbedding.getOrElse(entity, zeroVector)
     val typeRep = encodeType(entity)
     val typeWeight = Expression.parameter(computationGraph.getParameter(ENTITY_TYPE_INPUT_PARAM + entity.t))
@@ -803,17 +802,13 @@ object SemanticParser {
         model.addParameter(ENTITY_LINKING_BIAS_PARAM + t,
             Dim(1))
       }
-      model.addLookupParameter(ENTITY_TYPE_INPUT_PARAM + t, actionSpace.typeIndex.size,
-        Dim(config.entityDim, config.entityDim))
-      model.addLookupParameter(ENTITY_TYPE_INPUT_BIAS + t, actionSpace.typeIndex.size,
-        Dim(config.entityDim))
+      model.addParameter(ENTITY_TYPE_INPUT_PARAM + t, Dim(config.entityDim, config.entityDim))
+      model.addParameter(ENTITY_TYPE_INPUT_BIAS + t, Dim(config.entityDim))
     }
 
     if (config.encodeEntitiesWithGraph) {
-      model.addLookupParameter(ENTITY_NEIGHBOR_INPUT_PARAM, actionSpace.typeIndex.size,
-        Dim(config.entityDim, config.entityDim))
-      model.addLookupParameter(ENTITY_NEIGHBOR_INPUT_BIAS, actionSpace.typeIndex.size,
-        Dim(config.entityDim))
+      model.addParameter(ENTITY_NEIGHBOR_INPUT_PARAM, Dim(config.entityDim, config.inputDim))
+      model.addParameter(ENTITY_NEIGHBOR_INPUT_BIAS, Dim(config.entityDim))
     }
 
     // Forward and backward RNNs for encoding the input token sequence
