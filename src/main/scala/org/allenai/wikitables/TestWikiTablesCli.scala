@@ -48,7 +48,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
-    derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
+    derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String]).required()
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
     
     tsvOutputOpt = parser.accepts("tsvOutput").withRequiredArg().ofType(classOf[String])
@@ -100,12 +100,7 @@ class TestWikiTablesCli extends AbstractCli() {
     if (options.has(tsvOutputOpt)) {
       val filename = options.valueOf(tsvOutputOpt)
       val tsvStrings = denotations.map { d =>
-        if (d._2.isDefined) {
-          d._1 + "\t" + valueToStrings(d._2.get).map(tsvEscape).mkString("\t")
-        } else {
-          // No predicted denotation for this example
-          d._1
-        }
+        d._1 + "\t" + getAnswerTsvParts(d._2).mkString("\t")
       }
 
       Files.write(Paths.get(filename), tsvStrings.mkString("\n").getBytes(StandardCharsets.UTF_8))
@@ -127,12 +122,12 @@ object TestWikiTablesCli {
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser, beamSize: Int,
       evaluateDpd: Boolean, evaluateOracle: Boolean, typeDeclaration: TypeDeclaration,
       comparator: ExpressionComparator, preprocessor: LfPreprocessor,
-      print: Any => Unit): (SemanticParserLoss, Map[String, Option[Value]]) = {
+      print: Any => Unit): (SemanticParserLoss, Map[String, List[Value]]) = {
 
     print("")
     var numCorrect = 0
     var numCorrectAt10 = 0
-    val exampleDenotations = MutableMap[String, Option[Value]]()
+    val exampleDenotations = MutableMap[String, List[Value]]()
     for (e <- examples) {
       val sent = e.sentence
       print("example id: " + e.id +  " " + e.tableString)
@@ -175,15 +170,21 @@ object TestWikiTablesCli {
         (isCorrect, value)
       }
       
+      var exampleCorrect = false  
       if (correctAndValue.length > 0) {
         if (correctAndValue(0)._1) {
           numCorrect += 1
+          exampleCorrect = true
         }
-        exampleDenotations(e.id) = correctAndValue(0)._2
       }
       if (correctAndValue.foldRight(false)((x, y) => x._1 || y)) {
         numCorrectAt10 += 1
       }
+
+      // Store all defined values sorted in probability order
+      exampleDenotations(e.id) = correctAndValue.flatMap(x => x._2.toList).toList
+      
+      print("id: " + e.id + " " + exampleCorrect)
 
       // Re-parse with a label oracle to find the highest-scoring correct parses.
       if (evaluateOracle) {
@@ -254,11 +255,20 @@ object TestWikiTablesCli {
     }
   }
   
+  def getAnswerTsvParts(values: List[Value]): List[String] = {
+    // Don't return the empty string, because it's always wrong.
+    // Empty string can come from null values or
+    val valueStringLists = values.map(v => valueToStrings(v).map(tsvEscape).filter(_.length > 0))
+    val nonEmptyLists = valueStringLists.filter(_.size > 0)
+    nonEmptyLists.headOption.getOrElse(List())
+  }
+
   def valueToStrings(value: Value): List[String] = {
     if (value.isInstanceOf[ListValue]) {
       val values = for {
         elt <- value.asInstanceOf[ListValue].values.asScala
         eltValue <- valueToString(elt)
+        if eltValue != null
       } yield {
         eltValue
       }
@@ -290,10 +300,15 @@ object TestWikiTablesCli {
     }
   }
   
-  // This is the inverse of the "unescape" function in the official
-  // evaluation script.
+  // This makes strings printable in tsv format while also retaining correctness
+  // of evaluate.py.
   def tsvEscape(s: String): String = {
-    s.replaceAllLiterally("\\", "\\\\").replaceAllLiterally("\n", "\\n")
-      .replaceAllLiterally("|", "\\p")
+    val newlineCount = s.count(c => c == '\n')
+    val newlineFixed = if (newlineCount > 2) {
+      s.split('\n')(0)
+    } else {
+      s.replaceAllLiterally("\n", " ")
+    }
+    newlineFixed.trim()
   }
 }

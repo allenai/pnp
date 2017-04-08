@@ -206,9 +206,11 @@ public class WikiTablesDataProcessor {
     }
     
     Value pred = SEMPRE_BUILDER.executor.execute(formula, context).value;
+    /*
     if (pred instanceof ListValue) {
       pred = ((TableKnowledgeGraph) context.graph).getListValueWithOriginalStrings((ListValue) pred);
     }
+    */
     return pred;
   }
   
