@@ -59,7 +59,7 @@ class TestWikiTablesCli extends AbstractCli() {
   }
 
   override def run(options: OptionSet): Unit = {
-    Initialize.initialize(Map("dynet-mem" -> "2048"))
+    Initialize.initialize(Map("dynet-mem" -> "4096"))
 
     // Initialize expression processing for Wikitables logical forms.
     val simplifier = ExpressionSimplifier.lambdaCalculus()
