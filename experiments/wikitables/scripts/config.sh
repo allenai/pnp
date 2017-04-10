@@ -16,11 +16,12 @@ DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
 DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
 # WORD_EMBEDDINGS="data/wikitables/glove.6B.200d.txt"
 
-EXPERIMENT_NAME="fold$FOLD"
-EXPERIMENT_DIR="experiments/wikitables/output/dev_folds_edit_kg/$EXPERIMENT_NAME/"
+EXPERIMENT_NAME="backup_fold$FOLD"
+# 040917/dev_folds_edit_kg
+EXPERIMENT_DIR="experiments/wikitables/output/final_dpd_1/$EXPERIMENT_NAME/"
 
-EPOCHS=40
-MAX_TRAINING_DERIVATIONS=100
+EPOCHS=20
+MAX_TRAINING_DERIVATIONS=1
 MAX_TEST_DERIVATIONS=10
 BEAM_SIZE=5
 TEST_BEAM_SIZE=10

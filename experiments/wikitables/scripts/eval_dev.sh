@@ -1,7 +1,7 @@
 #!/bin/bash -e
 # Usage: MY_DIR=<experiment_dir> ./experiments/wikitables/scripts/eval_dev.sh
 
-source "experiments/wikitables/scripts/config.sh"
+# source "experiments/wikitables/scripts/config.sh"
 
 MODEL_DIR=$MY_DIR/models/
 MY_MODEL=$MY_DIR/parser_final.ser
