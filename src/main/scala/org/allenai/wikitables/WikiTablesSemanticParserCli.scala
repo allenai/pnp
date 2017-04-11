@@ -75,6 +75,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
   var devBeamSizeOpt: OptionSpec[Integer] = null
   var lasoOpt: OptionSpec[Void] = null
   var editDistanceOpt: OptionSpec[Void] = null
+  var tokenFeaturesOnlyOpt: OptionSpec[Void] = null
+  var noFeaturesOpt: OptionSpec[Void] = null
+  var noEntityLinkingSimilarityOpt: OptionSpec[Void] = null
   var actionBiasOpt: OptionSpec[Void] = null
   var reluOpt: OptionSpec[Void] = null
   var actionLstmHiddenLayerOpt: OptionSpec[Void] = null
@@ -116,6 +119,9 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     dropoutOpt = parser.accepts("dropout").withRequiredArg().ofType(classOf[Double]).defaultsTo(0.5)
     lasoOpt = parser.accepts("laso")
     editDistanceOpt = parser.accepts("editDistance")
+    tokenFeaturesOnlyOpt = parser.accepts("tokenFeaturesOnly")
+    noFeaturesOpt = parser.accepts("noFeatures")
+    noEntityLinkingSimilarityOpt = parser.accepts("noEntityLinkingSimilarity")
     actionBiasOpt = parser.accepts("actionBias")
     reluOpt = parser.accepts("relu")
     actionLstmHiddenLayerOpt = parser.accepts("actionLstmHiddenLayer")
@@ -146,8 +152,19 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
       vocab
     }
 
-    val featureGenerator = SemanticParserFeatureGenerator.getWikitablesGenerator(
-        options.has(editDistanceOpt), vocab, vocabCounts)
+    val featureGenerator = if (options.has(noFeaturesOpt)) {
+      val features = Array[SemanticParserFeatureGenerator.EntityTokenFeatureFunction](
+          SemanticParserFeatureGenerator.nullFeature)
+      new SemanticParserFeatureGenerator(features, Array(), vocab, vocabCounts)
+    } else if (options.has(tokenFeaturesOnlyOpt)) {
+      val features = Array[SemanticParserFeatureGenerator.EntityTokenFeatureFunction](
+          SemanticParserFeatureGenerator.spanFeatures,
+          SemanticParserFeatureGenerator.tokenExactMatchFeature)
+      new SemanticParserFeatureGenerator(features, Array(), vocab, vocabCounts)
+    } else {
+      SemanticParserFeatureGenerator.getWikitablesGenerator(
+          options.has(editDistanceOpt), vocab, vocabCounts)
+    }
 
     // Eliminate those examples that Sempre did not find correct logical forms for,
     // and preprocess the remaining
@@ -233,7 +250,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     config.actionDim = options.valueOf(actionDimOpt)
     config.actionHiddenDim = options.valueOf(actionHiddenDimOpt)
     config.featureGenerator = Some(featureGenerator)
-    config.entityLinkingLearnedSimilarity = true
+    config.entityLinkingLearnedSimilarity = !options.has(noEntityLinkingSimilarityOpt)
     config.encodeEntitiesWithGraph = options.has(encodeEntitiesWithGraphOpt)
     // TODO: turn back on.
     config.encodeWithSoftEntityLinking = false

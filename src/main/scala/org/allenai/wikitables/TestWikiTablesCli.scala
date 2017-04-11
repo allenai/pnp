@@ -181,7 +181,7 @@ object TestWikiTablesCli {
             false
           }
         }
-        
+
         if (isCorrect) {
           print("* " + x.logProb.formatted("%02.3f") + "  " + expression + " -> " + value)
           true
