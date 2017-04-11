@@ -37,6 +37,8 @@ import scala.util.Random
 import scala.collection.mutable.ListBuffer
 import org.allenai.pnp.LoglikelihoodTrainer
 import org.allenai.pnp.BsoTrainer
+import org.allenai.pnp.semparse.Entity
+import org.allenai.pnp.semparse.Span
 
 /** Command line program for training a semantic parser
   * on the WikiTables data set.
@@ -154,7 +156,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val featureGenerator = if (options.has(noFeaturesOpt)) {
       val features = Array[SemanticParserFeatureGenerator.EntityTokenFeatureFunction](
-          SemanticParserFeatureGenerator.nullFeature)
+          nullFeature)
       new SemanticParserFeatureGenerator(features, Array(), vocab, vocabCounts)
     } else if (options.has(tokenFeaturesOnlyOpt)) {
       val features = Array[SemanticParserFeatureGenerator.EntityTokenFeatureFunction](
@@ -430,6 +432,11 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
     }
 
     embeddingIter.toArray
+  }
+
+  def nullFeature(ex: WikiTablesExample, tokenIndex: Int, entity: Entity,
+    span: Option[Span], tokenToId: String => Int, table: Table): Float = {
+    0.0f
   }
 }
 
