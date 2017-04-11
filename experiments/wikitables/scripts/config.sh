@@ -11,14 +11,14 @@ TRAIN="data/WikiTableQuestions/data/random-split-$FOLD-train.examples"
 TRAIN_DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
 # Development data for evaluating the final trained model.
 # DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_1000.examples"
-# DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
+DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
 # DEV="data/WikiTableQuestions/data/pristine-unseen-tables.examples"
-DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
+# DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
 DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
 # WORD_EMBEDDINGS="data/wikitables/glove.6B.200d.txt"
 
 EXPERIMENT_NAME="fold$FOLD"
-EXPERIMENT_DIR="experiments/wikitables/output/040917/dev_folds_edit_kg/$EXPERIMENT_NAME/"
+EXPERIMENT_DIR="experiments/wikitables/output/041117/kg_ablation/$EXPERIMENT_NAME/"
 
 EPOCHS=20
 MAX_TRAINING_DERIVATIONS=100
@@ -39,3 +39,7 @@ mkdir -p $EXPERIMENT_DIR
 # echo $TRAIN_DEV
 # echo $DEV
 # echo $EXPERIMENT_NAME
+
+# tokenfeat_ablation --encodeEntitiesWithGraph --noEntityLinkingSimilarity --tokenFeaturesOnly
+# simonly_ablation --noFeatures --encodeEntitiesWithGraph
+# kg_ablation --editDistance
