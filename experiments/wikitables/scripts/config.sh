@@ -11,9 +11,9 @@ TRAIN="data/WikiTableQuestions/data/random-split-$FOLD-train.examples"
 TRAIN_DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
 # Development data for evaluating the final trained model.
 # DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_1000.examples"
-DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
+# DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
 # DEV="data/WikiTableQuestions/data/pristine-unseen-tables.examples"
-# DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
+DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
 DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
 # WORD_EMBEDDINGS="data/wikitables/glove.6B.200d.txt"
 
