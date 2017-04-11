@@ -12,16 +12,16 @@ TRAIN_DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
 # Development data for evaluating the final trained model.
 # DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_1000.examples"
 DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
+# DEV="data/WikiTableQuestions/data/pristine-unseen-tables.examples"
 # DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
 DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
 # WORD_EMBEDDINGS="data/wikitables/glove.6B.200d.txt"
 
-EXPERIMENT_NAME="backup_fold$FOLD"
-# 040917/dev_folds_edit_kg
-EXPERIMENT_DIR="experiments/wikitables/output/final_dpd_1/$EXPERIMENT_NAME/"
+EXPERIMENT_NAME="fold$FOLD"
+EXPERIMENT_DIR="experiments/wikitables/output/040917/dev_folds_edit_kg/$EXPERIMENT_NAME/"
 
 EPOCHS=20
-MAX_TRAINING_DERIVATIONS=1
+MAX_TRAINING_DERIVATIONS=100
 MAX_TEST_DERIVATIONS=10
 BEAM_SIZE=5
 TEST_BEAM_SIZE=10
