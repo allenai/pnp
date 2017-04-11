@@ -31,6 +31,8 @@ import edu.stanford.nlp.sempre.ListValue
 import edu.stanford.nlp.sempre.NameValue
 import edu.stanford.nlp.sempre.NumberValue
 import edu.stanford.nlp.sempre.DateValue
+import com.jayantkrish.jklol.util.CountAccumulator
+import com.jayantkrish.jklol.ccg.lambda2.Expression2
 
 class TestWikiTablesCli extends AbstractCli() {
   
@@ -49,7 +51,7 @@ class TestWikiTablesCli extends AbstractCli() {
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String]).required()
-    modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).required()
+    modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     
     tsvOutputOpt = parser.accepts("tsvOutput").withRequiredArg().ofType(classOf[String])
 
@@ -61,21 +63,55 @@ class TestWikiTablesCli extends AbstractCli() {
   override def run(options: OptionSet): Unit = {
     Initialize.initialize(Map("dynet-mem" -> "4096"))
 
-    // Initialize expression processing for Wikitables logical forms.
+    // Get the predicted denotations of each model. (and print out 
+    // error analysis)
+    val modelDenotations = options.valuesOf(modelOpt).asScala.map { modelFilename => 
+      runTestFile(modelFilename, options)
+    }
+
+    val denotations = if (modelDenotations.size > 1) {
+      val exIds = modelDenotations.head.keySet
+      val denotationMap = MutableMap[String, List[(Value, Double)]]()
+      for (exId <- exIds) {
+        val valueScores = modelDenotations.flatMap(_(exId))
+        val accumulator = CountAccumulator.create[Value]
+        valueScores.foreach(x => accumulator.increment(x._1, x._2))
+        val sortedValues = accumulator.getSortedKeys.asScala.map(x => (x, accumulator.getCount(x)))
+        denotationMap(exId) = sortedValues.toList
+      }
+      denotationMap.toMap
+    } else {
+      modelDenotations.head
+    }
+    
+    /*
+    println("*** Validating test set action space ***")
+    val testSeparatedLfs = WikiTablesSemanticParserCli.getCcgDataset(testPreprocessed)
+    SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
+    */
+    
+    if (options.has(tsvOutputOpt)) {
+      val filename = options.valueOf(tsvOutputOpt)
+      val tsvStrings = denotations.map { d =>
+        d._1 + "\t" + getAnswerTsvParts(d._2.map(_._1)).mkString("\t")
+      }
+
+      Files.write(Paths.get(filename), tsvStrings.mkString("\n").getBytes(StandardCharsets.UTF_8))
+    }
+  }
+  
+  def runTestFile(modelFilename: String, options: OptionSet): Map[String, List[(Value, Double)]] = {
     val simplifier = ExpressionSimplifier.lambdaCalculus()
     val comparator = new SimplificationComparator(simplifier)
-    val logicalFormParser = ExpressionParser.expression2();
-    val entityLinker = new WikiTablesEntityLinker()
 
-    // Read in serialized semantic parser
-    val loader = new ModelLoader(options.valueOf(modelOpt))
+    val loader = new ModelLoader(modelFilename)
     val model = PnpModel.load(loader)
     val parser = SemanticParser.load(loader, model)
     val featureGenerator = parser.config.featureGenerator.get
     val typeDeclaration = parser.config.typeDeclaration
     val lfPreprocessor = parser.config.preprocessor
     loader.done()
-    
+      
     // Read test data.
     val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
         options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt),
@@ -85,26 +121,13 @@ class TestWikiTablesCli extends AbstractCli() {
     testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab,
         featureGenerator, typeDeclaration))
 
-    /*
-    println("*** Validating test set action space ***")
-    val testSeparatedLfs = WikiTablesSemanticParserCli.getCcgDataset(testPreprocessed)
-    SemanticParserUtils.validateActionSpace(testSeparatedLfs, parser, typeDeclaration)
-    */
-
     val (testResults, denotations) = TestWikiTablesCli.test(testData.map(_.ex),
         parser, options.valueOf(beamSizeOpt), options.has(evaluateDpdOpt),
         true, typeDeclaration, comparator, lfPreprocessor, println)
     println("*** Evaluation results ***")
     println(testResults)
-    
-    if (options.has(tsvOutputOpt)) {
-      val filename = options.valueOf(tsvOutputOpt)
-      val tsvStrings = denotations.map { d =>
-        d._1 + "\t" + getAnswerTsvParts(d._2).mkString("\t")
-      }
 
-      Files.write(Paths.get(filename), tsvStrings.mkString("\n").getBytes(StandardCharsets.UTF_8))
-    }
+    denotations
   }
 }
 
@@ -115,19 +138,19 @@ object TestWikiTablesCli {
   def main(args: Array[String]): Unit = {
     (new TestWikiTablesCli()).run(args)
   }
-
+  
   /** Evaluate the test accuracy of parser on examples. Logical
    * forms are compared for equality using comparator.
    */
   def test(examples: Seq[WikiTablesExample], parser: SemanticParser, beamSize: Int,
       evaluateDpd: Boolean, evaluateOracle: Boolean, typeDeclaration: TypeDeclaration,
       comparator: ExpressionComparator, preprocessor: LfPreprocessor,
-      print: Any => Unit): (SemanticParserLoss, Map[String, List[Value]]) = {
+      print: Any => Unit): (SemanticParserLoss, Map[String, List[(Value, Double)]]) = {
 
     print("")
     var numCorrect = 0
     var numCorrectAt10 = 0
-    val exampleDenotations = MutableMap[String, List[Value]]()
+    val exampleDenotations = MutableMap[String, List[(Value, Double)]]()
     for (e <- examples) {
       val sent = e.sentence
       print("example id: " + e.id +  " " + e.tableString)
@@ -158,7 +181,7 @@ object TestWikiTablesCli {
             false
           }
         }
-        
+
         if (isCorrect) {
           print("* " + x.logProb.formatted("%02.3f") + "  " + expression + " -> " + value)
           true
@@ -167,7 +190,7 @@ object TestWikiTablesCli {
           false
         }
         
-        (isCorrect, value)
+        (isCorrect, value, x.logProb)
       }
       
       var exampleCorrect = false  
@@ -182,7 +205,8 @@ object TestWikiTablesCli {
       }
 
       // Store all defined values sorted in probability order
-      exampleDenotations(e.id) = correctAndValue.flatMap(x => x._2.toList).toList
+      exampleDenotations(e.id) = correctAndValue.filter(_._2.isDefined).map(
+          x => (x._2.get, x._3)).toList
       
       print("id: " + e.id + " " + exampleCorrect)
 
