@@ -264,8 +264,4 @@ object SemanticParserFeatureGenerator {
       entity.nameLemmaSet, featureGenerator.getWordWeight)
   }
 
-  def nullFeature(ex: WikiTablesExample, tokenIndex: Int, entity: Entity,
-    span: Option[Span], tokenToId: String => Int, table: Table): Float = {
-    0.0f
-  }
 }
