@@ -18,7 +18,7 @@ DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
 # WORD_EMBEDDINGS="data/wikitables/glove.6B.200d.txt"
 
 EXPERIMENT_NAME="fold$FOLD"
-EXPERIMENT_DIR="experiments/wikitables/output/041117/kg_ablation/$EXPERIMENT_NAME/"
+EXPERIMENT_DIR="experiments/wikitables/output/041217/featonly_ablation/$EXPERIMENT_NAME/"
 
 EPOCHS=20
 MAX_TRAINING_DERIVATIONS=100
@@ -42,4 +42,5 @@ mkdir -p $EXPERIMENT_DIR
 
 # tokenfeat_ablation --encodeEntitiesWithGraph --noEntityLinkingSimilarity --tokenFeaturesOnly
 # simonly_ablation --noFeatures --encodeEntitiesWithGraph
+# featonly_ablation --noEntityLinkingSimilarity --encodeEntitiesWithGraph
 # kg_ablation --editDistance
