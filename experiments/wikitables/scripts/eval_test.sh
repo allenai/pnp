@@ -6,13 +6,13 @@
 SCRIPT_DIR="experiments/wikitables/scripts/"
 MODEL_DIR=$MY_DIR/models/
 MY_MODEL=$MY_DIR/parser_final.ser
-DEV_LOG=$MY_DIR/dev_error_log.txt
-TSV_OUT=$MY_DIR/denotations.tsv
-OFFICIAL=$MY_DIR/official_results.tsv
-OFFICIAL_TXT=$MY_DIR/official_results.txt
-OFFICIAL_CORRECT_MAP=$MY_DIR/official_correct_map.txt
-MY_CORRECT_MAP=$MY_DIR/my_correct_map.txt
-DIFF=$MY_DIR/correct_diff.txt
+DEV_LOG=$MY_DIR/test_error_log.txt
+TSV_OUT=$MY_DIR/test_denotations.tsv
+OFFICIAL=$MY_DIR/test_official_results.tsv
+OFFICIAL_TXT=$MY_DIR/test_official_results.txt
+OFFICIAL_CORRECT_MAP=$MY_DIR/test_official_correct_map.txt
+MY_CORRECT_MAP=$MY_DIR/test_my_correct_map.txt
+DIFF=$MY_DIR/test_correct_diff.txt
 
 mkdir -p $MY_DIR
 mkdir -p $MODEL_DIR
