@@ -156,7 +156,7 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     val featureGenerator = if (options.has(noFeaturesOpt)) {
       val features = Array[SemanticParserFeatureGenerator.EntityTokenFeatureFunction](
-          nullFeature)
+          WikiTablesSemanticParserCli.nullFeature)
       new SemanticParserFeatureGenerator(features, Array(), vocab, vocabCounts)
     } else if (options.has(tokenFeaturesOnlyOpt)) {
       val features = Array[SemanticParserFeatureGenerator.EntityTokenFeatureFunction](
@@ -433,16 +433,16 @@ class WikiTablesSemanticParserCli extends AbstractCli() {
 
     embeddingIter.toArray
   }
-
-  def nullFeature(ex: WikiTablesExample, tokenIndex: Int, entity: Entity,
-    span: Option[Span], tokenToId: String => Int, table: Table): Float = {
-    0.0f
-  }
 }
 
 object WikiTablesSemanticParserCli {
 
   def main(args: Array[String]): Unit = {
     (new WikiTablesSemanticParserCli()).run(args)
+  }
+  
+  def nullFeature(ex: WikiTablesExample, tokenIndex: Int, entity: Entity,
+    span: Option[Span], tokenToId: String => Int, table: Table): Float = {
+    0.0f
   }
 }
