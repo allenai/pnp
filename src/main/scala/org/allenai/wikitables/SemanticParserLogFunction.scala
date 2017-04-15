@@ -9,16 +9,18 @@ import com.jayantkrish.jklol.training.DefaultLogFunction
 import edu.cmu.dynet._
 import org.allenai.pnp.semparse.SemanticParserLoss
 
-class SemanticParserLogFunction(modelDir: Option[String], parser: SemanticParser,
-    trainExamples: Seq[WikiTablesExample], devExamples: Seq[WikiTablesExample],
-    devBeam: Int, firstDevEpoch: Int, typeDeclaration: TypeDeclaration,
-    comparator: ExpressionComparator) extends DefaultLogFunction {
+class SemanticParserLogFunction(modelDir: Option[String], bestModel: Option[String],
+    parser: SemanticParser, trainExamples: Seq[WikiTablesExample],
+    devExamples: Seq[WikiTablesExample], devBeam: Int, firstDevEpoch: Int,
+    typeDeclaration: TypeDeclaration, comparator: ExpressionComparator,
+    preprocessor: LfPreprocessor) extends DefaultLogFunction {
+
+  var currentBestDevAccuracy = 0.0
 
   /**
    * Save the current parser to disk.
    */
-  private def saveModel(modelDir: String, iteration: Long): Unit = {
-    val filename = modelDir + "/parser" + "_" + iteration + ".ser"
+  private def saveModel(filename: String): Unit = {
     val saver = new ModelSaver(filename)
     parser.model.save(saver)
     parser.save(saver)
@@ -34,18 +36,18 @@ class SemanticParserLogFunction(modelDir: Option[String], parser: SemanticParser
     val curDropout = parser.dropoutProb
     parser.dropoutProb = -1
 
-    val loss = TestWikiTablesCli.test(examples, parser, devBeam, false, false,
-        typeDeclaration, comparator, (x:Any) => ())
+    val (loss, denotations) = TestWikiTablesCli.test(examples, parser, devBeam, false, false,
+        typeDeclaration, comparator, preprocessor, (x:Any) => ())
 
     parser.dropoutProb = curDropout
-    
     loss
   }
   
   override def notifyIterationEnd(iteration: Long) {
     if (modelDir.isDefined) {
       startTimer("save_model")
-      saveModel(modelDir.get, iteration)
+      val filename = modelDir.get + "/parser" + "_" + iteration + ".ser"
+      saveModel(filename)
       stopTimer("save_model")
     }
     
@@ -63,6 +65,11 @@ class SemanticParserLogFunction(modelDir: Option[String], parser: SemanticParser
       logStatistic(iteration, "dev accuracy", loss.accuracy)
       logStatistic(iteration, "dev oracle @ " + devBeam + " accuracy", loss.oracleAccuracy)
       stopTimer("evaluate_dev")
+
+      if (bestModel.isDefined && loss.accuracy > currentBestDevAccuracy) {
+        saveModel(bestModel.get)
+      }
+      currentBestDevAccuracy = Math.max(currentBestDevAccuracy, loss.accuracy)
     }
 
     super.notifyIterationEnd(iteration)

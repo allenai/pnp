@@ -1,5 +1,7 @@
 package org.allenai.wikitables
 
+import scala.collection.JavaConverters._
+
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -18,6 +20,9 @@ import edu.cmu.dynet._
 import edu.stanford.nlp.sempre.{ContextValue, Formula}
 import spray.json.pimpAny
 import spray.json.pimpString
+import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
+import org.allenai.pnp.semparse.ApplicationTemplate
+import com.jayantkrish.jklol.ccg.lambda2.Expression2
 
 /**
  * A raw entity linking. These linkings are mostly generated 
@@ -25,10 +30,12 @@ import spray.json.pimpString
  * used in the semantic parser.
  */
 case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
-
+  
+  import RawEntityLinking._
+  
   def toEntityLinking(ex: WikiTablesExample, tokenToId: String => Int,
-                      featureGenerator: SemanticParserFeatureGenerator, table: Table,
-                      typeDeclaration: WikiTablesTypeDeclaration): EntityLinking = {
+    featureGenerator: SemanticParserFeatureGenerator, table: Table,
+    typeDeclaration: TypeDeclaration): EntityLinking = {
 
     val builder = ListBuffer[(Entity, Dim, FloatVector)]()
     for (link <- links) {
@@ -44,7 +51,16 @@ case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
         Preconditions.checkState(!SemanticParserUtils.isBadType(entityType),
             "Found bad type %s for expression %s", entityType, entityExpr)
 
-        val template = ConstantTemplate(entityType, entityExpr)
+        val template = if (entityType == Seq2SeqTypeDeclaration.seqType) {
+          // Hack to handle seq2seq models
+          ApplicationTemplate(Seq2SeqTypeDeclaration.endType,
+              // Second argument doesn't matter as it gets replaced
+              // during parsing.
+              Expression2.nested(List(entityExpr, holeExpr).asJava),
+              List((2, Seq2SeqTypeDeclaration.endType, false)))
+        } else {
+          ConstantTemplate(entityType, entityExpr)
+        }
 
         val span = link._1
 
@@ -53,7 +69,7 @@ case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
         val entityTokens = table.tokenizeEntity(entityString)
         val entityTokenIds = entityTokens.map(tokenToId(_)).toList
         val entityLemmas = table.lemmatizeEntity(entityString)
-        val entity = Entity(entityExpr, entityType, template, List(entityTokenIds),
+        val entity = Entity(entityExpr, template.root, template, List(entityTokenIds),
             List(entityLemmas))
 
         // Generate entity/token features.
@@ -72,6 +88,8 @@ case class RawEntityLinking(id: String, links: List[(Option[Span], Formula)]) {
 
 object RawEntityLinking {
   import WikiTablesJsonFormat._
+ 
+  val holeExpr = Expression2.constant("hole")
   
   def fromJsonFile(filename: String): Seq[RawEntityLinking] = {
     val content = Source.fromFile(filename).getLines.mkString(" ")

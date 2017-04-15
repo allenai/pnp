@@ -52,6 +52,8 @@ import edu.stanford.nlp.sempre.tables.test.CustomExample
 import fig.basic.LispTree
 import fig.basic.Pair
 import scala.collection.mutable.ListBuffer
+import com.jayantkrish.jklol.ccg.lambda.Type
+import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 
 /**
  * This object has two main functions: (1) loading and preprocessing data (including functionality
@@ -88,10 +90,18 @@ object WikiTablesUtil {
   }
 
   def exampleToJson(example: WikiTablesExample): JValue = {
-    val goldLogicalFormJson = example.goldLogicalForm match {
-      case None => JNothing
-      case Some(lf) => ("gold logical form" -> WikiTablesUtil.toSempreLogicalForm(lf).toString): JValue
+    val goldSempreLf = for {
+      lf <- example.goldLogicalForm
+      sempreLf <- WikiTablesUtil.toSempreLogicalForm(lf)
+    } yield {
+      sempreLf
     }
+    
+    val goldLogicalFormJson = goldSempreLf match {
+      case None => JNothing
+      case Some(lf) => ("gold logical form" -> lf): JValue
+    }
+
     goldLogicalFormJson merge
     ("id" -> example.id) ~
       ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
@@ -101,7 +111,8 @@ object WikiTablesUtil {
       (LEMMA_ANNOTATION -> example.sentence.getAnnotation(LEMMA_ANNOTATION).asInstanceOf[Seq[String]]) ~
       ("table" -> example.tableString) ~
       ("answer" -> example.targetValue.toLispTree.toString) ~
-      ("possible logical forms" -> example.possibleLogicalForms.map(WikiTablesUtil.toSempreLogicalForm).map(_.toString).toList)
+      ("possible logical forms" -> example.possibleLogicalForms.map(
+          WikiTablesUtil.toSempreLogicalForm).filter(_.isDefined).map(_.get).toList)
   }
 
   def exampleFromJson(json: JValue): WikiTablesExample = {
@@ -213,6 +224,9 @@ object WikiTablesUtil {
     // vocab.addAll(IndexedList.create(entityCounts.getKeysAboveCountThreshold(0.0)))
     vocab.add(UNK)
     vocab.add(ENTITY)
+    vocab.add("-1")
+    vocab.add("0")
+    vocab.add("1")
     println(vocab.size + " words")
 
     for (w <- vocab.items().asScala.sorted) {
@@ -277,7 +291,8 @@ object WikiTablesUtil {
   def loadDatasets(
       filenames: Seq[String],
       derivationsPath: String,
-      derivationsLimit: Int
+      derivationsLimit: Int,
+      preprocessor: LfPreprocessor
     ): Vector[RawExample] = {
     // The entity linker can become a parameter in the future
     // if it starts accepting parameters.
@@ -289,7 +304,8 @@ object WikiTablesUtil {
       
       val linkingsMap = linkings.map(x => (x.id, x)).toMap
       val tablesMap = tables.map(x => (x.id, x)).toMap
-      examples.map(x => RawExample(x, linkingsMap(x.id), tablesMap(x.tableString)))
+      val preprocessedExamples = examples.map(preprocessor.preprocess(_))
+      preprocessedExamples.map(x => RawExample(x, linkingsMap(x.id), tablesMap(x.tableString)))
     }
 
     trainingData.toVector
@@ -299,7 +315,7 @@ object WikiTablesUtil {
     example: RawExample,
     vocab: IndexedList[String],
     featureGenerator: SemanticParserFeatureGenerator,
-    typeDeclaration: WikiTablesTypeDeclaration
+    typeDeclaration: TypeDeclaration
   ) {
     // All we do here is add some annotations to the example.  Those annotations are:
     // 1. Token ids, computed using the vocab
@@ -376,7 +392,19 @@ object WikiTablesUtil {
     return ExpressionParser.expression2().parse(expressionString)
   }
 
-  def toSempreLogicalForm(expression: Expression2): String = {
+  /**
+   * Convert a pnp logical form to a sempre logical form (in string format). 
+   * The conversion may fail if {@code expression} is not well-formed.
+   */
+  def toSempreLogicalForm(expression: Expression2): Option[String] = {
+    if (StaticAnalysis.isWellFormed(expression)) {
+      Some(toSempreLogicalFormHelper(expression))
+    } else {
+      None
+    }
+  }
+    
+  private def toSempreLogicalFormHelper(expression: Expression2): String = {
     val simplifier = new ExpressionSimplifier(Lists.newArrayList(new VariableCanonicalizationReplacementRule()))
     val simplifiedExpression = simplifier.apply(expression)
 
@@ -420,4 +448,5 @@ object WikiTablesUtil {
     }
     expressionString
   }
+
 }

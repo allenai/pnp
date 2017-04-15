@@ -89,7 +89,7 @@ class LabelingDqaCli extends AbstractCli {
     }
 
     val config = new SemanticParserConfig()
-    val parser = SemanticParser.create(actionSpace, vocab, config, model)
+    val parser = SemanticParser.create(actionSpace, vocab, None, config, model)
     val answerSelector = new AnswerSelector()
     val p3 = new LabelingP3Model(parser, executor, answerSelector)
 
