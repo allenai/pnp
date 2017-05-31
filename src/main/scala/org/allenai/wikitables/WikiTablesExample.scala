@@ -19,7 +19,7 @@ case class WikiTablesExample(
   goldLogicalForm: Option[Expression2],
   possibleLogicalForms: Set[Expression2],
   tableString: String,
-  targetValue: Value
+  targetValue: Option[Value]
 ) {
 
   val logicalForms = goldLogicalForm match {
@@ -60,7 +60,7 @@ case class WikiTablesExample(
   
   def isValueCorrect(predicted: Value): Boolean = {
     try {
-      WikiTablesDataProcessor.isValueCorrect(predicted, targetValue, null);
+      WikiTablesDataProcessor.isValueCorrect(predicted, targetValue.orNull, null);
     } catch {
       case e: Exception => {
         System.err.println("Bad value: " + predicted);
@@ -79,7 +79,7 @@ case class WikiTablesExample(
     } else {
       try {
         val sempreFormula = Formula.fromString(expressionStringOpt.get);
-        WikiTablesDataProcessor.isFormulaCorrect(sempreFormula, getContext(), targetValue, null);
+        WikiTablesDataProcessor.isFormulaCorrect(sempreFormula, getContext(), targetValue.orNull, null);
       } catch {
         case e: Exception => {
           System.err.println("Bad formula: " + expressionStringOpt.get);

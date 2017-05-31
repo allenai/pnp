@@ -9,7 +9,6 @@ import java.util.regex.Pattern
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.io.Source
-
 import org.allenai.pnp.semparse.ConstantTemplate
 import org.allenai.pnp.semparse.Entity
 import org.allenai.pnp.semparse.EntityLinking
@@ -29,7 +28,6 @@ import org.json4s.native.JsonMethods.parse
 import org.json4s.native.JsonMethods.pretty
 import org.json4s.native.JsonMethods.render
 import org.json4s.string2JsonInput
-
 import com.google.common.base.Preconditions
 import com.google.common.collect.Lists
 import com.jayantkrish.jklol.ccg.CcgExample
@@ -41,16 +39,12 @@ import com.jayantkrish.jklol.ccg.lambda2.VariableCanonicalizationReplacementRule
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
 import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.util.IndexedList
-
-import edu.stanford.nlp.sempre.Formula
-import edu.stanford.nlp.sempre.Formulas
-import edu.stanford.nlp.sempre.LambdaFormula
-import edu.stanford.nlp.sempre.LanguageAnalyzer
-import edu.stanford.nlp.sempre.Values
+import edu.stanford.nlp.sempre._
 import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import fig.basic.LispTree
 import fig.basic.Pair
+
 import scala.collection.mutable.ListBuffer
 import com.jayantkrish.jklol.ccg.lambda.Type
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
@@ -102,7 +96,21 @@ object WikiTablesUtil {
       case Some(lf) => ("gold logical form" -> lf): JValue
     }
 
-    goldLogicalFormJson merge
+    val answer = for {
+      target <- example.targetValue
+      answerString = target.toLispTree.toString
+    } yield {
+      answerString
+    }
+
+    val answerJson = answer match {
+      case None => JNothing
+      case Some(answerString) => ("answer" -> answerString): JValue
+    }
+
+    val lfAndAnswerJson: JValue = goldLogicalFormJson merge answerJson
+
+    lfAndAnswerJson merge
     ("id" -> example.id) ~
       ("question" -> example.sentence.getWords.asScala.mkString(" ")) ~
       ("tokens" -> example.sentence.getWords.asScala) ~
@@ -110,7 +118,6 @@ object WikiTablesUtil {
       (NER_ANNOTATION -> example.sentence.getAnnotation(NER_ANNOTATION).asInstanceOf[Seq[Seq[String]]]) ~
       (LEMMA_ANNOTATION -> example.sentence.getAnnotation(LEMMA_ANNOTATION).asInstanceOf[Seq[String]]) ~
       ("table" -> example.tableString) ~
-      ("answer" -> example.targetValue.toLispTree.toString) ~
       ("possible logical forms" -> example.possibleLogicalForms.map(
           WikiTablesUtil.toSempreLogicalForm).filter(_.isDefined).map(_.get).toList)
   }
@@ -124,7 +131,10 @@ object WikiTablesUtil {
     val ner = (json \ NER_ANNOTATION).extract[List[List[String]]]
     val lemmas = (json \ LEMMA_ANNOTATION).extract[List[String]]
     val tableString = (json \ "table").extract[String]
-    val answerString = (json \ "answer").extract[String]
+    val answerString = (json \ "answer") match {
+      case JNothing => None
+      case jval => Some(jval.extract[String])
+    }
     val goldLogicalFormString = (json \ "gold logical form") match {
       case JNothing => None
       case jval => Some(jval.extract[String])
@@ -139,13 +149,19 @@ object WikiTablesUtil {
     val sentence = new AnnotatedSentence(tokens.asJava, posTags.asJava, new java.util.HashMap())
     sentence.getAnnotations().put(NER_ANNOTATION, ner)
     sentence.getAnnotations().put(LEMMA_ANNOTATION, lemmas)
+
+    val targetValue: Option[Value] = answerString match {
+      case None => None
+      case Some(answer) => Some(Values.fromLispTree(LispTree.proto.parseFromString(answer)))
+    }
+
     new WikiTablesExample(
       id,
       sentence,
       goldLogicalForm,
       possibleLogicalForms,
       tableString,
-      Values.fromLispTree(LispTree.proto.parseFromString(answerString))
+      targetValue
     )
   }
 
@@ -183,7 +199,7 @@ object WikiTablesUtil {
       goldLogicalForm,
       possibleLogicalForms,
       example.context.toLispTree().toString(),
-      example.targetValue
+      Option(example.targetValue)
     )
   }
 
@@ -252,7 +268,8 @@ object WikiTablesUtil {
   def loadDataset(
     filename: String,
     derivationsPath: String,
-    derivationsLimit: Int
+    derivationsLimit: Int,
+    includeDerivations: Boolean
   ): Seq[WikiTablesExample] = {
     val preprocessedFile = filename + preprocessingSuffix
     val dataset = if (Files.exists(Paths.get(preprocessedFile))) {
@@ -261,7 +278,7 @@ object WikiTablesUtil {
       val sempreDataset = WikiTablesDataProcessor.getDataset(
         filename,
         true,
-        true,
+        includeDerivations,
         derivationsPath,
         100,
         MAX_DERIVATIONS
@@ -292,13 +309,14 @@ object WikiTablesUtil {
       filenames: Seq[String],
       derivationsPath: String,
       derivationsLimit: Int,
-      preprocessor: LfPreprocessor
+      preprocessor: LfPreprocessor,
+      includeDerivations: Boolean = true
     ): Vector[RawExample] = {
     // The entity linker can become a parameter in the future
     // if it starts accepting parameters.
     val entityLinker = new WikiTablesEntityLinker()
     val trainingData = filenames.flatMap { filename => 
-      val examples = loadDataset(filename, derivationsPath, derivationsLimit)
+      val examples = loadDataset(filename, derivationsPath, derivationsLimit, includeDerivations)
       val linkings = entityLinker.loadDataset(filename, examples)
       val tables = Table.loadDataset(filename, examples)
       
