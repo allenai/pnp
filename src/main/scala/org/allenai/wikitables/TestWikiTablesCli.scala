@@ -40,6 +40,7 @@ class TestWikiTablesCli extends AbstractCli() {
 
   var testDataOpt: OptionSpec[String] = null
   var derivationsPathOpt: OptionSpec[String] = null
+  var noDerivationsOpt: OptionSpec[Void] = null
   var modelOpt: OptionSpec[String] = null
 
   var tsvOutputOpt: OptionSpec[String] = null
@@ -50,7 +51,8 @@ class TestWikiTablesCli extends AbstractCli() {
 
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
-    derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String]).required()
+    derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
+    noDerivationsOpt = parser.accepts("noDerivations")
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     
     tsvOutputOpt = parser.accepts("tsvOutput").withRequiredArg().ofType(classOf[String])
@@ -115,7 +117,7 @@ class TestWikiTablesCli extends AbstractCli() {
     // Read test data.
     val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
         options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt),
-        lfPreprocessor)
+        lfPreprocessor, !options.has(noDerivationsOpt))
     println("Read " + testData.size + " test examples")
 
     testData.foreach(x => WikiTablesUtil.preprocessExample(x, parser.vocab,
