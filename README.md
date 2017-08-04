@@ -25,7 +25,7 @@ graph libraries for neural networks, such as TensorFlow:
 ## Installation
 
 This library depends on DyNet with the
-[Scala DyNet bindings](https://github.com/allenai/dynet/tree/master/swig).
+[Scala DyNet bindings](https://github.com/clab/dynet/tree/master/contrib/swig).
 See the link for build instructions. After building this library, run
 the following commands from the `pnp` root directory:
 
