@@ -36,7 +36,10 @@ sbt assembly
 ```
 
 This command trains the parser using the configuration stored in `experiments/wikitables/scripts/config.sh`.
-The default config file trains and evaluates on a small subsample of the data set (TODO: how long is training time).
+The default config file trains and evaluates on a small subsample of the data set which should take about 10 minutes.
+(The first time you train on a data set takes a little longer because the code has to preprocesses the data with Stanford CoreNLP.
+The results are automatically cached in the same directory as the data to make future runs faster.)
+
 The output of the experiment is stored under `experiments/wikitables/output/00/fold1/parser/`, where you will find several files:
 
 * `train_log.txt` -- the output of the training script. Run `less -RS train_log.txt`, then type `F` to watch training as it progresses.
@@ -57,3 +60,15 @@ command-line programs in this directory. `WikiTablesSemanticParserCli`
 trains the parser, and `TestWikiTablesCli` tests the parser.  The
 scripts above run both of these programs in sequence to perform an
 experiment.
+
+## Troubleshooting
+
+The automatic caching of preprocessed training data is not aware of
+changes to the training parameters. If you change the number of DPD
+logical forms or the preprocessing pipeline in any way, these files
+must be deleted manually. You can also run into this issue
+unexpectedly, for example, if you accidentally mis-specify
+`--derivationsPath`. Three cached files are produced per data
+file. They have the same filename with an additional suffix such as
+`*.entities.json`. Simply delete them, and the training script will
+automatically re-run the preprocessing pipeline.

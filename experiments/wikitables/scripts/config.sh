@@ -24,7 +24,7 @@ DEV="data/WikiTableQuestions/data/subsamples/random-split-$FOLD-dev-100.examples
 # DEV="data/WikiTableQuestions/data/pristine-unseen-tables.examples"
 
 # Location of DPD output
-DERIVATIONS_PATH="data/wikitables/dpd_output/"
+DERIVATIONS_PATH="data/dpd_output/"
 
 EXPERIMENT_NAME="fold$FOLD"
 EXPERIMENT_ID="00"

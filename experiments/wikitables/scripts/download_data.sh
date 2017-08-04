@@ -21,3 +21,8 @@ for d in $( ls ); do
     path="$d/*"
     cp $path ../dpd_output/
 done
+
+# Download caseless corenlp models
+cd ../..
+cd lib
+wget http://nlp.stanford.edu/software/stanford-corenlp-caseless-2015-04-20-models.jar
