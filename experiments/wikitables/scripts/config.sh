@@ -1,24 +1,34 @@
 #!/bin/bash -e
 
 SCRIPT_DIR="experiments/wikitables/scripts/"
-FOLD=5
+# Which fold to train on.
+FOLD=1
+
 # Training data.
-# TRAIN="data/WikiTableQuestions/data/subsamples/random-split_1-train_100.examples"
-TRAIN="data/WikiTableQuestions/data/random-split-$FOLD-train.examples"
+# This is a subsample of 100 examples
+TRAIN="data/WikiTableQuestions/data/subsamples/random-split-$FOLD-train-100.examples"
+# Uncomment below to use the full training set.
+# TRAIN="data/WikiTableQuestions/data/random-split-$FOLD-train.examples"
+
 # Development data used for evaluating model accuracy as training progresses.
-# TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
-# TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_100.examples"
-TRAIN_DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
+# Using a subsample here can reduce training time.
+TRAIN_DEV="data/WikiTableQuestions/data/subsamples/random-split-$FOLD-dev-100.examples"
+# Uncomment below to use the full dev set.
+# TRAIN_DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
+
 # Development data for evaluating the final trained model.
-# DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_1000.examples"
-DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
+DEV="data/WikiTableQuestions/data/subsamples/random-split-$FOLD-dev-100.examples"
+# Uncomment below to use the full dev set.
+# DEV="data/WikiTableQuestions/data/random-split-$FOLD-dev.examples"
+# Uncomment below to use the test set.
 # DEV="data/WikiTableQuestions/data/pristine-unseen-tables.examples"
-# DEV="data/WikiTableQuestions/data/subsamples/random-split_1-dev_500.examples"
-DERIVATIONS_PATH="data/wikitables/dpd_output/onedir2"
-# WORD_EMBEDDINGS="data/wikitables/glove.6B.200d.txt"
+
+# Location of DPD output
+DERIVATIONS_PATH="data/wikitables/dpd_output/"
 
 EXPERIMENT_NAME="fold$FOLD"
-EXPERIMENT_DIR="experiments/wikitables/output/041217/featonly_ablation/$EXPERIMENT_NAME/"
+EXPERIMENT_ID="00"
+EXPERIMENT_DIR="experiments/wikitables/output/$EXPERIMENT_ID/$EXPERIMENT_NAME/"
 
 EPOCHS=20
 MAX_TRAINING_DERIVATIONS=100
