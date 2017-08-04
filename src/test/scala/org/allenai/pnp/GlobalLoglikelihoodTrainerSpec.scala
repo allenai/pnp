@@ -38,7 +38,7 @@ class GlobalLoglikelihoodTrainerSpec extends FlatSpec with Matchers {
           rest <- lm(k - 1)
           previous = rest.last
           transition <- Pnp.param("transition")
-          params = Expression.pickRange(
+          params = Expression.pickrange(
             transition, previous * vocab.length, (previous + 1) * vocab.length)
           choice <- Pnp.choose(vocab, params, k - 1)
         } yield {

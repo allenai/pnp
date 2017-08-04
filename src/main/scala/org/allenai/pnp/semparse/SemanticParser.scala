@@ -481,7 +481,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         }
 
         // Score the templates.
-        actionScores = Expression.pickRange(actionHiddenScores, 0, baseTemplates.length)
+        actionScores = Expression.pickrange(actionHiddenScores, 0, baseTemplates.length)
 
         // Score the entity templates
         // _ = println("scoring entities")
