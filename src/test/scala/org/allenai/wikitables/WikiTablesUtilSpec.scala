@@ -90,7 +90,7 @@ class WikiTablesUtilSpec extends FlatSpecLike with Matchers {
         ("posTags" -> example.sentence.getPosTags.asScala) ~
         ("NER" -> example.sentence.getAnnotation("NER").asInstanceOf[Seq[Seq[String]]]) ~
         ("table" -> example.tableString) ~
-        ("answer" -> example.targetValue.toLispTree.toString) ~
+        ("answer" -> example.targetValue.map(_.toLispTree.toString).getOrElse("")) ~
         ("gold logical form" -> goldLogicalFormString) ~
         ("possible logical forms" -> possibleLogicalFormStrings)
     val actualJson = WikiTablesUtil.exampleToJson(example)
