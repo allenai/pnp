@@ -26,6 +26,7 @@ graph libraries for neural networks, such as TensorFlow:
 
 This library depends on DyNet with the
 [Scala DyNet bindings](https://github.com/clab/dynet/tree/master/contrib/swig).
+This library has been tested with DyNet commit `03b2be8dd83ac55e4a2c0279faf99dbd0b3a80bd`.
 See the link for build instructions. After building this library, run
 the following commands from the `pnp` root directory:
 
@@ -36,7 +37,8 @@ ln -s <PATH_TO_DYNET>/build/contrib/swig/dynet_swigJNI_dylib.jar .
 ```
 
 That's it! Verify that your installation works by running `sbt test`
-in the root directory.
+in the root directory. (The tests are somewhat flaky, so a few may
+fail. As long as it runs, you should be fine.)
 
 ## Usage
 
