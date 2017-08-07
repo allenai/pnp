@@ -27,8 +27,14 @@ graph libraries for neural networks, such as TensorFlow:
 This library depends on DyNet with the
 [Scala DyNet bindings](https://github.com/clab/dynet/tree/master/contrib/swig).
 This library has been tested with DyNet commit `03b2be8dd83ac55e4a2c0279faf99dbd0b3a80bd`.
-See the link for build instructions. After building this library, run
-the following commands from the `pnp` root directory:
+See the link for build instructions. NOTE: the flag to include SWIG scala bindings
+changed, and you need to use an older version with this older code.  Where the
+instructions say `-DENABLE_SWIG=ON`, instead use `-DINCLUDE_SWIG=ON`.  The older
+version of dynet also requires boost headers, which are not mentioned in the current
+build instructions.  On Ubuntu, you can install these with this command:
+`sudo apt-get install libboost-all-dev`.
+
+After building DyNet, run the following commands from the `pnp` root directory:
 
 ```
 cd lib
