@@ -1,15 +1,7 @@
 package org.allenai.wikitables;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
+import java.io.*;
+import java.util.*;
 import java.util.zip.GZIPInputStream;
 
 import com.google.common.collect.Lists;
@@ -25,6 +17,7 @@ import edu.stanford.nlp.sempre.tables.match.EditDistanceFuzzyMatcher;
 import edu.stanford.nlp.sempre.tables.test.CustomExample;
 import fig.basic.LispTree;
 import fig.basic.Pair;
+import scala.tools.nsc.Global;
 
 public class WikiTablesDataProcessor {
   
@@ -51,12 +44,7 @@ public class WikiTablesDataProcessor {
         int exampleId = 0;
         String line;
         while ((line = reader.readLine()) != null) {
-          String[] lineParts = line.split("\t");
-          LispTree tree = LispTree.proto.parseFromString(lineParts[0]);
-          CustomExample ex = CustomExample.fromLispTree(tree, Integer.toString(exampleId));
-          // This does things like tokenizing the utterance.
-          ex.preprocess();
-          ex.targetFormula = Formula.fromString(lineParts[1]);
+          CustomExample ex = readExampleFromLine(line, Integer.toString(exampleId));
           dataset.add(ex);
           exampleId++;
         }
@@ -90,6 +78,37 @@ public class WikiTablesDataProcessor {
       System.out.println(numZeroFormulas + " questions did not yield any logical forms.");
     }
     return dataset;
+  }
+
+  /**
+   * Reads a line in the following format and returns an example.
+   *
+   * [question]\t[table]
+   * where table is in the format:
+   * [row1###row2###row3...]
+   * where each row is in the format:
+   * [column1,column2,column3...]
+   *
+   * @return CustomExample formed from the info in the line
+   * @param line
+   */
+  static CustomExample readExampleFromLine(String line, String exampleId) {
+    String[] parts = line.split("\t");
+    if (parts.length != 2)
+      throw new RuntimeException("Invalid line format for Wikitables example.");
+    return makeCustomExample(parts[0], parts[1], exampleId);
+  }
+
+  private static CustomExample makeCustomExample(String question, String tableString, String exampleId) {
+    CoreNLPAnalyzer.opts.annotators = Arrays.asList(new String[] {"tokenize", "ssplit", "pos", "lemma", "ner"});
+    String questionAsLispTree = String.format("(example (utterance %s))", question.trim());
+    CustomExample ex  = CustomExample.fromLispTree(LispTree.proto.parseFromString(questionAsLispTree), exampleId);
+    // Making filename (first argument) null.
+    TableKnowledgeGraph graph = new TableKnowledgeGraph(null, new TableStringReader(tableString));
+    ex.setContext(new ContextValue(graph));
+    // This does things like tokenizing the utterance.
+    ex.preprocess();
+    return ex;
   }
 
   static void addDerivations(List<CustomExample> dataset, String derivationsPath,
@@ -234,5 +253,48 @@ class DerivationLengthComparator implements Comparator<Pair<Integer, Formula>> {
   @Override
   public int compare(Pair<Integer, Formula> o1, Pair<Integer, Formula> o2) {
     return Integer.compare(o1.getFirst(), o2.getFirst());
+  }
+}
+
+/**
+ * This class is analogous to Sempre's tables.serialize.TableReader. Instead of accepting
+ * a file and iterating over its contents, this class accepts the table as a String, breaks it into
+ * rows and iterates over them.
+ */
+class TableStringReader implements Iterable<String[]> {
+
+  List<String[]> data;
+  public TableStringReader(String tableString) {
+    data = parseString(tableString);
+  }
+
+  /**
+   * Assuming the following format for a table string:
+   * [row1###row2###row3...]
+   * where each row is in the format:
+   * [column1,column2,column3...]
+   *
+   * @param tableString
+   * @return
+   */
+  List<String[]> parseString(String tableString) {
+    List<String[]> parsedData = new ArrayList<>();
+    int numFields = 0;
+    String[] rows = tableString.split("###");
+    for (String row: rows) {
+      String[] columns = row.split(",");
+      if (numFields == 0) {
+        numFields = columns.length;
+      } else if (numFields != columns.length) {
+        throw new RuntimeException("Invalid format for a table! Same number of fields expected in every row.");
+      }
+      parsedData.add(columns);
+    }
+    return parsedData;
+  }
+
+  @Override
+  public Iterator<String[]> iterator() {
+    return data.iterator();
   }
 }
