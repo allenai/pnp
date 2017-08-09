@@ -2,7 +2,6 @@ package org.allenai.wikitables
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{Map => MutableMap}
-
 import org.allenai.pnp.Env
 import org.allenai.pnp.PnpInferenceContext
 import org.allenai.pnp.PnpModel
@@ -10,29 +9,27 @@ import org.allenai.pnp.semparse.EntityLinking
 import org.allenai.pnp.semparse.SemanticParser
 import org.allenai.pnp.semparse.SemanticParserLoss
 import org.allenai.pnp.semparse.SemanticParserState
-
 import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
 import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionComparator
 import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
 import com.jayantkrish.jklol.ccg.lambda2.SimplificationComparator
 import com.jayantkrish.jklol.cli.AbstractCli
-
 import edu.cmu.dynet._
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import joptsimple.OptionSpec
+
 import scala.collection.mutable.ListBuffer
-import edu.stanford.nlp.sempre.Value
+import edu.stanford.nlp.sempre._
 import java.nio.file.Paths
 import java.nio.file.Files
 import java.nio.charset.StandardCharsets
-import edu.stanford.nlp.sempre.ListValue
-import edu.stanford.nlp.sempre.NameValue
-import edu.stanford.nlp.sempre.NumberValue
-import edu.stanford.nlp.sempre.DateValue
+
 import com.jayantkrish.jklol.util.CountAccumulator
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
+import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
+import fig.basic.LispTree
 
 class TestWikiTablesCli extends AbstractCli() {
   
@@ -49,6 +46,11 @@ class TestWikiTablesCli extends AbstractCli() {
   var evaluateDpdOpt: OptionSpec[Void] = null
   var maxDerivationsOpt: OptionSpec[Integer] = null
 
+  // Options for answering single questions.
+  var questionOpt: OptionSpec[String] = null
+  var tableStringOpt: OptionSpec[String] = null
+  var numAnswersOpt: OptionSpec[Integer] = null
+
   override def initializeOptions(parser: OptionParser): Unit = {
     testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
@@ -60,6 +62,10 @@ class TestWikiTablesCli extends AbstractCli() {
     beamSizeOpt = parser.accepts("beamSize").withRequiredArg().ofType(classOf[Integer]).defaultsTo(5)
     evaluateDpdOpt = parser.accepts("evaluateDpd")
     maxDerivationsOpt = parser.accepts("maxDerivations").withRequiredArg().ofType(classOf[Integer]).defaultsTo(-1)
+
+    questionOpt = parser.accepts("question").withRequiredArg().ofType(classOf[String])
+    tableStringOpt = parser.accepts("tableString").withRequiredArg().ofType(classOf[String])
+    numAnswersOpt = parser.accepts("numAnswers").withRequiredArg().ofType(classOf[Integer])
   }
 
   override def run(options: OptionSet): Unit = {
@@ -67,9 +73,17 @@ class TestWikiTablesCli extends AbstractCli() {
 
     // Get the predicted denotations of each model. (and print out 
     // error analysis)
-    val modelDenotations = options.valuesOf(modelOpt).asScala.map { modelFilename => 
-      runTestFile(modelFilename, options)
+    val modelDenotations = if (options.has(questionOpt)) {
+      // Single question mode
+      options.valuesOf(modelOpt).asScala.map { modelFilename =>
+        answerSingleQuestion(modelFilename, options)
+      }
+    } else {
+      options.valuesOf(modelOpt).asScala.map { modelFilename =>
+        runTestFile(modelFilename, options)
+      }
     }
+
 
     val denotations = if (modelDenotations.size > 1) {
       val exIds = modelDenotations.head.keySet
@@ -101,19 +115,16 @@ class TestWikiTablesCli extends AbstractCli() {
       Files.write(Paths.get(filename), tsvStrings.mkString("\n").getBytes(StandardCharsets.UTF_8))
     }
   }
-  
+
   def runTestFile(modelFilename: String, options: OptionSet): Map[String, List[(Value, Double)]] = {
     val simplifier = ExpressionSimplifier.lambdaCalculus()
     val comparator = new SimplificationComparator(simplifier)
 
-    val loader = new ModelLoader(modelFilename)
-    val model = PnpModel.load(loader)
-    val parser = SemanticParser.load(loader, model)
+    val parser = loadSerializedParser(modelFilename)
     val featureGenerator = parser.config.featureGenerator.get
     val typeDeclaration = parser.config.typeDeclaration
     val lfPreprocessor = parser.config.preprocessor
-    loader.done()
-      
+
     // Read test data.
     val testData = WikiTablesUtil.loadDatasets(options.valuesOf(testDataOpt).asScala,
         options.valueOf(derivationsPathOpt), options.valueOf(maxDerivationsOpt),
@@ -130,6 +141,44 @@ class TestWikiTablesCli extends AbstractCli() {
     println(testResults)
 
     denotations
+  }
+
+  def answerSingleQuestion(modelFilename: String, options: OptionSet): Map[String, List[(Value, Double)]] = {
+    // TODO: Do not load model for each question. Different Cli?
+    val simplifier = ExpressionSimplifier.lambdaCalculus()
+    val comparator = new SimplificationComparator(simplifier)
+    val parser = loadSerializedParser(modelFilename)
+    val featureGenerator = parser.config.featureGenerator.get
+    val typeDeclaration = parser.config.typeDeclaration
+    val lfPreprocessor = parser.config.preprocessor
+
+    // Are there better alternatives than assigning the current timestamp as the exampleId?
+    val exampleId: String = (System.currentTimeMillis/1000).toString
+    val sempreExample = WikiTablesDataProcessor.makeCustomExample(options.valueOf(questionOpt),
+      options.valueOf(tableStringOpt), exampleId)
+    val pnpExample = WikiTablesUtil.convertCustomExampleToWikiTablesExample(sempreExample)
+    val entityLinking = new WikiTablesEntityLinker().getEntityLinking(pnpExample)
+    val contextValue = new ContextValue(LispTree.proto.parseFromString(pnpExample.tableString))
+    val graph = contextValue.graph.asInstanceOf[TableKnowledgeGraph]
+    val table = Table.knowledgeGraphToTable(pnpExample.tableString, graph)
+    val processedExample = RawExample(pnpExample, entityLinking, table)
+    WikiTablesUtil.preprocessExample(processedExample, parser.vocab, featureGenerator, typeDeclaration)
+    val (testResult, denotations) = TestWikiTablesCli.test(Seq(processedExample.ex), parser,
+        options.valueOf(beamSizeOpt), options.has(evaluateDpdOpt), false, typeDeclaration, comparator,
+        lfPreprocessor, println)
+    println(testResult)
+    if (options.has(numAnswersOpt))
+      denotations.map {x => x._1 -> x._2.take(options.valueOf(numAnswersOpt))}
+    else
+      denotations
+  }
+
+  def loadSerializedParser(modelFilename: String): SemanticParser = {
+    val loader = new ModelLoader(modelFilename)
+    val model = PnpModel.load(loader)
+    val parser = SemanticParser.load(loader, model)
+    loader.done()
+    parser
   }
 }
 

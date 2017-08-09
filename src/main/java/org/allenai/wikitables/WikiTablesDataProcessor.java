@@ -99,7 +99,7 @@ public class WikiTablesDataProcessor {
     return makeCustomExample(parts[0], parts[1], exampleId);
   }
 
-  private static CustomExample makeCustomExample(String question, String tableString, String exampleId) {
+  public static CustomExample makeCustomExample(String question, String tableString, String exampleId) {
     CoreNLPAnalyzer.opts.annotators = Arrays.asList(new String[] {"tokenize", "ssplit", "pos", "lemma", "ner"});
     String questionAsLispTree = String.format("(example (utterance %s))", question.trim());
     CustomExample ex  = CustomExample.fromLispTree(LispTree.proto.parseFromString(questionAsLispTree), exampleId);
