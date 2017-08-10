@@ -35,7 +35,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     actionBuilder: LstmBuilder, val model: PnpModel) {
 
   var dropoutProb = -1.0
-  
+
   import SemanticParser._
 
   private def initializeRnns(computationGraph: CompGraph): Unit = {
@@ -56,10 +56,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       inputEncoding
     }
   }
-  
+
   private def encodeInput(compGraph: CompGraph,
       entityLinking: EntityLinking, tokens: Array[Int]): InputEncoding = {
-    
+
     val wordEmbeddings = compGraph.getLookupParameter(SemanticParser.WORD_EMBEDDINGS_PARAM)
     def tokenIdToEmbedding(tokenId: Int): Expression = {
       if (tokenId < vocab.size) {
@@ -75,7 +75,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         inputEncoding._4, entityEncoding)
   }
 
-  private def getTokenEmbeddings(tokens: Seq[Int], tokenIdToEmbedding: Int => Expression, 
+  private def getTokenEmbeddings(tokens: Seq[Int], tokenIdToEmbedding: Int => Expression,
       entityEncoding: EntityEncoding): Array[Expression] = {
     val lookups = tokens.map(tokenIdToEmbedding(_)).toArray
 
@@ -84,12 +84,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
     for ((t, m) <- entityEncoding.tokenEntityScoreMatrices) {
       val numRows = m.dim.rows().toInt
-      val zeros = Expression.input(Dim(numRows), new FloatVector(List.fill(numRows)(0.0f))) 
+      val zeros = Expression.input(Dim(numRows), new FloatVector(List.fill(numRows)(0.0f)))
       val scores = Expression.concatenateCols(new ExpressionVector(List(m, zeros)))
-      
-      // A (entities + 1) x tokens matrix of softmax scores 
+
+      // A (entities + 1) x tokens matrix of softmax scores
       val softmaxedScores = Expression.softmax(Expression.transpose(scores))
-      
+
       // columns of this matrix are entities
       val entityEmbeddings = entityEncoding.entityEmbeddingMatrices(t)
       val numEntityRows = entityEmbeddings.dim.rows().toInt
@@ -97,10 +97,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           new FloatVector(List.fill(numEntityRows)(0.0f)))
       val entityEmbeddingsWithZero = Expression.concatenateCols(
           new ExpressionVector(List(entityEmbeddings, entityZeros)))
-      
+
       // An inputDim x tokens matrix
       val tokenEntityEmbeddings = entityEmbeddingsWithZero * softmaxedScores
-      
+
       for (i <- 0 until entityVectors.length) {
         entityVectors(i) += Expression.pick(tokenEntityEmbeddings, i, 1)
       }
@@ -155,14 +155,14 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       }
       bwOutputs += bwOutputDropout
     }
-    
+
     val outputEmbeddings = fwOutputs.toArray.zip(bwOutputs.toList.reverse).map(
         x => concatenateArray(Array(x._1, x._2)))
- 
-    val sentEmbedding = concatenateArray(Array(fwOutputs.last, bwOutputs.last)) 
+
+    val sentEmbedding = concatenateArray(Array(fwOutputs.last, bwOutputs.last))
     val inputMatrix = concatenateArray(inputEmbeddings.map(x => reshape(x, Dim(1, config.lstmInputDim))).toArray)
     val outputMatrix = concatenateArray(outputEmbeddings.map(reshape(_, Dim(1, 2 * config.hiddenDim))).toArray)
-    
+
     // Initialize output lstm with the sum of the forward and backward
     // states.
     val forwardS = forwardBuilder.finalS
@@ -181,7 +181,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
                              tokens: Array[Int], tokenIdToEmbedding: Int => Expression): EntityEncoding = {
 
     val tokenEmbeddings = tokens.map(tokenIdToEmbedding(_))
-    
+
     val typedEntityTokenMatrices = for {
       t <- entityLinking.entityTypes
     } yield {
@@ -196,13 +196,13 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           ENTITY_LINKING_FEATURIZED_MLP_B1 + t))
       val mlpW2 = Expression.parameter(computationGraph.getParameter(
           ENTITY_LINKING_FEATURIZED_MLP_W2 + t))
-          
+
       val entityScores = entities.map(e => scoreEntityTokensMatch(e,
           tokens, tokenEmbeddings, tokenIdToEmbedding, entityLinking,
           entityLinkingFeaturizedParam, entityLinkingBiasParam, mlpW1, mlpB1, mlpW2))
 
       val entityScoreMatrix = Expression.concatenateCols(new ExpressionVector(entityScores))
-      
+
       (t, entityScoreMatrix)
     }
     val knowledgeGraphEmbedding = embedKnowledgeGraph(entityLinking.graph, entityLinking.entities,
@@ -233,10 +233,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       entityLinking: EntityLinking, entityLinkingFeaturizedParam: Expression,
       entityLinkingFeaturizedBias: Expression, entityLinkingFeaturizedMlpW1: Expression,
       entityLinkingFeaturizedMlpB1: Expression, entityLinkingFeaturizedMlpW2: Expression): Expression = {
-    
+
     val inVocabNameTokens = entity.nameTokensSet.filter(_ < vocab.size)
     val entityNameEmbeddings = inVocabNameTokens.map(tokenIdToEmbedding(_)).toArray
-    
+
     var tokenScoresExpr = Expression.zeroes(Dim(tokens.length))
 
     if (config.entityLinkingLearnedSimilarity && entityNameEmbeddings.size >= 1) {
@@ -301,7 +301,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       Expression.zeroes(Dim(config.inputDim))
     }
   }
-  
+
   private def encodeType(entity: Entity): Expression = {
     // Expression.randomNormal(Dim(config.entityDim))
     // Expression.input(Dim(config.entityDim), new FloatVector(List.fill(config.entityDim)(0.0f)))
@@ -353,7 +353,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
   }
 
-  /** Generate a distribution over logical forms given 
+  /** Generate a distribution over logical forms given
     * tokens.
     */
   def parse(tokens: Array[Int], entityLinking: EntityLinking): Pnp[SemanticParserState] = {
@@ -363,18 +363,18 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
       // _ = println("parsing")
       state = SemanticParserState.start
-      
+
       // Choose the root type for the logical form given the
       // final output of the LSTM.
       rootWeights <- Pnp.param(SemanticParser.ROOT_WEIGHTS_PARAM)
       rootBias <- Pnp.param(SemanticParser.ROOT_BIAS_PARAM)
       rootScores = (rootWeights * input.sentEmbedding) + rootBias
       rootType <- Pnp.choose(actionSpace.rootTypes, rootScores, state)
-      
+
       // _ = println("parsing 2")
       // Recursively generate a logical form using an LSTM to
       // select logical form templates to expand on typed holes
-      // in the partially-generated logical form.  
+      // in the partially-generated logical form.
       expr <- parse(input, actionBuilder, state.addRootType(rootType))
     } yield {
       expr
@@ -401,7 +401,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     * lambda expression. These templates may contain additional holes
     * to be filled in the future. An LSTM is used to encode the history
     * of previously generated templates and select which template to
-    * apply. 
+    * apply.
     */
   private def parse(input: InputEncoding, builder: RnnBuilder, prevInput: Expression,
       rnnState: Int, state: SemanticParserState): Pnp[SemanticParserState] = {
@@ -415,7 +415,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       val actionTemplates = actionSpace.getTemplates(hole.t)
       val allVariableTemplates = hole.scope.getVariableTemplates(hole.t)
       val variableTemplates = if (allVariableTemplates.length > config.maxVars) {
-        // The model only has parameters for MAX_VARS variables. 
+        // The model only has parameters for MAX_VARS variables.
         allVariableTemplates.slice(0, config.maxVars)
       } else {
         allVariableTemplates
@@ -445,11 +445,11 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         wordAttentions = Expression.transpose(
           Expression.softmax(input.encodedTokenMatrix * attentionWeights * rnnOutputDropout))
 
-        // Attention vector using the input token vectors 
+        // Attention vector using the input token vectors
         // attentionVector = transpose(wordAttentions * input.tokenMatrix)
-        // Attention vector using the encoded tokens 
+        // Attention vector using the encoded tokens
         attentionVector = Expression.transpose(wordAttentions * input.encodedTokenMatrix)
-        
+
         // _ = println("action hidden weights")
         actionHiddenWeights <- Pnp.param(SemanticParser.ACTION_HIDDEN_WEIGHTS)
         actionHiddenBias <- Pnp.param(SemanticParser.ACTION_HIDDEN_BIAS)
@@ -461,7 +461,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         } else {
           (actionHiddenWeights * attentionAndRnn)
         }
-        
+
         actionHidden = if (config.relu) {
           Expression.rectify(hidden)
         } else {
@@ -473,13 +473,13 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         } else {
           actionHidden
         }
-        
+
         actionHiddenScores = if (config.actionBias) {
           (actionHiddenWeights2 * actionHidden) + actionHiddenBias2
         } else {
           actionHiddenWeights2 * actionHidden
         }
- 
+
         // Score the templates.
         actionScores = Expression.pickrange(actionHiddenScores, 0, baseTemplates.length)
 
@@ -494,7 +494,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         }
 
         // Nondeterministically select which template to update
-        // the parser's state with. The tag for this choice is 
+        // the parser's state with. The tag for this choice is
         // its index in the sequence of generated templates, which
         // can be used to supervise the parser.
         _ = if (allTemplates.size == 0) {
@@ -502,7 +502,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         } else {
           ()
         }
-        
+
         templateTuple <- Pnp.choose(allTemplates.zipWithIndex.toArray, allScores, state)
         nextState = templateTuple._1.apply(state).addAttention(wordAttentions)
 
@@ -533,7 +533,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
         } else {
           lstmInput1
         }
-        
+
         // _ = println("recursing")
         // Recursively fill in any remaining holes.
         returnState <- parse(input, builder, lstmInput2, nextRnnState, nextState)
@@ -552,7 +552,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
   }
 
   /** Generate the sequence of parser actions that produces exp.
-    * This method assumes that only one such action sequence exists.  
+    * This method assumes that only one such action sequence exists.
     */
   def generateActionSequence(exp: Expression2, entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration): Option[(List[Type], List[Template])] = {
@@ -564,8 +564,8 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       .asScala.toMap
 
     var state = SemanticParserState.start().addRootType(typeMap(0))
-    holeIndexMap(state.nextHole.get.id) = 0  
-    
+    holeIndexMap(state.nextHole.get.id) = 0
+
     while (state.nextHole.isDefined) {
       val hole = state.nextHole.get
       val expIndex = holeIndexMap(hole.id)
@@ -585,14 +585,14 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
             " : "  + curType + " (expected 1)")
         return None
       }
-      
+
       val theMatch = matches.toList(0)
       state = theMatch.apply(state)
-      
+
       actionTypes += curType
       actions += theMatch
 
-      var holeOffset = 0 
+      var holeOffset = 0
       for ((holeIndex, hole) <- theMatch.holeIndexes.zip(
           state.unfilledHoleIds.slice(0, theMatch.holeIndexes.length))) {
         val curIndex = expIndex + holeIndex + holeOffset
@@ -603,12 +603,12 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
     val decoded = state.decodeExpression
     Preconditions.checkState(decoded.equals(exp), "Expected %s and %s to be equal", decoded, exp)
-    
+
     Some((actionTypes.toList, actions.toList))
   }
-  
+
   /** Generate an execution score that constrains the
-    * parser to generate exp. This oracle can be used 
+    * parser to generate exp. This oracle can be used
     * to supervise the parser when training with loglikelihood.
     */
   def getLabelScore(exp: Expression2, entityLinking: EntityLinking,
@@ -620,7 +620,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
           Double.NegativeInfinity)
     }
   }
-  
+
   def getMarginScore(exp: Expression2, entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration): Option[SemanticParserExecutionScore] = {
     for {
@@ -629,7 +629,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       new SemanticParserExecutionScore(holeTypes.toArray, templates.toArray, 1.0)
     }
   }
-  
+
   /**
    * Generate an execution score that constrains the parser
    * to produce any expression in {@code exprs}. This oracle
@@ -646,7 +646,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
       typeDeclaration: TypeDeclaration): Option[SemanticParserMultiExecutionScore] = {
     getMultiScore(exprs, entityLinking, typeDeclaration, 1.0)
   }
-  
+
   private def getMultiScore(exprs: Iterable[Expression2], entityLinking: EntityLinking,
       typeDeclaration: TypeDeclaration, incorrectCost: Double
       ): Option[SemanticParserMultiExecutionScore] = {
@@ -665,10 +665,10 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
     }
   }
 
-  
+
   /**
    * Serialize this parser into {@code saver}. This method
-   * assumes that the {@code model} has already been 
+   * assumes that the {@code model} has already been
    * serialized (using {@code model.save}).
    */
   def save(saver: ModelSaver): Unit = {
@@ -683,7 +683,7 @@ class SemanticParser(val actionSpace: ActionSpace, val vocab: IndexedList[String
 
 /** Execution score that constrains a SemanticParser
   * to generate the given rootType and sequence of
-  * templates. 
+  * templates.
   */
 class SemanticParserExecutionScore(val holeTypes: Array[Type],
     val templates: Array[Template], val incorrectCost: Double)
@@ -711,7 +711,7 @@ extends ExecutionScore {
           val chosen = choice.asInstanceOf[(Template, Int)]._1
           val myTemplates = reversedTemplates.slice(reversedTemplates.length - actionInd, reversedTemplates.length)
           if (chosen.equals(templates(actionInd)) &&
-              (actionInd == 0 || state.templates.zip(myTemplates).map(x => x._1.equals(x._2)).reduce(_ && _))) { 
+              (actionInd == 0 || state.templates.zip(myTemplates).map(x => x._1.equals(x._2)).reduce(_ && _))) {
             0.0
           } else {
             incorrectCost
@@ -735,14 +735,14 @@ class MaxExecutionScore(val scores: Seq[ExecutionScore]) extends ExecutionScore 
 class SemanticParserMultiExecutionScore(val scores: Iterable[SemanticParserExecutionScore],
     val incorrectCost: Double)
   extends ExecutionScore {
-  
+
   val trie = new Trie[AnyRef]()
-  
+
   for (score <- scores) {
     val key = List(score.rootType) ++ score.templates
     trie.insert(key)
   }
-  
+
   def apply(tag: Any, choice: Any, env: Env): Double = {
     if (tag != null && tag.isInstanceOf[SemanticParserState]) {
       val state = tag.asInstanceOf[SemanticParserState]
@@ -752,7 +752,7 @@ class SemanticParserMultiExecutionScore(val scores: Iterable[SemanticParserExecu
         Array()
       }
 
-      val trieNodeId = trie.lookup(key)      
+      val trieNodeId = trie.lookup(key)
       if (trieNodeId.isDefined) {
         val nextStates = trie.getNextMap(trieNodeId.get)
 
@@ -785,10 +785,10 @@ class SemanticParserConfig extends Serializable {
   var actionDim = 100
   var actionHiddenDim = 100
   var maxVars = 10
-  
+
   var entityDim = -1
   def lstmInputDim = inputDim + entityDim
-  
+
   var relu = false
   var actionBias = false
   var actionLstmHiddenLayer = false
@@ -797,13 +797,13 @@ class SemanticParserConfig extends Serializable {
   var featureGenerator: Option[SemanticParserFeatureGenerator] = None
   var featureMlp = false
   var featureMlpDim = 50
-  
+
   var entityLinkingLearnedSimilarity = false
-  var maxPoolEntityTokenSimiliarities = false  
+  var maxPoolEntityTokenSimiliarities = false
   var encodeWithSoftEntityLinking = false
   var encodeEntitiesWithGraph = false
   var distinctUnkVectors = false
-  
+
   // XXX: I'm not sure if these really belong here, but we want to serialize
   // them with the parser.
   var preprocessor: LfPreprocessor = null
@@ -811,53 +811,53 @@ class SemanticParserConfig extends Serializable {
 }
 
 object SemanticParser {
-  
+
   // Parameter names used by the parser
   val WORD_EMBEDDINGS_PARAM = "wordEmbeddings"
   val ROOT_WEIGHTS_PARAM = "rootWeights"
   val ROOT_BIAS_PARAM = "rootBias"
-  
+
   val BEGIN_ACTIONS = "beginActions:"
   val ACTION_LOOKUP_PARAM = "actionLookup:"
-  
+
   val ATTENTION_WEIGHTS_PARAM = "attentionWeights:"
 
   val ACTION_HIDDEN_WEIGHTS = "actionHidden"
   val ACTION_HIDDEN_BIAS = "actionHiddenBias"
   val ACTION_HIDDEN_ACTION = "actionHiddenOutput:"
   val ACTION_HIDDEN_ACTION_BIAS = "actionHiddenOutputBias:"
-  
+
   val ACTION_LSTM_INPUT_WEIGHTS = "actionLstmInputWeights"
   val ACTION_LSTM_INPUT_BIAS = "actionLstmInputBias"
 
   val ENTITY_BIAS_PARAM = "entityBias:"
   val ENTITY_WEIGHTS_PARAM = "entityWeights:"
   val ENTITY_LOOKUP_PARAM = "entityLookup:"
-  
+
   val ENTITY_LINKING_FEATURIZED_PARAM = "entityLinkingFeaturized:"
   val ENTITY_LINKING_BIAS_PARAM = "entityLinkingBias:"
   val ENTITY_LINKING_FEATURIZED_MLP_W1 = "entityLinkingFeaturizedMlpW1:"
   val ENTITY_LINKING_FEATURIZED_MLP_B1 = "entityLinkingFeaturizedMlpB1:"
   val ENTITY_LINKING_FEATURIZED_MLP_W2 = "entityLinkingFeaturizedMlpW2:"
-  
+
   val ENTITY_TYPE_INPUT_PARAM = "entityTypeInput:"
   val ENTITY_TYPE_INPUT_BIAS = "entityTypeBias:"
   val ENTITY_NEIGHBOR_INPUT_PARAM = "entityTypeInput:"
   val ENTITY_NEIGHBOR_INPUT_BIAS = "entityTypeBias:"
 
   def create(actionSpace: ActionSpace, vocab: IndexedList[String],
-      wordEmbeddings: Option[Array[(String, FloatVector)]], 
+      wordEmbeddings: Option[Array[(String, FloatVector)]],
       config: SemanticParserConfig, model: PnpModel): SemanticParser = {
     // XXX: fix this
     config.entityDim = actionSpace.typeIndex.size()
     val actionLstmHiddenDim = if (config.concatLstmForDecoder) {
       config.hiddenDim * 2
     } else {
-      config.hiddenDim 
+      config.hiddenDim
     }
     val actionLstmInputDim = config.actionDim + 2 * config.hiddenDim
 
-    // Initialize model 
+    // Initialize model
     // TODO: document these parameters.
     model.addParameter(ROOT_WEIGHTS_PARAM, Dim(actionSpace.rootTypes.length, 2 * config.hiddenDim))
     model.addParameter(ROOT_BIAS_PARAM, Dim(actionSpace.rootTypes.length))
@@ -939,22 +939,22 @@ object SemanticParser {
     val forwardBuilder = loader.loadLstmBuilder()
     val backwardBuilder = loader.loadLstmBuilder()
     val actionBuilder = loader.loadLstmBuilder()
-    
+
     new SemanticParser(actionSpace, vocab, config, forwardBuilder,
         backwardBuilder, actionBuilder, model)
   }
-  
+
   // TODO: move this method somewhere else.
   def seqToMultimap[A, B](s: Iterable[(A, B)]) = {
-    s.foldLeft(new HashMap[A, MutableSet[B]] with MultiMap[A, B]){ 
+    s.foldLeft(new HashMap[A, MutableSet[B]] with MultiMap[A, B]){
       (acc, pair) => acc.addBinding(pair._1, pair._2)
     }
   }
 }
 
 /**
- * The row dimension of tokenMatrix, encodedTokenMatrix and 
- * tokenEntityScoreMatrices corresponds to tokens. 
+ * The row dimension of tokenMatrix, encodedTokenMatrix and
+ * tokenEntityScoreMatrices corresponds to tokens.
  */
 case class InputEncoding(val tokens: Array[Int], val rnnState: ExpressionVector,
     val sentEmbedding: Expression, val tokenMatrix: Expression, val encodedTokenMatrix: Expression,
@@ -964,11 +964,11 @@ case class InputEncoding(val tokens: Array[Int], val rnnState: ExpressionVector,
 /**
  * The columns of tokenEntityScoreMatrices and entityEmbeddingMatrices
  * correspond to entities of that type, in the same order as in
- * entityLinking. 
+ * entityLinking.
  */
 case class EntityEncoding(val tokenEntityScoreMatrices: Map[Type, Expression],
     val entityEmbeddingMatrices: Map[Type, Expression], val entityLinking: EntityLinking)
 
 class ExpressionDecodingException extends RuntimeException {
-  
+
 }

@@ -47,7 +47,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
   val lexicon = ActionSpace.fromExpressions(data.map(_.lf), typeDeclaration, false)
   val model = PnpModel.init(true)
   val config = new SemanticParserConfig()
-  val parser = SemanticParser.create(lexicon, vocab, config, model)
+  val parser = SemanticParser.create(lexicon, vocab, None, config, model)
   
   /**
    * Creates a training example for the semantic parser given a
@@ -206,7 +206,7 @@ class SemanticParserSpec extends FlatSpec with Matchers {
     val config2 = new SemanticParserConfig()
     config2.entityLinkingLearnedSimilarity = true
     config2.distinctUnkVectors = true
-    val parser2 = SemanticParser.create(lexicon, vocab, config2, model2)
+    val parser2 = SemanticParser.create(lexicon, vocab, None, config2, model2)
     
     val entities = List(("foo", "foo:e"), ("bar", "bar:e"), ("baz", "baz:e"))
     val trainingData = List(("foo", entities, "foo:e"),

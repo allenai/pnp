@@ -1,8 +1,6 @@
 #!/bin/bash -e
 # Usage: MY_DIR=<experiment_dir> ./experiments/wikitables/scripts/eval_dev.sh
 
-# source "experiments/wikitables/scripts/config.sh"
-
 SCRIPT_DIR="experiments/wikitables/scripts/"
 MODEL_DIR=$MY_DIR/models/
 MY_MODEL=$MY_DIR/parser_final.ser
@@ -17,7 +15,6 @@ DIFF=$MY_DIR/correct_diff.txt
 mkdir -p $MY_DIR
 mkdir -p $MODEL_DIR
 
-echo "Evaluating $MY_NAME development error..."
 ./$SCRIPT_DIR/run.sh org.allenai.wikitables.TestWikiTablesCli --testData $DEV --model $MY_MODEL --beamSize $TEST_BEAM_SIZE --maxDerivations $MAX_TEST_DERIVATIONS --tsvOutput $TSV_OUT --derivationsPath $DERIVATIONS_PATH &> $DEV_LOG
 
 python data/WikiTableQuestions/evaluator.py -t data/WikiTableQuestions/tagged/data/ $TSV_OUT > $OFFICIAL 2> $OFFICIAL_TXT
