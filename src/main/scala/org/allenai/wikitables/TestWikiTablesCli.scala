@@ -52,7 +52,7 @@ class TestWikiTablesCli extends AbstractCli() {
   var numAnswersOpt: OptionSpec[Integer] = null
 
   override def initializeOptions(parser: OptionParser): Unit = {
-    testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
+    testDataOpt = parser.accepts("testData").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',')
     derivationsPathOpt = parser.accepts("derivationsPath").withRequiredArg().ofType(classOf[String])
     noDerivationsOpt = parser.accepts("noDerivations")
     modelOpt = parser.accepts("model").withRequiredArg().ofType(classOf[String]).withValuesSeparatedBy(',').required()
@@ -158,9 +158,11 @@ class TestWikiTablesCli extends AbstractCli() {
       options.valueOf(tableStringOpt), exampleId)
     val pnpExample = WikiTablesUtil.convertCustomExampleToWikiTablesExample(sempreExample)
     val entityLinking = new WikiTablesEntityLinker().getEntityLinking(pnpExample)
-    val contextValue = new ContextValue(LispTree.proto.parseFromString(pnpExample.tableString))
+    val contextValue = pnpExample.getContext()
     val graph = contextValue.graph.asInstanceOf[TableKnowledgeGraph]
-    val table = Table.knowledgeGraphToTable(pnpExample.tableString, graph)
+    // Reusing example id  as the table id. The original idea of assigning table ids was to use them
+    // to serialize them as json files. We don't need to do that at test time anyway.
+    val table = Table.knowledgeGraphToTable(exampleId, graph)
     val processedExample = RawExample(pnpExample, entityLinking, table)
     WikiTablesUtil.preprocessExample(processedExample, parser.vocab, featureGenerator, typeDeclaration)
     val (testResult, denotations) = TestWikiTablesCli.test(Seq(processedExample.ex), parser,

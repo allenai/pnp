@@ -1,11 +1,12 @@
 package org.allenai.wikitables
 
+import scala.collection.JavaConverters._
 import com.jayantkrish.jklol.ccg.lambda2.Expression2
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
-import edu.stanford.nlp.sempre.ContextValue
-import edu.stanford.nlp.sempre.Formula
-import edu.stanford.nlp.sempre.Value
+import edu.stanford.nlp.sempre._
+import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import fig.basic.LispTree
+
 import scala.util.Try
 
 /**
@@ -35,7 +36,21 @@ case class WikiTablesExample(
    */
   def getContext(): ContextValue = {
     val lispTree = LispTree.proto.parseFromString(tableString)
-    new ContextValue(LispTree.proto.parseFromString(tableString))
+    val contextTree = lispTree.child(1)
+    if (contextTree.child(0).value.equals("table")) {
+      // This means we are dealing with the actual table data itself, not a pointer to a file containing it.
+      // We'll have to extract the relevant info from the lisp tree and make a contextvalue.
+      val tableValue = new TableValue(contextTree)
+      // First row in the table
+      val headerString: String = tableValue.header.toArray.mkString(",")
+      val dataString: String = tableValue.rows.asScala.map(row =>
+        row.asScala.map(cell =>
+          cell.asInstanceOf[NameValue].description).mkString(",")).mkString("###")
+      val fullTableDataString = List(headerString, dataString).mkString("###")
+      new ContextValue(new TableKnowledgeGraph(null, new TableStringReader(fullTableDataString)))
+    } else {
+      new ContextValue(LispTree.proto.parseFromString(tableString))
+    }
   }
   
   def executeFormula(pnpFormula: Expression2): Option[Value] = {

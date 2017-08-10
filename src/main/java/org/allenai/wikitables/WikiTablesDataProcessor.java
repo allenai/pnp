@@ -17,7 +17,6 @@ import edu.stanford.nlp.sempre.tables.match.EditDistanceFuzzyMatcher;
 import edu.stanford.nlp.sempre.tables.test.CustomExample;
 import fig.basic.LispTree;
 import fig.basic.Pair;
-import scala.tools.nsc.Global;
 
 public class WikiTablesDataProcessor {
   
@@ -101,6 +100,12 @@ public class WikiTablesDataProcessor {
 
   public static CustomExample makeCustomExample(String question, String tableString, String exampleId) {
     CoreNLPAnalyzer.opts.annotators = Arrays.asList(new String[] {"tokenize", "ssplit", "pos", "lemma", "ner"});
+    EditDistanceFuzzyMatcher.opts.expandAbbreviations = true;
+    EditDistanceFuzzyMatcher.opts.fuzzyMatchSubstring = true;
+    EditDistanceFuzzyMatcher.opts.alsoReturnUnion = true;
+    EditDistanceFuzzyMatcher.opts.alsoMatchPart = true;
+    EditDistanceFuzzyMatcher.opts.fuzzyMatchMaxEditDistanceRatio = 0.3;
+    CustomExample.opts.allowNoAnnotation = true;
     String questionAsLispTree = String.format("(example (utterance %s))", question.trim());
     CustomExample ex  = CustomExample.fromLispTree(LispTree.proto.parseFromString(questionAsLispTree), exampleId);
     // Making filename (first argument) null.
