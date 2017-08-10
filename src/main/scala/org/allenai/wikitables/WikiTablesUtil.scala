@@ -1,53 +1,27 @@
 package org.allenai.wikitables
 
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Paths
+import java.nio.file.{Files, Paths}
 import java.util.LinkedList
 import java.util.regex.Pattern
 
-import scala.collection.JavaConverters._
-import scala.collection.mutable
-import scala.io.Source
-import org.allenai.pnp.semparse.ConstantTemplate
-import org.allenai.pnp.semparse.Entity
-import org.allenai.pnp.semparse.EntityLinking
-import org.allenai.pnp.semparse.SemanticParserUtils
-import org.allenai.pnp.semparse.Span
-import org.json4s.DefaultFormats
-import org.json4s.JNothing
-import org.json4s.JValue
-import org.json4s.JsonDSL.jobject2assoc
-import org.json4s.JsonDSL.pair2Assoc
-import org.json4s.JsonDSL.pair2jvalue
-import org.json4s.JsonDSL.seq2jvalue
-import org.json4s.JsonDSL.string2jvalue
-import org.json4s.jvalue2extractable
-import org.json4s.jvalue2monadic
-import org.json4s.native.JsonMethods.parse
-import org.json4s.native.JsonMethods.pretty
-import org.json4s.native.JsonMethods.render
-import org.json4s.string2JsonInput
-import com.google.common.base.Preconditions
 import com.google.common.collect.Lists
 import com.jayantkrish.jklol.ccg.CcgExample
-import com.jayantkrish.jklol.ccg.lambda.ExpressionParser
-import com.jayantkrish.jklol.ccg.lambda2.Expression2
-import com.jayantkrish.jklol.ccg.lambda2.ExpressionSimplifier
-import com.jayantkrish.jklol.ccg.lambda2.StaticAnalysis
-import com.jayantkrish.jklol.ccg.lambda2.VariableCanonicalizationReplacementRule
+import com.jayantkrish.jklol.ccg.lambda.{ExpressionParser, TypeDeclaration}
+import com.jayantkrish.jklol.ccg.lambda2.{Expression2, ExpressionSimplifier, StaticAnalysis, VariableCanonicalizationReplacementRule}
 import com.jayantkrish.jklol.nlpannotation.AnnotatedSentence
-import com.jayantkrish.jklol.util.CountAccumulator
-import com.jayantkrish.jklol.util.IndexedList
+import com.jayantkrish.jklol.util.{CountAccumulator, IndexedList}
 import edu.stanford.nlp.sempre._
 import edu.stanford.nlp.sempre.tables.TableKnowledgeGraph
 import edu.stanford.nlp.sempre.tables.test.CustomExample
 import fig.basic.LispTree
-import fig.basic.Pair
+import org.json4s.JsonDSL.{jobject2assoc, pair2Assoc, pair2jvalue, seq2jvalue, string2jvalue}
+import org.json4s.native.JsonMethods.{parse, pretty, render}
+import org.json4s.{DefaultFormats, JNothing, JValue, jvalue2extractable, jvalue2monadic, string2JsonInput}
 
-import scala.collection.mutable.ListBuffer
-import com.jayantkrish.jklol.ccg.lambda.Type
-import com.jayantkrish.jklol.ccg.lambda.TypeDeclaration
+import scala.collection.JavaConverters._
+import scala.collection.mutable
+import scala.io.Source
 
 /**
  * This object has two main functions: (1) loading and preprocessing data (including functionality
