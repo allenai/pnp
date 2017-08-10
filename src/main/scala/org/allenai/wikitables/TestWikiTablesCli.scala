@@ -168,11 +168,13 @@ class TestWikiTablesCli extends AbstractCli() {
     val (testResult, denotations) = TestWikiTablesCli.test(Seq(processedExample.ex), parser,
         options.valueOf(beamSizeOpt), options.has(evaluateDpdOpt), false, typeDeclaration, comparator,
         lfPreprocessor, println)
-    println(testResult)
-    if (options.has(numAnswersOpt))
-      denotations.map {x => x._1 -> x._2.take(options.valueOf(numAnswersOpt))}
-    else
+    val answers = if (options.has(numAnswersOpt)) {
+      denotations.map { x => x._1 -> x._2.take(options.valueOf(numAnswersOpt)) }
+    } else {
       denotations
+    }
+    println(answers)
+    answers
   }
 
   def loadSerializedParser(modelFilename: String): SemanticParser = {
