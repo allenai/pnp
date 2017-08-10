@@ -49,7 +49,7 @@ case class WikiTablesExample(
       val fullTableDataString = List(headerString, dataString).mkString("###")
       new ContextValue(new TableKnowledgeGraph(null, new TableStringReader(fullTableDataString)))
     } else {
-      new ContextValue(LispTree.proto.parseFromString(tableString))
+      new ContextValue(lispTree)
     }
   }
   
