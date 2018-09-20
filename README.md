@@ -24,9 +24,14 @@ graph libraries for neural networks, such as TensorFlow:
 
 ## Installation
 
-This library depends on DyNet with the
-[Scala DyNet bindings](https://github.com/clab/dynet/tree/master/contrib/swig).
-This library has been tested with DyNet commit `a3149c0f4cd65e663028874a9a9ef1321e05ff8b`.
+This library depends on DyNet. Particularly, you will need the commit
+`a3149c0f4cd65e663028874a9a9ef1321e05ff8b` on DynNet. Note that the original
+repo does not have this commit any more, but you can clone
+[AI2's fork of DyNet](https://github.com/allenai/dynet) and checkout the commit
+specified above.
+
+You will need to build DyNet with
+[Scala DyNet bindings](https://github.com/allenai/dynet/tree/master/contrib/swig).
 See the link for build instructions. NOTE: the flag to include SWIG scala bindings
 changed, and you need to use an older version with this older code.  Where the
 instructions say `-DENABLE_SWIG=ON`, instead use `-DINCLUDE_SWIG=ON`.  The older
