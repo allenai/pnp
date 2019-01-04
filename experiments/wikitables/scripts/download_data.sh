@@ -12,7 +12,7 @@ head -n100 random-split-1-dev.examples > subsamples/random-split-1-dev-100.examp
 cd ../..
 
 # Download DPD output
-wget http://cs.stanford.edu/~ppasupat/research/h-strict-all-matching-lfs.tar.gz
+wget https://nlp.stanford.edu/software/sempre/wikitable/dpd/h-strict-all-matching-lfs.tar.gz
 tar xvzf h-strict-all-matching-lfs.tar.gz
 # Move all of the output files to a single directory.
 mkdir -p dpd_output
